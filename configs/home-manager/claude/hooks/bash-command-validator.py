@@ -43,7 +43,10 @@ _VALIDATION_RULES = [
         "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance",
     ),
     (
-        r"(?<!\w)(python|python3)\s",
+        # Match direct python/python3 command invocations at shell command boundaries,
+        # with optional env-var prefixes (e.g. FOO=bar python -V). This intentionally
+        # does not match python used as an argument to another command (e.g. uv run python).
+        r"(?:^|[;|&()]{1,2})\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\S+)\s+)*(python|python3)\s",
         "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'",
     ),
     (
