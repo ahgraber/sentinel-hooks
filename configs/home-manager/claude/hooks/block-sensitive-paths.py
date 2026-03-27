@@ -4,10 +4,10 @@
 # dependencies = []
 # ///
 """
-Claude Code Hook: Block writes to sensitive/zero-access paths.
+Claude Code Hook: Block reads and writes to sensitive/zero-access paths.
 
-PreToolUse hook for Write, Edit, and Bash tools.
-Hard-blocks (exit 2) any attempt to write to zero-access paths.
+PreToolUse hook for Read, Write, Edit, and Bash tools.
+Hard-blocks (exit 2) any attempt to read from or write to zero-access paths.
 
 Zero-access paths include: dot-env files, ~/.ssh, ~/.aws, ~/.kube, ~/.gnupg,
 certificate/key files, Terraform state, and files with 'credentials' or
@@ -18,6 +18,12 @@ import json
 import os
 import re
 import sys
+
+# ── Shared risk explanation ───────────────────────────────────────────────────
+_EXPOSURE_RISK = (
+    "Exposed credentials risk unauthorised access, account takeover, and data "
+    "exfiltration across every service they protect."
+)
 
 # ── Directory exemption for name-based patterns ──────────────────────────────
 # Name-based patterns ('credentials', 'secret') don't apply inside these
@@ -103,11 +109,13 @@ def should_block(path: str) -> bool:
 
 
 def block(path: str, tool: str) -> None:
+    action = "Reading" if tool == "Read" else "Accessing"
     sys.stderr.write(
         f"Blocked: {tool} targeting zero-access path '{path}'.\n"
-        "This path is classified as zero-access because it likely contains "
-        "secrets, credentials, or private keys. Writing to it may expose "
-        "sensitive material or corrupt security-critical files.\n"
+        f"{action} this path would expose credentials, private keys, or "
+        "authentication secrets to Claude's context. A prompt injection attack "
+        "could trick Claude into forwarding this material to an attacker. "
+        f"{_EXPOSURE_RISK}\n"
     )
     sys.exit(2)
 
@@ -144,15 +152,18 @@ def main() -> None:
     try:
         data = json.load(sys.stdin)
     except Exception:
-        sys.exit(2)  # fail-closed: this hook only handles sensitive tools (Bash/Write/Edit)
+        sys.exit(
+            0
+        )  # fail-open: this hook handles mixed sensitive+read-only tools (Bash/Read/Write/Edit);
+        # on parse failure the tool type is unknown, so fail-open per hook-interface spec
 
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
 
-    if tool_name not in ("Bash", "Write", "Edit"):
+    if tool_name not in ("Bash", "Read", "Write", "Edit"):
         sys.exit(0)
 
-    if tool_name in ("Write", "Edit"):
+    if tool_name in ("Read", "Write", "Edit"):
         path = tool_input.get("file_path") or tool_input.get("path", "")
         if path and should_block(path):
             block(path, tool_name)
@@ -174,6 +185,6 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:
-        # ErrorHandlingByDamagePotential: this hook only handles Bash/Write/Edit
-        # (all sensitive tools), so always fail-closed on internal error.
-        sys.exit(2)
+        # ErrorHandlingByDamagePotential: this hook handles Read (read-only) in addition
+        # to Bash/Write/Edit (sensitive), so fail-open on internal error per hook-interface spec.
+        sys.exit(0)

@@ -16,7 +16,9 @@ The system SHALL read a JSON object from stdin containing at minimum `tool_name`
 - **WHEN** the hook attempts to parse input
 - **THEN** the hook applies `ErrorHandlingByDamagePotential`: if the hook only handles sensitive tools (`Bash`, `Write`, `Edit`), it exits 2 (fail-closed); if the hook handles read-only tools or all tools, it exits 0 (fail-open)
 
-Note: a hook that handles multiple tool types (e.g., `Bash|Write|Edit` or all tools) cannot determine the tool name from malformed input. Such hooks SHALL exit 0 on parse failure, since failing closed would block read-only tools. Hooks that exclusively handle sensitive tools (e.g., `dangerous-bash-blocking` which only handles `Bash`) SHALL exit 2 on parse failure.
+Note: a hook that handles multiple tool types (e.g., `Bash|Write|Edit` or all tools) cannot determine the tool name from malformed input.
+Such hooks SHALL exit 0 on parse failure, since failing closed would block read-only tools.
+Hooks that exclusively handle sensitive tools (e.g., `dangerous-bash-blocking` which only handles `Bash`) SHALL exit 2 on parse failure.
 
 ### Requirement: ExitCodes
 
@@ -50,23 +52,24 @@ The `ask` JSON output format:
 
 Every block or ask response SHALL include an explanation that contains:
 
-1. **What the operation does** — a plain-language description of the matched command's purpose and effect
-2. **Why it was blocked or flagged** — the security or safety reason (e.g., "irreversibly rewrites git history", "may expose credentials over the network")
+1. **What the operation does** — a plain-language description of the matched command's or path's purpose and effect (e.g., "reads your SSH private key into Claude's context", "pipes your AWS credentials to a remote host")
+2. **Why it is dangerous or suspicious** — the specific security risk this operation poses (e.g., "a private key in context can be incorporated into a subsequent command or network call without further confirmation", "credential files piped to remote hosts expose authentication material to third parties")
 
 The explanation SHALL be written for the user, not for the hook implementer.
 It SHALL NOT be a raw regex pattern or an internal rule identifier.
-
-#### Scenario: BlockExplanation
-
-- **GIVEN** a hook exits 2
-- **WHEN** the user reads the stderr output
-- **THEN** they understand both what the command would have done and why it was stopped
+It SHALL name the specific file or command where possible, not a generic category.
 
 #### Scenario: AskExplanation
 
 - **GIVEN** a hook exits 0 with `permissionDecision: "ask"`
 - **WHEN** the user reads the dialog reason
-- **THEN** they understand both what the command will do and why confirmation is required
+- **THEN** they understand (a) what operation Claude is attempting, (b) what specific file or command is involved, and (c) what harm could result if the operation proceeds unchecked (e.g., credentials entering context, data reaching a remote host)
+
+#### Scenario: BlockExplanation
+
+- **GIVEN** a hook exits 2
+- **WHEN** the user reads the stderr output
+- **THEN** they understand both what the command would have done and why it was stopped, including the specific downstream risk
 
 #### Scenario: Allow
 

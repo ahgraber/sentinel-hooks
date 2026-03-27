@@ -113,7 +113,15 @@ This covers legitimate debugging: checking which credentials are stored, verifyi
 
 ### Requirement: AskOnSecretFileAccess
 
-The system SHALL ask (confirm) when a `Read`, `Write`, or `Edit` tool call targets a file whose content is likely to contain secrets, as detected by two independent heuristic checks.
+The system SHALL ask (confirm) when a `Read`, `Write`, or `Edit` tool call targets a file whose content is likely to contain secrets, **except** where `sensitive-path-blocking` has already hard-blocked the path.
+
+Because `block-sensitive-paths.py` runs before this hook and hard-blocks `Read`, `Write`, and `Edit` to zero-access paths, paths such as `~/.ssh/id_ed25519` or `~/.aws/credentials` will never reach this hook's ask logic.
+This hook's `ask` for credential-dir reads remains the protection layer for paths outside the zero-access list (e.g., `~/.netrc`) that are not hard-blocked by `block-sensitive-paths.py`.
+
+Every ask response produced by this requirement SHALL comply with the `ExplanationContract` defined in `hook-interface`: the `permissionDecisionReason` MUST state both what the operation would do (read/write a likely-secret file) and what the specific danger is (exposure of credentials to Claude's context window, enabling potential downstream exfiltration).
+It SHALL name the specific file.
+
+Detection uses two independent heuristic checks:
 
 **Check 1 — Credential file names:**
 
@@ -135,27 +143,27 @@ Any file within well-known credential directories:
 - `~/.gnupg/` — GPG keyrings and trust databases
 
 Note: this requirement overlaps with `sensitive-path-blocking` and with sandbox `denyRead` rules.
-Where `sensitive-path-blocking` defines a path as zero-access for writes (block), that takes precedence.
+Where `sensitive-path-blocking` hard-blocks a path (for Read, Write, or Edit), that takes precedence and this hook's ask logic is not reached for that path.
 Where sandbox `denyRead` blocks reads to a directory, the sandbox block takes precedence.
-This requirement applies `ask` to paths that are not already blocked by either mechanism but still likely to contain secrets — for example, `Read(~/.kube/config)` is not covered by sandbox `denyRead` or `sensitive-path-blocking` (which only blocks writes), so this hook's ask is the only protection.
+This requirement applies `ask` to paths that are not already blocked by either mechanism but still likely to contain secrets — for example, `Read(~/.netrc)` is not in the zero-access list and not blocked by sandbox `denyRead`, so this hook's ask is the only protection.
 
 #### Scenario: ReadSshPrivateKey
 
-- **GIVEN** a Read tool call is intercepted
-- **WHEN** `tool_input.path` matches `~/.ssh/id_*`
-- **THEN** the hook exits 0 with `permissionDecision: "ask"` (if not already blocked by sandbox or `sensitive-path-blocking`)
+- **GIVEN** a Read tool call is intercepted by this hook
+- **WHEN** `tool_input.file_path` matches `~/.ssh/id_*`
+- **THEN** the hook exits 0 with `permissionDecision: "ask"` and a reason that names the file, describes that it likely contains a private key, and warns that reading it places the key in Claude's context where it could be incorporated into a subsequent command or network call
 
-#### Scenario: ReadKubeConfig
+#### Scenario: ReadNetrcFile
 
-- **GIVEN** a Read tool call is intercepted
-- **WHEN** `tool_input.path` is `~/.kube/config`
-- **THEN** the hook exits 0 with `permissionDecision: "ask"`
+- **GIVEN** a Read tool call is intercepted by this hook
+- **WHEN** `tool_input.file_path` is `~/.netrc` (not in the zero-access list, so not blocked by `block-sensitive-paths.py`)
+- **THEN** the hook exits 0 with `permissionDecision: "ask"` and a reason that names the file, describes that it contains plaintext usernames and passwords for remote hosts, and warns that reading it places those credentials in Claude's context where they could be incorporated into a subsequent command or network call
 
 #### Scenario: ReadTokenFileInProject
 
-- **GIVEN** a Read tool call is intercepted
-- **WHEN** `tool_input.path` matches `*token*` in the project directory (not in a package dir)
-- **THEN** the hook exits 0 with `permissionDecision: "ask"`
+- **GIVEN** a Read tool call is intercepted by this hook
+- **WHEN** `tool_input.file_path` matches `*token*` in the project directory (not in a package dir)
+- **THEN** the hook exits 0 with `permissionDecision: "ask"` and a reason that names the file, explains why its name suggests it may contain an access token, and notes that the token could be read into context and used in subsequent operations
 
 #### Scenario: ReadSecretsJsonInProject
 

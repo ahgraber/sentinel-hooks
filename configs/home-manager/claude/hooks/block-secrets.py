@@ -37,6 +37,13 @@ import sys
 
 SENSITIVE_TOOLS = {"Bash", "Write", "Edit"}
 
+# ── Shared risk explanation ───────────────────────────────────────────────────
+# Appended to all block/ask messages to give consistent downstream-risk context.
+_EXPOSURE_RISK = (
+    "Exposed credentials risk unauthorised access, account takeover, and data "
+    "exfiltration across every service they protect."
+)
+
 # ── Network tool detection ─────────────────────────────────────────────────────
 NETWORK_CMD_RE = re.compile(
     r"\b(?:curl|wget|nc|ncat|netcat|ftp|sftp|scp|rsync|socat|ssh(?!-\w)|telnet)\b"
@@ -240,47 +247,47 @@ def main() -> None:
         if DNS_EXFIL_RE.search(command):
             block(
                 "Blocked: DNS exfiltration pattern detected.\n"
-                "This command encodes data in DNS hostnames or queries, "
-                "a technique used to exfiltrate data from restricted "
-                "environments without triggering standard network egress controls."
+                "This command encodes credentials or sensitive information into DNS "
+                "hostnames, bypassing standard network egress controls while evading "
+                f"detection. {_EXPOSURE_RISK}"
             )
 
         # Credential file content piped to network (block unless localhost)
         if CREDENTIAL_FILE_PIPE_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: credential file piped to a network command.\n"
-                "This command reads a file likely to contain secrets "
-                "(.env, .npmrc, .ssh keys, .aws credentials) and pipes "
-                "its content to a remote destination."
+                "This command reads a file likely to contain credentials or secrets "
+                "(.env, .npmrc, SSH keys, AWS credentials) and pipes its contents "
+                f"to a remote host, directly exposing those credentials. {_EXPOSURE_RISK}"
             )
 
         # Environment dump to network (block unless localhost)
         if ENV_DUMP_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: environment variable dump to network detected.\n"
-                "This command exports all environment variables and sends "
-                "them to a remote host, which would expose any credentials "
-                "stored in the environment."
+                "This command exports all environment variables — including any "
+                "credentials, API keys, or tokens stored there — and sends them "
+                f"to a remote host, exposing all of them at once. {_EXPOSURE_RISK}"
             )
 
         # Credential store read + network → block
         if CREDENTIAL_STORE_RE.search(command) and has_network and not is_local:
             block(
-                "Blocked: credential store read piped to a remote "
-                "network destination.\n"
-                "This command reads a secret from a credential store and "
-                "sends data to a remote host, which may transmit the "
-                "retrieved credential over the network."
+                "Blocked: credential store read piped to a remote network destination.\n"
+                "This command reads a secret from a credential store (keychain, vault, "
+                "or secrets manager) and sends the result to a remote host, directly "
+                f"exposing those credentials. {_EXPOSURE_RISK}"
             )
 
         # Credential store read (local) → ask
         if CREDENTIAL_STORE_RE.search(command):
             ask(
-                "This command reads from a system credential store "
-                "(keychain, vault, or secrets manager).\n"
-                "Confirm this access is intentional and that the "
-                "retrieved credentials will not be forwarded to an "
-                "untrusted destination."
+                "This command reads credentials from a system credential store "
+                "(keychain, vault, or secrets manager). Exposing credentials to "
+                "Claude's context creates risk: a prompt injection attack could "
+                "trick Claude into forwarding the retrieved secret to an attacker. "
+                f"{_EXPOSURE_RISK} Approve only if this access is intentional and "
+                "the credentials will not leave this session."
             )
 
     # ── File path heuristics for Read/Write/Edit ─────────────────────────
@@ -293,16 +300,22 @@ def main() -> None:
                 expanded = os.path.normpath(os.path.expanduser(dir_prefix))
                 if norm_path.startswith(expanded + os.sep) or norm_path == expanded:
                     ask(
-                        f"The file '{path}' is inside a credential directory "
-                        f"({dir_prefix}).\nProceeding may expose secret "
-                        "material. Confirm this operation is intentional."
+                        f"This operation targets '{path}', which is inside a "
+                        f"credential directory ({dir_prefix}). Files here typically "
+                        "contain private keys, access tokens, or authentication "
+                        "credentials. Exposing these to Claude's context risks prompt "
+                        f"injection attacks that could forward secrets to an attacker. "
+                        f"{_EXPOSURE_RISK} Approve only if you intentionally want "
+                        "Claude to access this material."
                     )
             # Check 1: credential file name patterns (with package-dir exemption)
             if CREDENTIAL_FILE_RE.search(path) and not EXEMPT_DIR_RE.search(path):
                 ask(
-                    f"The file '{path}' appears to contain sensitive credentials.\n"
-                    "Proceeding may expose secret material. Confirm this "
-                    "operation is intentional."
+                    f"This operation targets '{path}', whose name suggests it may "
+                    "contain credentials, tokens, or key material. Exposing this to "
+                    "Claude's context risks prompt injection attacks that could forward "
+                    f"secrets to an attacker. {_EXPOSURE_RISK} Approve only if you "
+                    "intentionally want Claude to access this material."
                 )
 
     # ── Universal secret scan ────────────────────────────────────────────
@@ -315,18 +328,17 @@ def main() -> None:
     if has_credential(serialized, deep=is_bash_with_network):
         if is_bash_with_network:
             block(
-                "Blocked: credential detected in command with a network "
-                "destination.\n"
-                "This command appears to contain an API key or credential "
-                "and also sends data to a remote host, which may expose "
-                "the credential over the network."
+                "Blocked: credential detected in command with a network destination.\n"
+                "This command contains an API key or authentication credential and "
+                "sends data to a remote host, directly exposing those credentials. "
+                f"{_EXPOSURE_RISK}"
             )
         ask(
-            "A credential or API key pattern was detected in this tool "
-            "call's arguments.\n"
-            "If this is intentional (e.g., testing authentication "
-            "locally), approve below. Otherwise deny and remove the "
-            "credential before re-running."
+            "A credential or API key pattern was detected in this tool call's "
+            "arguments. A prompt injection attack could trick Claude into forwarding "
+            f"these credentials to an attacker. {_EXPOSURE_RISK} If this is "
+            "intentional (e.g., testing authentication locally), approve below. "
+            "Otherwise deny and remove the credential before re-running."
         )
 
     sys.exit(0)

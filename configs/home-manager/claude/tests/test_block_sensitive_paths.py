@@ -1,13 +1,12 @@
 """Tests for block-sensitive-paths.py hook.
 
-Validates zero-access path blocking for Write, Edit, and Bash tools,
+Validates zero-access path blocking for Read, Write, Edit, and Bash tools,
 including dot-env files, SSH/AWS/Kube/GPG directories, certificate files,
 Terraform state, and name-based patterns with package-dir exemption.
 """
 
 import os
 
-import pytest
 
 from conftest import assert_allowed, assert_blocked, run_hook
 
@@ -15,12 +14,18 @@ HOOK = "block-sensitive-paths.py"
 HOME = os.path.expanduser("~")
 
 
+def read(path: str):
+    return run_hook(HOOK, "Read", {"file_path": path})
+
+
 def write(path: str):
     return run_hook(HOOK, "Write", {"file_path": path})
 
 
 def edit(path: str):
-    return run_hook(HOOK, "Edit", {"file_path": path, "old_string": "a", "new_string": "b"})
+    return run_hook(
+        HOOK, "Edit", {"file_path": path, "old_string": "a", "new_string": "b"}
+    )
 
 
 def bash(command: str):
@@ -31,14 +36,44 @@ def bash(command: str):
 
 
 class TestToolScope:
-    def test_read_tool_allowed(self):
-        """This hook only handles Write, Edit, Bash — not Read."""
-        result = run_hook(HOOK, "Read", {"file_path": f"{HOME}/.ssh/id_rsa"})
-        assert_allowed(result)
+    def test_read_tool_blocked_for_zero_access(self):
+        """Read tool is now covered — zero-access paths are hard-blocked."""
+        assert_blocked(read(f"{HOME}/.ssh/id_rsa"), "zero-access")
 
     def test_glob_tool_allowed(self):
         result = run_hook(HOOK, "Glob", {"pattern": "*.pem"})
         assert_allowed(result)
+
+
+# ── Read tool blocking ───────────────────────────────────────────────────────
+
+
+class TestReadTool:
+    def test_read_ssh_key(self):
+        assert_blocked(read(f"{HOME}/.ssh/id_ed25519"), "zero-access")
+
+    def test_read_aws_credentials(self):
+        assert_blocked(read(f"{HOME}/.aws/credentials"), "zero-access")
+
+    def test_read_dot_env(self):
+        assert_blocked(read("/project/.env"), "zero-access")
+
+    def test_read_pem_file(self):
+        assert_blocked(read("/project/server.pem"), "zero-access")
+
+    def test_read_credentials_json(self):
+        assert_blocked(read("/project/credentials.json"), "zero-access")
+
+    def test_read_credentials_in_venv_allowed(self):
+        """Package-dir exemption applies to Read just as it does to Write/Edit."""
+        assert_allowed(
+            read(
+                "/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"
+            )
+        )
+
+    def test_read_normal_file_allowed(self):
+        assert_allowed(read("/project/src/main.py"))
 
 
 # ── Dot-env files ────────────────────────────────────────────────────────────
@@ -184,10 +219,16 @@ class TestShellHistory:
 
 class TestPackageDirExemption:
     def test_credentials_in_venv_allowed(self):
-        assert_allowed(write("/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"))
+        assert_allowed(
+            write(
+                "/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"
+            )
+        )
 
     def test_secret_in_venv_allowed(self):
-        assert_allowed(write("/project/.venv/lib/python3.11/site-packages/my_lib/secret.py"))
+        assert_allowed(
+            write("/project/.venv/lib/python3.11/site-packages/my_lib/secret.py")
+        )
 
     def test_credentials_in_node_modules_allowed(self):
         assert_allowed(write("/project/node_modules/@aws-sdk/credentials/index.js"))
@@ -260,10 +301,10 @@ class TestNormalFilesAllowed:
 
 
 class TestErrorHandling:
-    def test_malformed_json_fails_closed(self):
-        """Sensitive-tool-only hook should fail-closed on malformed JSON."""
+    def test_malformed_json_fails_open(self):
+        """Mixed sensitive+read-only hook fails-open on malformed JSON (cannot determine tool type)."""
         result = run_hook(HOOK, stdin_text="not json")
-        assert result.exit_code == 2
+        assert result.exit_code == 0
 
 
 # ── Directory prefix false positive ─────────────────────────────────────────
