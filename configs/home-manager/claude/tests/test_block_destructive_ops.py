@@ -8,9 +8,13 @@ Note: assert_blocked/assert_ask substring checks match against the TOML
 description and reason fields, not the command name.
 """
 
-import pytest
-
-from conftest import assert_allowed, assert_ask, assert_blocked, run_hook
+from conftest import (
+    assert_allowed,
+    assert_ask,
+    assert_block_contract,
+    assert_blocked,
+    run_hook,
+)
 
 HOOK = "block-destructive-ops.py"
 
@@ -43,7 +47,9 @@ class TestToolScope:
 
 class TestGitBlock:
     def test_filter_branch(self):
-        assert_blocked(bash("git filter-branch --tree-filter 'rm -f file' HEAD"), "rewrites")
+        assert_blocked(
+            bash("git filter-branch --tree-filter 'rm -f file' HEAD"), "rewrites"
+        )
 
     def test_filter_repo(self):
         assert_blocked(bash("git filter-repo --path src/"), "rewrites")
@@ -364,3 +370,25 @@ class TestNetworkAsk:
 class TestPackageManagement:
     def test_uv_remove(self):
         assert_ask(bash("uv remove requests"), "package")
+
+
+# ── Block contract ───────────────────────────────────────────────────────────
+
+
+class TestBlockContract:
+    """Verify every block-mode response includes the two-section AI guidance contract."""
+
+    def test_force_push_includes_ai_instructions(self):
+        assert_block_contract(bash("git push --force origin main"), "force")
+
+    def test_drop_table_includes_ai_instructions(self):
+        assert_block_contract(bash("psql -c 'DROP TABLE users;'"), "DROP")
+
+    def test_rm_rf_includes_ai_instructions(self):
+        assert_block_contract(bash("rm -rf /"), "recursively")
+
+    def test_kubectl_delete_all_includes_ai_instructions(self):
+        assert_block_contract(bash("kubectl delete pods --all"), "Kubernetes")
+
+    def test_redis_flushall_includes_ai_instructions(self):
+        assert_block_contract(bash("redis-cli FLUSHALL"), "FLUSH")

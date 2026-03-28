@@ -192,9 +192,20 @@ def has_credential(text: str, *, deep: bool = False) -> bool:
 
 # ── Hook output helpers ────────────────────────────────────────────────────────
 
+_AI_INSTRUCTIONS = """
+---
+AI INSTRUCTIONS:
+You have been blocked from performing this operation. Do NOT attempt to find alternative commands, equivalent steps, or workarounds that achieve the same result through a different path.
+
+Stop and report the following to the user immediately:
+1. Your current task — what you were working on
+2. Your intended step — what you were trying to do and why
+3. What was blocked — the specific action blocked and the reason given above
+4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed"""
+
 
 def block(message: str) -> None:
-    sys.stderr.write(message + "\n")
+    sys.stderr.write(message + "\n" + _AI_INSTRUCTIONS + "\n")
     sys.exit(2)
 
 

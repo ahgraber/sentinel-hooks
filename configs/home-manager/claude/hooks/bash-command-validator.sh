@@ -70,6 +70,7 @@ patterns=(
   "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(python|python3)\\s"
   '(?<!\w)pip\s+(install|uninstall|download)\b'
   '(?<!\w)pip3\s+(install|uninstall|download)\b'
+  '\bpre-commit\s+run\b'
 )
 
 messages=(
@@ -78,6 +79,7 @@ messages=(
   "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'"
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip3. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
+  "Use 'prek run' instead of 'pre-commit run' — prek is the sandbox-compatible wrapper available in PATH"
 )
 
 issues=()

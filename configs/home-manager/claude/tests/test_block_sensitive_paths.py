@@ -8,7 +8,7 @@ Terraform state, and name-based patterns with package-dir exemption.
 import os
 
 
-from conftest import assert_allowed, assert_blocked, run_hook
+from conftest import assert_allowed, assert_block_contract, assert_blocked, run_hook
 
 HOOK = "block-sensitive-paths.py"
 HOME = os.path.expanduser("~")
@@ -318,3 +318,25 @@ class TestDirectoryPrefixBoundary:
     def test_aws_cli_dir_not_matched(self):
         """~/.aws-cli/ should NOT match the ~/.aws/ prefix."""
         assert_allowed(write(f"{HOME}/.aws-cli/config"))
+
+
+# ── Block contract ───────────────────────────────────────────────────────────
+
+
+class TestBlockContract:
+    """Verify every block-mode response includes the two-section AI guidance contract."""
+
+    def test_read_ssh_key_includes_ai_instructions(self):
+        assert_block_contract(read(f"{HOME}/.ssh/id_ed25519"), "zero-access")
+
+    def test_read_aws_credentials_includes_ai_instructions(self):
+        assert_block_contract(read(f"{HOME}/.aws/credentials"), "zero-access")
+
+    def test_write_dot_env_includes_ai_instructions(self):
+        assert_block_contract(write("/project/.env"), "zero-access")
+
+    def test_write_pem_includes_ai_instructions(self):
+        assert_block_contract(write("/project/server.pem"), "zero-access")
+
+    def test_bash_redirect_to_env_includes_ai_instructions(self):
+        assert_block_contract(bash("echo SECRET=val > .env"), "zero-access")

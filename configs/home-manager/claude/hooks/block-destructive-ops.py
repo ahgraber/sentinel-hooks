@@ -47,6 +47,18 @@ def load_rules() -> list[dict]:
     return all_rules
 
 
+_AI_INSTRUCTIONS = """
+---
+AI INSTRUCTIONS:
+You have been blocked from performing this operation. Do NOT attempt to find alternative commands, equivalent steps, or workarounds that achieve the same result through a different path.
+
+Stop and report the following to the user immediately:
+1. Your current task — what you were working on
+2. Your intended step — what you were trying to do and why
+3. What was blocked — the specific action blocked and the reason given above
+4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed"""
+
+
 def make_ask_json(reason: str) -> str:
     return json.dumps(
         {
@@ -99,7 +111,7 @@ def main() -> None:
             explanation += f"\n\n{reason}"
 
         if mode == "block":
-            sys.stderr.write(f"Blocked: {explanation}\n")
+            sys.stderr.write(f"Blocked: {explanation}\n{_AI_INSTRUCTIONS}\n")
             sys.exit(2)
         elif mode == "ask":
             sys.stdout.write(make_ask_json(explanation))

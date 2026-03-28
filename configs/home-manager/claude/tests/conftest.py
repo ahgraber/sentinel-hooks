@@ -61,20 +61,60 @@ def run_hook(
 
 
 def assert_allowed(result: HookResult) -> None:
-    assert result.exit_code == 0, f"Expected allow (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
-    assert "permissionDecision" not in result.stdout, f"Expected no ask JSON, got: {result.stdout}"
+    assert result.exit_code == 0, (
+        f"Expected allow (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
+    )
+    assert "permissionDecision" not in result.stdout, (
+        f"Expected no ask JSON, got: {result.stdout}"
+    )
 
 
 def assert_blocked(result: HookResult, message_substring: str = "") -> None:
-    assert result.exit_code == 2, f"Expected block (exit 2), got exit {result.exit_code}.\nstderr: {result.stderr}\nstdout: {result.stdout}"
+    assert result.exit_code == 2, (
+        f"Expected block (exit 2), got exit {result.exit_code}.\nstderr: {result.stderr}\nstdout: {result.stdout}"
+    )
     if message_substring:
         assert message_substring.lower() in result.stderr.lower(), (
             f"Expected '{message_substring}' in stderr, got: {result.stderr}"
         )
 
 
+# Directives that the AI instruction block must contain (checked case-insensitively).
+_AI_BLOCK_CHECKS = [
+    ("section delimiter", "---"),
+    ("AI INSTRUCTIONS header", "ai instructions:"),
+    ("workaround prohibition", "do not attempt"),
+    ("current-task directive", "your current task"),
+    ("intended-step directive", "your intended step"),
+    ("what-was-blocked directive", "what was blocked"),
+    ("user-action directive", "how the user can help"),
+]
+
+
+def assert_block_contract(result: HookResult, message_substring: str = "") -> None:
+    """Assert exit 2 and that stderr follows the two-section block contract.
+
+    Verifies:
+    - exit code 2 (hard block)
+    - human explanation present (via message_substring if given)
+    - '---' section delimiter present
+    - 'AI INSTRUCTIONS:' header present
+    - workaround prohibition present
+    - all four directive items (current task, intended step, what was blocked,
+      how the user can help) present in the AI instruction block
+    """
+    assert_blocked(result, message_substring)
+    stderr_lower = result.stderr.lower()
+    for label, needle in _AI_BLOCK_CHECKS:
+        assert needle.lower() in stderr_lower, (
+            f"Block contract violation — missing {label}.\nstderr: {result.stderr}"
+        )
+
+
 def assert_ask(result: HookResult, reason_substring: str = "") -> None:
-    assert result.exit_code == 0, f"Expected ask (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
+    assert result.exit_code == 0, (
+        f"Expected ask (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
+    )
     data = json.loads(result.stdout)
     decision = data["hookSpecificOutput"]["permissionDecision"]
     assert decision == "ask", f"Expected permissionDecision 'ask', got '{decision}'"
@@ -88,6 +128,8 @@ def assert_ask(result: HookResult, reason_substring: str = "") -> None:
 @pytest.fixture
 def bash_hook():
     """Returns a callable that runs a hook with a Bash tool call."""
+
     def run(hook_filename: str, command: str) -> HookResult:
         return run_hook(hook_filename, "Bash", {"command": command})
+
     return run
