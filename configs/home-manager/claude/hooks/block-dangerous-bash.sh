@@ -48,51 +48,124 @@ tool_name="$(jq -re '.tool_name // empty' 2>/dev/null <<< "${input_json}")" || e
 command_text="$(jq -r '.tool_input.command // ""' 2>/dev/null <<< "${input_json}")" || exit 2
 [[ -n "${command_text}" ]] || exit 0
 
-# Loopback check for /dev/tcp and /dev/udp: the host segment immediately after
-# the device path must be a loopback address.  Checking anywhere in the command
-# (the naive approach) is bypassable by appending e.g. "; echo localhost".
-# For scripting-language reverse shells the host is embedded inside a string
-# argument, so a perfect check requires parsing; this covers the common forms.
+# Loopback exemption constants used by the evaluation loop.
+# For /dev/tcp and nc patterns the loopback check is positional (host segment)
+# to prevent bypass via appended text such as "; echo localhost".
 readonly LOCAL_DEVTCP_RE='\/dev\/(tcp|udp)\/(127\.0\.0\.1|localhost|::1|0\.0\.0\.0)\/'
 readonly LOCAL_NC_RE='\bnc\b[^;|&\n]*(127\.0\.0\.1|localhost|::1|0\.0\.0\.0)\s+[0-9]'
 readonly LOCAL_GENERIC_RE='(127\.0\.0\.1|localhost|::1|0\.0\.0\.0)'
 
-# ── Reverse shells ─────────────────────────────────────────────────────────────
-# Patterns that establish an interactive shell connection back to a remote host.
-# Each entry is "exemption_type:pattern" where exemption_type controls which
-# localhost check applies:
-#   devtcp  — positional check: loopback in /dev/tcp/<host>/ path segment
-#   nc      — positional check: loopback as nc host argument
-#   generic — broad check: loopback anywhere in command (scripting languages)
-#   none    — no localhost exemption (socat, telnet, mkfifo — mixed patterns)
+# ── Rule registration ─────────────────────────────────────────────────────────
+# rule <exemption> <pattern> <message>
+#   exemption: devtcp | nc | generic | none
+#   pattern:   PCRE matched case-insensitively with dot-matches-newline
+#   message:   human-readable block reason passed to block()
 
-reverse_shell_entries=(
-  # bash -i redirected to /dev/tcp or /dev/udp
-  'devtcp:bash\s+-i\b.*/dev/(tcp|udp)/'
-  # Direct /dev/tcp or /dev/udp socket usage (e.g. exec 5<>/dev/tcp/host/port)
-  'devtcp:/dev/(tcp|udp)/[^/\s]+/[0-9]+'
-  # netcat / ncat with -e (exec) or -c (command)
-  'nc:\b(nc|ncat)\b[^;|&\n]*\s-(e|c)\s'
-  # Named pipe (mkfifo) piped through nc — bidirectional shell over netcat
-  'nc:\bmkfifo\b[^;|&\n]*\|\s*.*\bnc\s'
-  # socat forwarding to an interactive shell
-  'generic:\bsocat\b[^;|&\n]*(exec:|system:)[^;|&\n]*(sh|bash|zsh)'
-  # telnet piped to a shell
-  'generic:\btelnet\s+\S+\s+[0-9]+\s*\|.*\b(sh|bash)\b'
-  # Scripting language one-liner reverse shells
-  'generic:\bpython[0-9.]?\b[^;|&\n]*socket[^;|&\n]*(exec|connect)'
-  'generic:\bperl\b[^;|&\n]*-e[^;|&\n]*socket'
-  'generic:\bruby\b[^;|&\n]*-e[^;|&\n]*TCPSocket'
-  'generic:\bphp\b[^;|&\n]*-r[^;|&\n]*fsockopen'
-)
+rules=()
 
-for entry in "${reverse_shell_entries[@]}"; do
-  exemption="${entry%%:*}"
-  pattern="${entry#*:}"
+rule() { rules+=("$1" "$2" "$3"); }
+
+# ── Message variables ─────────────────────────────────────────────────────────
+
+_MSG_REVERSE_SHELL="Blocked: reverse shell pattern detected.
+This command opens a network connection back to a remote host and executes an interactive shell, giving the remote host full command-line control over this system."
+
+_MSG_PIPE_TO_SHELL="Blocked: download-and-execute pipeline detected.
+This command downloads a script from the internet and immediately executes it, bypassing any opportunity to inspect what the script will do before it runs."
+
+_MSG_OBFUSCATED="Blocked: obfuscated execution detected.
+This command decodes hidden content at runtime and executes it as a shell script, making the actual payload invisible to static code review."
+
+_MSG_CLIPBOARD="Blocked: clipboard read detected.
+This command reads the system clipboard, which may contain passwords, tokens, or other sensitive data the user recently copied."
+
+_MSG_FORK_BOMB="Blocked: fork bomb detected.
+This command defines a function that recursively spawns processes until system memory is exhausted, causing a system crash."
+
+_MSG_CRON="Blocked: cron injection detected.
+This command installs or modifies cron jobs, which can establish persistent backdoors that survive reboots and run arbitrary code on a schedule."
+
+_MSG_SSH_KEY="Blocked: SSH key manipulation detected.
+This command modifies SSH keys or authorized_keys, which could grant persistent unauthorized access to this system or to remote systems."
+
+_MSG_PRIVILEGE="Blocked: privilege escalation detected.
+This command elevates to root or another user's privileges.
+Claude Code should operate within the current user's permissions.
+Delegate these commands to the user to run manually if they are necessary for the task."
+
+_MSG_MACOS="Blocked: macOS system interaction detected.
+This command launches applications, runs AppleScript, or modifies system preferences, which can have side effects outside the development environment."
+
+# ── Reverse shells ────────────────────────────────────────────────────────────
+# bash -i redirected to /dev/tcp or /dev/udp
+rule devtcp  'bash\s+-i\b.*/dev/(tcp|udp)/'                                    "${_MSG_REVERSE_SHELL}"
+# Direct /dev/tcp or /dev/udp socket usage (e.g. exec 5<>/dev/tcp/host/port)
+rule devtcp  '/dev/(tcp|udp)/[^/\s]+/[0-9]+'                                   "${_MSG_REVERSE_SHELL}"
+# netcat / ncat with -e (exec) or -c (command)
+rule nc      '\b(nc|ncat)\b[^;|&\n]*\s-(e|c)\s'                                "${_MSG_REVERSE_SHELL}"
+# Named pipe (mkfifo) piped through nc — bidirectional shell over netcat
+rule nc      '\bmkfifo\b[^;|&\n]*\|\s*.*\bnc\s'                                "${_MSG_REVERSE_SHELL}"
+# socat forwarding to an interactive shell
+rule generic '\bsocat\b[^;|&\n]*(exec:|system:)[^;|&\n]*(sh|bash|zsh)'         "${_MSG_REVERSE_SHELL}"
+# telnet piped to a shell
+rule generic '\btelnet\s+\S+\s+[0-9]+\s*\|.*\b(sh|bash)\b'                    "${_MSG_REVERSE_SHELL}"
+# Scripting language one-liner reverse shells
+rule generic '\bpython[0-9.]?\b[^;|&\n]*socket[^;|&\n]*(exec|connect)'         "${_MSG_REVERSE_SHELL}"
+rule generic '\bperl\b[^;|&\n]*-e[^;|&\n]*socket'                              "${_MSG_REVERSE_SHELL}"
+rule generic '\bruby\b[^;|&\n]*-e[^;|&\n]*TCPSocket'                           "${_MSG_REVERSE_SHELL}"
+rule generic '\bphp\b[^;|&\n]*-r[^;|&\n]*fsockopen'                            "${_MSG_REVERSE_SHELL}"
+
+# ── Pipe-to-shell ─────────────────────────────────────────────────────────────
+rule none '(curl|wget|fetch)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?|ruby)\b'      "${_MSG_PIPE_TO_SHELL}"
+
+# ── Obfuscated execution ──────────────────────────────────────────────────────
+# base64 decode piped directly to a shell
+rule none 'base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?)'        "${_MSG_OBFUSCATED}"
+# pipeline that decodes base64 before passing to a shell
+rule none '\|\s*base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh)'                 "${_MSG_OBFUSCATED}"
+# eval of a command substitution (classic arbitrary-code injection)
+rule none '\beval\s*\$\('                                                        "${_MSG_OBFUSCATED}"
+rule none '\beval\s*`'                                                           "${_MSG_OBFUSCATED}"
+# hex decode piped to a shell
+rule none 'xxd\s+-r\b[^|]*\|\s*(ba?sh|zsh)'                                    "${_MSG_OBFUSCATED}"
+
+# ── Clipboard reads ───────────────────────────────────────────────────────────
+rule none '\bpbpaste\b'                                                          "${_MSG_CLIPBOARD}"
+rule none '\bxclip\b[^;|&\n]*(--output|-o)\b'                                  "${_MSG_CLIPBOARD}"
+rule none '\bxsel\b[^;|&\n]*(--output|-o)\b'                                   "${_MSG_CLIPBOARD}"
+rule none '\bwl-paste\b'                                                         "${_MSG_CLIPBOARD}"
+rule none '\bGet-Clipboard\b'                                                    "${_MSG_CLIPBOARD}"
+
+# ── Fork bomb ─────────────────────────────────────────────────────────────────
+# Canonical bash fork bomb: :(){ :|:& };:
+rule none ':\s*\(\s*\)\s*\{[^}]*:\s*\|[^}]*:\s*&[^}]*\}'                      "${_MSG_FORK_BOMB}"
+
+# ── Cron injection ────────────────────────────────────────────────────────────
+rule none '\|\s*crontab\b'                                                       "${_MSG_CRON}"
+rule none '\bcrontab\s+-\s*$'                                                    "${_MSG_CRON}"
+rule none '\bcrontab\s+[^-\s]'                                                   "${_MSG_CRON}"
+
+# ── SSH key manipulation ──────────────────────────────────────────────────────
+rule none '>>\s*~?/?\S*\.ssh/authorized_keys'                                   "${_MSG_SSH_KEY}"
+rule none '>\s*~?/?\S*\.ssh/authorized_keys'                                    "${_MSG_SSH_KEY}"
+rule none '\bcp\b[^;|&\n]*\.ssh/(?:id_|authorized_keys)'                        "${_MSG_SSH_KEY}"
+
+# ── Privilege escalation ──────────────────────────────────────────────────────
+rule none '(?:^|[;\n|&]\s*)sudo\b'                                              "${_MSG_PRIVILEGE}"
+rule none '(?:^|[;\n|&]\s*)su\b'                                                "${_MSG_PRIVILEGE}"
+
+# ── macOS system interaction ──────────────────────────────────────────────────
+rule none '\bosascript\b'                                                        "${_MSG_MACOS}"
+rule none '\bdefaults\s+write\b'                                                 "${_MSG_MACOS}"
+
+# ── Evaluation loop ───────────────────────────────────────────────────────────
+
+for (( i = 0; i < ${#rules[@]}; i += 3 )); do
+  exemption="${rules[i]}"
+  pattern="${rules[i+1]}"
+  message="${rules[i+2]}"
+
   if matches_pattern "${pattern}" <<< "${command_text}"; then
-    # Exempt loopback targets (local development tooling is permitted).
-    # Apply the exemption check appropriate to the pattern family to prevent
-    # bypass via appended text like "; echo localhost".
     case "${exemption}" in
       devtcp)
         matches_pattern "${LOCAL_DEVTCP_RE}" <<< "${command_text}" && continue
@@ -103,145 +176,13 @@ for entry in "${reverse_shell_entries[@]}"; do
       generic)
         matches_pattern "${LOCAL_GENERIC_RE}" <<< "${command_text}" && continue
         ;;
+      none) ;;  # no exemption — fall through to block()
+      *)
+        printf 'block-dangerous-bash.sh: unknown exemption type "%s"\n' "${exemption}" >&2
+        exit 2
+        ;;
     esac
-    block "Blocked: reverse shell pattern detected.
-This command opens a network connection back to a remote host and executes an interactive shell, giving the remote host full command-line control over this system."
-  fi
-done
-
-# ── Pipe-to-shell ──────────────────────────────────────────────────────────────
-# Download-and-execute pipelines that run remote code without prior inspection.
-
-pipe_to_shell_patterns=(
-  '(curl|wget|fetch)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?|ruby)\b'
-)
-
-for pattern in "${pipe_to_shell_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: download-and-execute pipeline detected.
-This command downloads a script from the internet and immediately executes it, bypassing any opportunity to inspect what the script will do before it runs."
-  fi
-done
-
-# ── Obfuscated execution ───────────────────────────────────────────────────────
-# Commands that decode hidden content at runtime and execute it as code.
-
-obfuscated_patterns=(
-  # base64 decode piped directly to a shell
-  'base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?)'
-  # pipeline that decodes base64 before passing to a shell
-  '\|\s*base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh)'
-  # eval of a command substitution (classic arbitrary-code injection)
-  '\beval\s*\$\('
-  '\beval\s*`'
-  # hex decode piped to a shell
-  'xxd\s+-r\b[^|]*\|\s*(ba?sh|zsh)'
-)
-
-for pattern in "${obfuscated_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: obfuscated execution detected.
-This command decodes hidden content at runtime and executes it as a shell script, making the actual payload invisible to static code review."
-  fi
-done
-
-# ── Clipboard reads ────────────────────────────────────────────────────────────
-# Commands that read the system clipboard, which may contain passwords or tokens.
-
-clipboard_patterns=(
-  '\bpbpaste\b'                           # macOS
-  '\bxclip\b[^;|&\n]*(--output|-o)\b'    # Linux X11 (xclip)
-  '\bxsel\b[^;|&\n]*(--output|-o)\b'     # Linux X11 (xsel)
-  '\bwl-paste\b'                          # Linux Wayland
-  '\bGet-Clipboard\b'                     # PowerShell
-)
-
-for pattern in "${clipboard_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: clipboard read detected.
-This command reads the system clipboard, which may contain passwords, tokens, or other sensitive data the user recently copied."
-  fi
-done
-
-# ── Fork bomb ─────────────────────────────────────────────────────────────────
-# Recursive process-spawning that exhausts system memory.
-
-fork_bomb_patterns=(
-  # Canonical bash fork bomb: :(){ :|:& };:
-  ':\s*\(\s*\)\s*\{[^}]*:\s*\|[^}]*:\s*&[^}]*\}'
-)
-
-for pattern in "${fork_bomb_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: fork bomb detected.
-This command defines a function that recursively spawns processes until system memory is exhausted, causing a system crash."
-  fi
-done
-
-# ── Cron injection ────────────────────────────────────────────────────────────
-# Commands that install persistent cron jobs (potential backdoor persistence).
-
-cron_injection_patterns=(
-  '\|\s*crontab\b'
-  '\bcrontab\s+-\s*$'
-  '\bcrontab\s+[^-\s]'
-)
-
-for pattern in "${cron_injection_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: cron injection detected.
-This command installs or modifies cron jobs, which can establish persistent backdoors that survive reboots and run arbitrary code on a schedule."
-  fi
-done
-
-# ── SSH key manipulation ─────────────────────────────────────────────────────
-# Commands that inject SSH keys (potential unauthorized access persistence).
-
-ssh_key_patterns=(
-  # Appending to authorized_keys
-  '>>\s*~?/?\S*\.ssh/authorized_keys'
-  # Writing to authorized_keys
-  '>\s*~?/?\S*\.ssh/authorized_keys'
-  # Copying an SSH key file into .ssh
-  '\bcp\b[^;|&\n]*\.ssh/(?:id_|authorized_keys)'
-)
-
-for pattern in "${ssh_key_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: SSH key manipulation detected.
-This command modifies SSH keys or authorized_keys, which could grant persistent unauthorized access to this system or to remote systems."
-  fi
-done
-
-# ── Privilege escalation ──────────────────────────────────────────────────────
-# Commands that elevate privileges beyond the current user.
-
-privilege_patterns=(
-  '(?:^|[;\n|&]\s*)sudo\b'
-  '(?:^|[;\n|&]\s*)su\b'
-)
-
-for pattern in "${privilege_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: privilege escalation detected.
-This command elevates to root or another user's privileges.
-Claude Code should operate within the current user's permissions.
-Delegate these commands to the user to run manually if they are necessary for the task."
-  fi
-done
-
-# ── macOS system interaction ─────────────────────────────────────────────────
-# Commands that launch applications or modify system configuration.
-
-macos_patterns=(
-  '\bosascript\b'                 # Execute arbitrary AppleScript
-  '\bdefaults\s+write\b'         # Modify macOS system/app preferences
-)
-
-for pattern in "${macos_patterns[@]}"; do
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
-    block "Blocked: macOS system interaction detected.
-This command launches applications, runs AppleScript, or modifies system preferences, which can have side effects outside the development environment."
+    block "${message}"
   fi
 done
 

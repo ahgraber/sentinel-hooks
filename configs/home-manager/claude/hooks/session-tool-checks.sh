@@ -12,40 +12,64 @@
 
 set -uo pipefail
 
-# ── Required tools (block session if missing) ────────────────────────────────
+# ── Tool registration ─────────────────────────────────────────────────────────
+# require_tool   <name> <install_hint>  — exits 2 if tool is missing
+# recommend_tool <name> <install_hint>  — warns if missing, session proceeds
 
-if ! command -v uv >/dev/null 2>&1; then
-  printf '⚠️  uv is not installed or not in PATH.\n\n' >&2
-  printf '  Install: curl -LsSf https://astral.sh/uv/install.sh | sh\n' >&2
-  printf '  Or via Homebrew: brew install uv\n\n' >&2
-  printf '  uv is required for Python-based security hooks.\n' >&2
-  exit 2
-fi
+required_tools=()
+recommended_tools=()
 
-if ! command -v jq >/dev/null 2>&1; then
-  printf '⚠️  jq is not installed or not in PATH.\n\n' >&2
-  printf '  Install: brew install jq\n' >&2
-  printf '  More options: https://jqlang.github.io/jq/download/\n\n' >&2
-  printf '  jq is required by bash-based hooks for JSON input parsing.\n' >&2
-  exit 2
-fi
+require_tool()   { required_tools+=("$1" "$2"); }
+recommend_tool() { recommended_tools+=("$1" "$2"); }
 
-if ! command -v perl >/dev/null 2>&1; then
-  printf '⚠️  perl is not installed or not in PATH.\n\n' >&2
-  printf '  Install: pre-installed on macOS; on Linux use your package manager\n' >&2
-  printf '  (apt install perl, dnf install perl)\n\n' >&2
-  printf '  perl is required by block-dangerous-bash.sh for PCRE pattern matching.\n' >&2
-  exit 2
-fi
+# ── Required tools ────────────────────────────────────────────────────────────
 
-# ── Recommended tools (warn if missing, don't block) ─────────────────────────
+require_tool uv \
+  "Install: curl -LsSf https://astral.sh/uv/install.sh | sh
+  Or via Homebrew: brew install uv
 
-if ! command -v gitleaks >/dev/null 2>&1; then
-  printf '⚠️  gitleaks is not installed or not in PATH.\n\n' >&2
-  printf '  Install: brew install gitleaks\n' >&2
-  printf '  More options: https://github.com/gitleaks/gitleaks#installing\n\n' >&2
-  printf '  Secret detection will fall back to built-in patterns with reduced coverage.\n' >&2
-  # exit 0: gitleaks is recommended, not required — built-in fallback exists
-fi
+  uv is required for Python-based security hooks."
+
+require_tool jq \
+  "Install: brew install jq
+  More options: https://jqlang.github.io/jq/download/
+
+  jq is required by bash-based hooks for JSON input parsing."
+
+require_tool perl \
+  "Install: pre-installed on macOS; on Linux use your package manager
+  (apt install perl, dnf install perl)
+
+  perl is required by block-dangerous-bash.sh for PCRE pattern matching."
+
+# ── Recommended tools ─────────────────────────────────────────────────────────
+
+recommend_tool gitleaks \
+  "Install: brew install gitleaks
+  More options: https://github.com/gitleaks/gitleaks#installing
+
+  Secret detection will fall back to built-in patterns with reduced coverage."
+
+# ── Evaluation ────────────────────────────────────────────────────────────────
+
+for (( i = 0; i < ${#required_tools[@]}; i += 2 )); do
+  name="${required_tools[i]}"
+  hint="${required_tools[i+1]}"
+  if ! command -v "${name}" >/dev/null 2>&1; then
+    printf '⚠️  %s is not installed or not in PATH.\n\n' "${name}" >&2
+    printf '  %s\n' "${hint}" >&2
+    exit 2
+  fi
+done
+
+for (( i = 0; i < ${#recommended_tools[@]}; i += 2 )); do
+  name="${recommended_tools[i]}"
+  hint="${recommended_tools[i+1]}"
+  if ! command -v "${name}" >/dev/null 2>&1; then
+    printf '⚠️  %s is not installed or not in PATH.\n\n' "${name}" >&2
+    printf '  %s\n' "${hint}" >&2
+    # exit 0: recommended tools are not required — session proceeds
+  fi
+done
 
 exit 0

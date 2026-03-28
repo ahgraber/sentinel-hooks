@@ -64,23 +64,34 @@ if [[ -z "${command_text}" ]]; then
   exit 0
 fi
 
-patterns=(
-  '^grep\b(?!.*\|)'
-  '^find\s+\S+\s+-name\b'
-  "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(python|python3)\\s"
-  '(?<!\w)pip\s+(install|uninstall|download)\b'
-  '(?<!\w)pip3\s+(install|uninstall|download)\b'
-  '\bpre-commit\s+run\b'
-)
+patterns=()
+messages=()
 
-messages=(
+rule() {
+  patterns+=("$1")
+  messages+=("$2")
+}
+
+rule '^grep\b(?!.*\|)' \
   "Use 'rg' (ripgrep) instead of 'grep' for better performance and features"
+
+rule '^find\s+\S+\s+-name\b' \
   "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
+
+rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(python|python3)\\s" \
   "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'"
+
+rule '(?<!\w)pip\s+(install|uninstall|download)\b' \
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
+
+rule '(?<!\w)pip3\s+(install|uninstall|download)\b' \
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip3. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
+
+rule '\bpre-commit\s+run\b' \
   "Use 'prek run' instead of 'pre-commit run' — prek is the sandbox-compatible wrapper available in PATH"
-)
+
+rule '\bgit\s+commit\b(?!.*(?:-[A-Za-z]*S[A-Za-z]*\b|--gpg-sign\b))' \
+  "Git commits must be signed. Use 'git commit -S'"
 
 issues=()
 
