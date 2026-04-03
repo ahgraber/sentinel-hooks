@@ -87,6 +87,9 @@ rule '(?<!\w)pip\s+(install|uninstall|download)\b' \
 rule '(?<!\w)pip3\s+(install|uninstall|download)\b' \
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip3. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
 
+rule '(?<!\w)(?<!uv run )py(?:test|\.test)\b' \
+  "Use 'uv run pytest' instead of invoking pytest/py.test directly"
+
 rule '\bpre-commit\s+run\b' \
   "Use 'prek run' instead of 'pre-commit run' — prek is the sandbox-compatible wrapper available in PATH"
 
