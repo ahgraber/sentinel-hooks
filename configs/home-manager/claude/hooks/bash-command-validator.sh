@@ -78,7 +78,7 @@ rule '^grep\b(?!.*\|)' \
 rule '^find\s+\S+\s+-name\b' \
   "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
 
-rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(python|python3)\\s" \
+rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(?:[./][\\w./]*/)?(?:python|python3)(?:[0-9.]+)?\\s" \
   "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'"
 
 rule '(?<!\w)pip\s+(install|uninstall|download)\b' \
