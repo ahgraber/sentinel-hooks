@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
+"""Hook: Re-inject skills catalog after context compaction.
+
+Enumerates available SKILL.md files from known locations, extracts
+name + description from YAML frontmatter, and outputs a compact
+catalog as additionalContext.
+
+Intended for SessionStart with matcher:compact — the platform injects
+the catalog at initial startup but compaction compresses it away.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+# PyYAML may not be installed; fall back to a minimal extractor.
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+
+def extract_frontmatter_raw(text: str) -> str | None:
+    """Return the raw YAML frontmatter string between --- fences."""
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None
+    return text[4:end]
+
+
+def parse_frontmatter(text: str) -> dict:
+    """Parse YAML frontmatter from a SKILL.md file."""
+    raw = extract_frontmatter_raw(text)
+    if raw is None:
+        return {}
+    if yaml is not None:
+        try:
+            data = yaml.safe_load(raw)
+            return data if isinstance(data, dict) else {}
+        except yaml.YAMLError:
+            return {}
+    # Minimal fallback: handle simple key: value pairs only.
+    result = {}
+    for line in raw.splitlines():
+        if ":" in line and not line.startswith(" "):
+            key, _, val = line.partition(":")
+            val = val.strip().strip("\"'")
+            if val and val not in ("|-", ">-", "|", ">"):
+                result[key.strip()] = val
+    return result
+
+
+def _user_skill_dirs() -> list[Path]:
+    """Return directories containing user-level SKILL.md files."""
+    home = Path.home()
+    dirs = [home / ".claude" / "skills"]
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if project_dir:
+        p = Path(project_dir) / ".claude" / "skills"
+        if p.is_dir():
+            dirs.append(p)
+    return dirs
+
+
+def _plugin_cache_dir() -> Path:
+    """Return the plugin cache directory."""
+    return Path.home() / ".claude" / "plugins" / "cache"
+
+
+# Top-level dirs under plugins/cache to skip entirely.
+# Official plugin skills are managed via user symlinks; temp dirs are stale.
+_SKIP_PLUGIN_PREFIXES = ("claude-plugins-official", "temp_git_")
+
+
+def _read_skill(skill_file: Path) -> tuple[str, str] | None:
+    """Read a SKILL.md and return (name, description) or None."""
+    try:
+        text = skill_file.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    meta = parse_frontmatter(text)
+    name = meta.get("name", "")
+    if not name:
+        return None
+    desc = meta.get("description", "")
+    desc = " ".join(desc.split())
+    if len(desc) > 250:
+        desc = desc[:249] + "\u2026"
+    return (name, desc)
+
+
+def _collect_user_skills() -> list[tuple[str, str]]:
+    """Collect skills from user-level skill directories.
+
+    Each child directory (or symlink-to-directory) is checked for a
+    SKILL.md file.  This avoids reliance on ``rglob`` following symlinks,
+    which changed in Python 3.13.
+    """
+    seen: set[str] = set()
+    skills: list[tuple[str, str]] = []
+    for d in _user_skill_dirs():
+        if not d.is_dir():
+            continue
+        for child in sorted(d.iterdir()):
+            # Resolve symlinks so we can check is_dir on the target.
+            if not child.is_dir() and not (
+                child.is_symlink() and child.resolve().is_dir()
+            ):
+                continue
+            skill_file = child / "SKILL.md"
+            if not skill_file.exists():
+                continue
+            result = _read_skill(skill_file)
+            if result is None:
+                continue
+            name, desc = result
+            if name in seen:
+                continue
+            seen.add(name)
+            skills.append((name, desc))
+    return skills
+
+
+def _collect_plugin_skills(exclude: set[str]) -> list[tuple[str, str]]:
+    """Collect skills from the plugin cache, namespaced as ``plugin:skill``.
+
+    Skips official/temp directories and any skill name already in *exclude*.
+    """
+    cache = _plugin_cache_dir()
+    if not cache.is_dir():
+        return []
+
+    seen: set[str] = set()
+    skills: list[tuple[str, str]] = []
+
+    for plugin_dir in sorted(cache.iterdir()):
+        if not plugin_dir.is_dir():
+            continue
+        if any(plugin_dir.name.startswith(p) for p in _SKIP_PLUGIN_PREFIXES):
+            continue
+        namespace = plugin_dir.name
+        # Walk the plugin tree to find all SKILL.md files.
+        for root, _dirs, files in os.walk(plugin_dir, followlinks=True):
+            if "SKILL.md" not in files:
+                continue
+            result = _read_skill(Path(root) / "SKILL.md")
+            if result is None:
+                continue
+            raw_name, desc = result
+            qualified = f"{namespace}:{raw_name}"
+            if qualified in seen or raw_name in exclude:
+                continue
+            seen.add(qualified)
+            skills.append((qualified, desc))
+
+    return skills
+
+
+def collect_skills() -> list[tuple[str, str]]:
+    """Return deduplicated (name, description) pairs."""
+    user_skills = _collect_user_skills()
+    user_names = {name for name, _ in user_skills}
+    plugin_skills = _collect_plugin_skills(exclude=user_names)
+    return user_skills + plugin_skills
+
+
+def main() -> None:
+    skills = collect_skills()
+    if not skills:
+        sys.exit(0)
+
+    lines = []
+    for name, desc in skills:
+        if desc:
+            lines.append(f"- {name}: {desc}")
+        else:
+            lines.append(f"- {name}")
+
+    content = "## Available Skills\n\n" + "\n".join(lines) + "\n"
+
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": content,
+        }
+    }
+    json.dump(output, sys.stdout, indent=2)
+    print()
+
+
+if __name__ == "__main__":
+    main()
