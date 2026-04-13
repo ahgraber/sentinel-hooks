@@ -18,10 +18,22 @@ mapfile -t files < <(
 
 ((${#files[@]})) || exit 0
 
+root_abs="$(cd "${root}" && pwd -P)"
+filtered=()
+for f in "${files[@]}"; do
+  dir="$(dirname "${f}")"
+  [[ -d "${dir}" ]] || continue
+  abs_dir="$(cd "${dir}" && pwd -P)"
+  abs="${abs_dir}/$(basename "${f}")"
+  [[ "${abs}" == "${root_abs}"/* ]] && filtered+=("${f}")
+done
+
+((${#filtered[@]})) || exit 0
+
 if command -v prek >/dev/null 2>&1; then
-  prek run --files "${files[@]}"
+  prek run --files "${filtered[@]}"
 elif command -v pre-commit >/dev/null 2>&1; then
-  pre-commit run --files "${files[@]}"
+  pre-commit run --files "${filtered[@]}"
 else
   exit 0
 fi
