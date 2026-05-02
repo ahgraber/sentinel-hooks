@@ -93,8 +93,8 @@ rule '(?<!\w)(?<!uv run )py(?:test|\.test)\b' \
 rule '\bpre-commit\s+run\b' \
   "Use 'prek run' instead of 'pre-commit run' — prek is the sandbox-compatible wrapper available in PATH"
 
-rule '\bgit\s+commit\b(?!.*(?:-[A-Za-z]*S[A-Za-z]*\b|--gpg-sign\b))' \
-  "Git commits must be signed. Use 'git commit -S'"
+rule '\bgit\s+commit\b' \
+  "Use 'git agent-commit' instead of 'git commit' — the alias signs with the dedicated agent key"
 
 issues=()
 

@@ -99,25 +99,22 @@ The system SHALL redirect `pre-commit run` invocations to `prek run`.
 - **WHEN** the hook evaluates the command
 - **THEN** the hook exits 2 with a message directing the AI to use `prek run` instead
 
-## Requirement: RequireSignedCommits
+## Requirement: RequireAgentCommitAlias
 
-The system SHALL block `git commit` invocations that do not include a signing flag.
+The system SHALL block all `git commit` invocations and require use of the `git agent-commit` alias.
 
-A signing flag is one of:
+`git agent-commit` is the designated alias for AI agents; it signs with the dedicated agent key
+(`~/.ssh/id_ed25519_agent_signing`) without requiring additional flags.
 
-- `-S` (standalone or combined with other short flags, e.g. `-aS`, `-Sa`)
-- `--gpg-sign`
+### Scenario: DirectGitCommitBlocked
 
-### Scenario: UnsignedCommitBlocked
-
-- **GIVEN** a Bash tool call contains `git commit` without a signing flag
+- **GIVEN** a Bash tool call contains `git commit` in any form (with or without flags)
 - **WHEN** the hook evaluates the command
-- **THEN** the hook exits 2 with a message directing the AI to use `git commit -S`
+- **THEN** the hook exits 2 with a message directing the AI to use `git agent-commit`
 
-### Scenario: SignedCommitAllowed
+### Scenario: AgentCommitAliasAllowed
 
-- **GIVEN** a Bash tool call contains `git commit -S` or `git commit --gpg-sign`
-  or a combined flag such as `-aS`
+- **GIVEN** a Bash tool call invokes `git agent-commit`
 - **WHEN** the hook evaluates the command
 - **THEN** the hook exits 0
 
