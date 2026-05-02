@@ -72,7 +72,7 @@ rule() {
   messages+=("$2")
 }
 
-rule '^grep\b(?!.*\|)' \
+rule '(?:^|[;|&(])\s*grep\b' \
   "Use 'rg' (ripgrep) instead of 'grep' for better performance and features"
 
 rule '^find\s+\S+\s+-name\b' \
@@ -81,13 +81,13 @@ rule '^find\s+\S+\s+-name\b' \
 rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(?:[./][\\w./]*/)?(?:python|python3)(?:[0-9.]+)?\\s" \
   "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'"
 
-rule '(?<!\w)pip\s+(install|uninstall|download)\b' \
+rule '(?<!\w)(?<!uv )pip\s+(install|uninstall|download)\b' \
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
 
 rule '(?<!\w)pip3\s+(install|uninstall|download)\b' \
   "Use 'uv add' or 'uv run --with <pkg>' instead of pip3. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
 
-rule '(?<!\w)(?<!uv run )py(?:test|\.test)\b' \
+rule '^(?!.*\buv\s+run\b).*\bpy(?:test|\.test)\b' \
   "Use 'uv run pytest' instead of invoking pytest/py.test directly"
 
 rule '\bpre-commit\s+run\b' \
