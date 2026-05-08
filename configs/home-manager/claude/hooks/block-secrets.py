@@ -140,13 +140,18 @@ CREDENTIAL_FILE_RE = re.compile(
 # Name-based patterns don't apply inside these directories, where words like
 # 'secret' or 'credentials' are valid file/module names.
 EXEMPT_DIR_RE = re.compile(
-    r"(?:^|[/\\])(?:\.venv|venv|env|site-packages|node_modules|\.claude|claude[/\\]hooks)(?:[/\\]|$)",
+    r"(?:^|[/\\])(?:\.venv|venv|env|site-packages|node_modules|\.claude|(?:claude|codex)[/\\](?:hooks|tests))(?:[/\\]|$)",
     re.IGNORECASE,
 )
 
 # ── Credential directory prefixes (ask mode) ────────────────────────────────
 # Files within well-known credential directories trigger ask regardless of name.
 CREDENTIAL_DIR_PREFIXES = ["~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/"]
+
+# ── apply_patch path extraction ───────────────────────────────────────────────
+PATCH_PATH_RE = re.compile(
+    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$", re.MULTILINE
+)
 
 
 # ── Gitleaks integration ───────────────────────────────────────────────────────

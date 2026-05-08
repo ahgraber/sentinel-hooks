@@ -32,7 +32,7 @@ _EXPOSURE_RISK = (
 #   - Package/dependency dirs: .venv, site-packages, node_modules
 #   - Tool config dirs: ~/.claude, claude/hooks (hooks like 'block-secrets.py')
 EXEMPT_DIR_RE = re.compile(
-    r"(?:^|[/\\])(?:\.venv|venv|env|site-packages|node_modules|\.claude|claude[/\\]hooks)(?:[/\\]|$)",
+    r"(?:^|[/\\])(?:\.venv|venv|env|site-packages|node_modules|\.claude|(?:claude|codex)[/\\](?:hooks|tests))(?:[/\\]|$)",
     re.IGNORECASE,
 )
 

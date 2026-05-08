@@ -8,7 +8,6 @@ and tiered detection (built-in patterns + gitleaks for network context).
 import json
 import os
 
-
 from conftest import (
     assert_allowed,
     assert_ask,
@@ -301,6 +300,37 @@ class TestFilePathExemptions:
         )
         assert_allowed(result)
 
+    def test_secret_in_claude_tests_allowed(self):
+        """claude/tests directory is exempt — symmetric with claude/hooks for hook test files."""
+        result = run_hook(
+            HOOK,
+            "Read",
+            {
+                "file_path": "/repo/configs/home-manager/claude/tests/test_block_secrets.py"
+            },
+        )
+        assert_allowed(result)
+
+    def test_secret_in_codex_hooks_allowed(self):
+        """codex/hooks directory is exempt for name patterns."""
+        result = run_hook(
+            HOOK,
+            "Read",
+            {"file_path": "/repo/configs/home-manager/codex/hooks/block-secrets.py"},
+        )
+        assert_allowed(result)
+
+    def test_secret_in_codex_tests_allowed(self):
+        """codex/tests directory is exempt — symmetric with codex/hooks for hook test files."""
+        result = run_hook(
+            HOOK,
+            "Read",
+            {
+                "file_path": "/repo/configs/home-manager/codex/tests/test_codex_block_secrets.py"
+            },
+        )
+        assert_allowed(result)
+
     def test_normal_file_allowed(self):
         result = run_hook(HOOK, "Read", {"file_path": "/project/src/main.py"})
         assert_allowed(result)
@@ -418,6 +448,20 @@ class TestDirectoryPrefixBoundary:
     def test_aws_cli_dir_not_matched(self):
         result = run_hook(HOOK, "Read", {"file_path": f"{HOME}/.aws-cli/config"})
         assert_allowed(result)
+
+    def test_claude_dash_tests_not_matched(self):
+        """claude-tests (with hyphen) must NOT satisfy the claude/tests exemption."""
+        result = run_hook(
+            HOOK, "Read", {"file_path": "/project/claude-tests/credentials.json"}
+        )
+        assert_explanation_contract(result)
+
+    def test_codex_tests_extra_not_matched(self):
+        """codex/tests-extra must NOT satisfy the codex/tests exemption (segment boundary)."""
+        result = run_hook(
+            HOOK, "Read", {"file_path": "/project/codex/tests-extra/secret.json"}
+        )
+        assert_explanation_contract(result)
 
 
 class TestErrorHandling:

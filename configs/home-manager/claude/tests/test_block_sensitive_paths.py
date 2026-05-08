@@ -7,7 +7,6 @@ Terraform state, and name-based patterns with package-dir exemption.
 
 import os
 
-
 from conftest import assert_allowed, assert_block_contract, assert_blocked, run_hook
 
 HOOK = "block-sensitive-paths.py"
@@ -240,6 +239,22 @@ class TestPackageDirExemption:
         """claude/hooks directory is exempt for name patterns."""
         assert_allowed(write("/Users/me/.claude/hooks/block-secrets.py"))
 
+    def test_credentials_in_claude_tests_allowed(self):
+        """claude/tests directory is exempt — symmetric with claude/hooks for hook test files."""
+        assert_allowed(
+            write("/repo/configs/home-manager/claude/tests/test_block_secrets.py")
+        )
+
+    def test_credentials_in_codex_hooks_allowed(self):
+        """codex/hooks directory is exempt for name patterns."""
+        assert_allowed(write("/repo/configs/home-manager/codex/hooks/block-secrets.py"))
+
+    def test_credentials_in_codex_tests_allowed(self):
+        """codex/tests directory is exempt — symmetric with codex/hooks for hook test files."""
+        assert_allowed(
+            write("/repo/configs/home-manager/codex/tests/test_codex_block_secrets.py")
+        )
+
     def test_pem_in_venv_still_blocked(self):
         """Extension-based patterns are NOT exempt — .pem is always blocked."""
         assert_blocked(write("/project/.venv/cert.pem"), "zero-access")
@@ -318,6 +333,14 @@ class TestDirectoryPrefixBoundary:
     def test_aws_cli_dir_not_matched(self):
         """~/.aws-cli/ should NOT match the ~/.aws/ prefix."""
         assert_allowed(write(f"{HOME}/.aws-cli/config"))
+
+    def test_claude_dash_tests_not_matched(self):
+        """claude-tests (with hyphen) must NOT satisfy the claude/tests exemption."""
+        assert_blocked(write("/project/claude-tests/credentials.json"), "zero-access")
+
+    def test_codex_tests_extra_not_matched(self):
+        """codex/tests-extra must NOT satisfy the codex/tests exemption (segment boundary)."""
+        assert_blocked(write("/project/codex/tests-extra/secret.json"), "zero-access")
 
 
 # ── Block contract ───────────────────────────────────────────────────────────
