@@ -1,0 +1,1 @@
+../../claude/hooks/block-hook-tampering.py

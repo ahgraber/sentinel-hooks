@@ -1,0 +1,1 @@
+../../claude/hooks/bash-command-validator.sh
