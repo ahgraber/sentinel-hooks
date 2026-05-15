@@ -209,13 +209,12 @@ function bashWriteTargets(command: string): string[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PROTECTED_PATH_FRAGMENTS = [
-  ".pi/agent/extensions/security",
+  ".pi/agent/extensions/sandbox/",
+  ".pi/agent/extensions/sandbox.json",
+  ".pi/agent/extensions/security/",
   ".pi/agent/settings.json",
-  ".claude/hooks/",
-  ".claude/settings.json",
-  ".claude/settings.local.json",
-  "configs/home-manager/claude/hooks/",
-  "home-manager/claude-settings.json",
+  "configs/home-manager/pi/security/",
+  "home-manager/pi/",
 ]
 
 function isProtectedPath(raw: string): boolean {
@@ -489,14 +488,17 @@ export default function (pi: ExtensionAPI) {
 
       // Credential store read (local) → confirm
       if (CRED_STORE_RE.test(cmd)) {
-        if (ctx.isInteractive) {
-          const ok = await ctx.ui.confirm(
-            "Credential store access",
-            `This command reads from a system credential store:\n\n${cmd}\n\nApprove only if intentional.`,
-          )
-          if (!ok) return { block: true, reason: "Credential store access denied by user." }
+        if (!ctx.hasUI) {
+          return {
+            block: true,
+            reason: "Blocked: credential store access requires interactive confirmation.",
+          }
         }
-        // In non-interactive mode, allow but don't block (matches Python hook fail-open for Read)
+        const ok = await ctx.ui.confirm(
+          "Credential store access",
+          `This command reads from a system credential store:\n\n${cmd}\n\nApprove only if intentional.`,
+        )
+        if (!ok) return { block: true, reason: "Credential store access denied by user." }
         return
       }
 
@@ -507,13 +509,17 @@ export default function (pi: ExtensionAPI) {
 
       // Secret in command without network → ask
       if (!networkCtx && builtinHasSecret(cmd)) {
-        if (ctx.isInteractive) {
-          const ok = await ctx.ui.confirm(
-            "Credential pattern detected",
-            `A secret pattern was found in this command:\n\n${cmd}\n\nApprove if intentional (e.g. local auth test).`,
-          )
-          if (!ok) return { block: true, reason: "Command with credential pattern denied by user." }
+        if (!ctx.hasUI) {
+          return {
+            block: true,
+            reason: "Blocked: command with credential pattern requires interactive confirmation.",
+          }
         }
+        const ok = await ctx.ui.confirm(
+          "Credential pattern detected",
+          `A secret pattern was found in this command:\n\n${cmd}\n\nApprove if intentional (e.g. local auth test).`,
+        )
+        if (!ok) return { block: true, reason: "Command with credential pattern denied by user." }
         return
       }
 
@@ -524,12 +530,17 @@ export default function (pi: ExtensionAPI) {
           if (rule.mode === "block") {
             return { block: true, reason: `Blocked: ${explanation}` }
           }
-          if (rule.mode === "ask" && ctx.isInteractive) {
+          if (rule.mode === "ask" && !ctx.hasUI) {
+            return {
+              block: true,
+              reason: `${rule.description} requires interactive confirmation.\n\n${rule.reason ?? ""}`.trim(),
+            }
+          }
+          if (rule.mode === "ask") {
             const ok = await ctx.ui.confirm(rule.description, `${explanation}\n\nCommand:\n${cmd}\n\nProceed?`)
             if (!ok) return { block: true, reason: `${rule.description} — denied by user.` }
             return // approved, allow
           }
-          // Non-interactive ask-mode: allow (matches Python hook fail-open)
           return
         }
       }
@@ -554,26 +565,34 @@ export default function (pi: ExtensionAPI) {
       for (const dir of CRED_DIR_PREFIXES) {
         const prefix = expandPath(dir)
         if (normP.startsWith(prefix + "/") || normP === prefix) {
-          if (ctx.isInteractive) {
-            const ok = await ctx.ui.confirm(
-              "Credential directory access",
-              `This operation targets '${p}' inside a credential directory (${dir}).\nApprove only if intentional.`,
-            )
-            if (!ok) return { block: true, reason: `Access to credential directory '${dir}' denied by user.` }
+          if (!ctx.hasUI) {
+            return {
+              block: true,
+              reason: `Blocked: access to credential directory '${dir}' requires interactive confirmation.`,
+            }
           }
+          const ok = await ctx.ui.confirm(
+            "Credential directory access",
+            `This operation targets '${p}' inside a credential directory (${dir}).\nApprove only if intentional.`,
+          )
+          if (!ok) return { block: true, reason: `Access to credential directory '${dir}' denied by user.` }
           return
         }
       }
 
       // Credential file name patterns → confirm
       if (CRED_FILE_RE.test(p) && !EXEMPT_DIR_RE.test(p)) {
-        if (ctx.isInteractive) {
-          const ok = await ctx.ui.confirm(
-            "Potential credential file",
-            `This operation targets '${p}', whose name suggests it may contain credentials.\nApprove only if intentional.`,
-          )
-          if (!ok) return { block: true, reason: `Access to potential credential file '${p}' denied by user.` }
+        if (!ctx.hasUI) {
+          return {
+            block: true,
+            reason: `Blocked: access to potential credential file '${p}' requires interactive confirmation.`,
+          }
         }
+        const ok = await ctx.ui.confirm(
+          "Potential credential file",
+          `This operation targets '${p}', whose name suggests it may contain credentials.\nApprove only if intentional.`,
+        )
+        if (!ok) return { block: true, reason: `Access to potential credential file '${p}' denied by user.` }
       }
     }
   })
