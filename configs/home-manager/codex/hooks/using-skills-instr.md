@@ -1,1 +1,0 @@
-../../claude/hooks/using-skills-instr.md

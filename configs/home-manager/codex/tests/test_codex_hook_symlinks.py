@@ -13,8 +13,8 @@ SHARED_HOOKS = [
     "posttooluse-precommit.sh",
     "reload-skills-catalog.py",
     "session-tool-checks.sh",
-    "using-skills-instr.md",
-    "using-skills.sh",
+    "instructions",  # dir symlink: shares all session-instruction fragments
+    "session-instructions.sh",
 ]
 
 CODEX_SPECIFIC_HOOKS = [

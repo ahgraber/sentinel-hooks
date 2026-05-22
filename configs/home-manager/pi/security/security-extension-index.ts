@@ -10,7 +10,7 @@
  *   - block-hook-tampering.py      → PROTECTED_PATH_FRAGMENTS
  *   - session-tool-checks.sh       → session_start tool checks
  *   - posttooluse-precommit.sh     → tool_result pre-commit spawn
- *   - using-skills.sh              → context injection (Pi native skills)
+ *   - session-instructions.sh      → injects instructions/*.md context fragments; not ported (Pi surfaces skills natively)
  *   - reload-skills-catalog.py     → Pi surfaces skills natively; no hook needed
  *
  * Dependencies: smol-toml (install via `npm install smol-toml` in this dir)
