@@ -38,8 +38,9 @@ PROTECTED_SUBSTRINGS = (
     ".claude/hooks/",
     ".claude/settings.json",
     ".claude/settings.local.json",
-    "configs/home-manager/claude/hooks/",
-    "home-manager/claude-settings.json",
+    "configs/home-manager/claude/hooks/",  # shared cfg
+    "home-manager/claude/settings.json",  # user cfg
+    "home-manager/claude/settings.user.json",  # user cfg
 )
 
 
