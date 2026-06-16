@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
 # Hook: Inject skill-usage instructions at SessionStart.
 #
-# Reads using-skills-instr.md and outputs it as additionalContext
-# so Claude always has skill-usage guidance in context.
+# Reads instructions/*.md and outputs the combined content as
+# additionalContext so Claude always has startup guidance in context.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONTENT_FILE="${SCRIPT_DIR}/using-skills-instr.md"
+INSTRUCTIONS_DIR="${SCRIPT_DIR}/instructions"
 
-if [[ ! -f "$CONTENT_FILE" ]]; then
-  echo "using-skills: content file not found: ${CONTENT_FILE}" >&2
+if [[ ! -d "$INSTRUCTIONS_DIR" ]]; then
+  echo "session-instructions: instructions directory not found: ${INSTRUCTIONS_DIR}" >&2
   exit 0  # non-fatal — don't block the session
 fi
 
-content=$(<"$CONTENT_FILE")
+shopt -s nullglob
+content_files=("${INSTRUCTIONS_DIR}"/*.md)
+shopt -u nullglob
+
+if [[ ${#content_files[@]} -eq 0 ]]; then
+  echo "session-instructions: no instruction fragments found in: ${INSTRUCTIONS_DIR}" >&2
+  exit 0  # non-fatal — don't block the session
+fi
+
+content=""
+for content_file in "${content_files[@]}"; do
+  fragment=$(<"$content_file")
+  if [[ -n "$content" ]]; then
+    content+=$'\n\n'
+  fi
+  content+="${fragment}"
+done
 
 # Escape for safe JSON string embedding.
 to_json_string_literal() {
