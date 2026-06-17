@@ -22,6 +22,7 @@ Protected surfaces:
 
 import json
 import os
+import shlex
 import sys
 
 # ── Risk explanation ──────────────────────────────────────────────────────────
@@ -59,9 +60,40 @@ def _matches(text: str) -> bool:
     return any(frag in text for frag in PROTECTED_SUBSTRINGS)
 
 
+def _is_allowed_instruction_markdown_path(path: str) -> bool:
+    for candidate in (path, _expand(path), _resolved(path)):
+        normalized = candidate.replace(os.sep, "/")
+        if not normalized.endswith(".md"):
+            continue
+        for base in (
+            ".claude/hooks/instructions/",
+            "configs/home-manager/claude/hooks/instructions/",
+        ):
+            if base not in normalized:
+                continue
+            name = normalized.rsplit(base, 1)[1]
+            if name and "/" not in name:
+                return True
+    return False
+
+
+def _matches_only_allowed_instruction_markdown(text: str) -> bool:
+    try:
+        tokens = shlex.split(text)
+    except ValueError:
+        return False
+
+    protected_tokens = [token for token in tokens if _matches(token)]
+    return bool(protected_tokens) and all(
+        _is_allowed_instruction_markdown_path(token) for token in protected_tokens
+    )
+
+
 def is_protected_path(path: str) -> bool:
     """True if `path` (raw, expanded, or symlink-resolved) hits a protected fragment."""
     if not path:
+        return False
+    if _is_allowed_instruction_markdown_path(path):
         return False
     if _matches(path):
         return True
@@ -112,7 +144,11 @@ def main() -> None:
         sys.exit(0)
 
     command = tool_input.get("command", "")
-    if command and _matches(command):
+    if (
+        command
+        and _matches(command)
+        and not _matches_only_allowed_instruction_markdown(command)
+    ):
         block(command, "Bash")
 
     sys.exit(0)
