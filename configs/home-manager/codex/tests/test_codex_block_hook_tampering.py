@@ -54,12 +54,14 @@ class TestRepoBackedLiveConfigProtection:
         assert_block_contract(read(repo_path("rules", "default.rules")), "rules")
 
     def test_read_repo_settings_block(self):
-        assert_block_contract(read(user_path("codex-settings.toml")), "codex-settings")
+        assert_block_contract(
+            read(user_path("codex", "settings.toml")), "settings.toml"
+        )
 
     def test_apply_patch_repo_hooks_json_blocks(self):
         assert_block_contract(
-            apply_patch_command(user_path("codex-hooks.json")),
-            "codex-hooks",
+            apply_patch_command(user_path("codex", "hooks.json")),
+            "hooks.json",
         )
 
     def test_bash_repo_hook_path_blocks(self):
