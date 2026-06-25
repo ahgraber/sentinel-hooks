@@ -72,11 +72,40 @@ rule() {
   messages+=("$2")
 }
 
+# catch common mistakes in bash commands and provide guidance
+
+rule '<<[^<]' \
+  "If this heredoc body contains '!' (e.g. '!=', '!word', shebangs), zsh BANG_HIST will mangle it silently. Options: (1) rewrite the body to avoid '!'; (2) write the script to \$TMPDIR/script.sh or \$TMPDIR/script.py and run it: bash \"\$TMPDIR/script.sh\" or uv run \"\$TMPDIR/script.py\". Skip if the body has no '!'."
+
+rule '"[^"]*![^" \t][^"]*"' \
+  "'!' inside a double-quoted string is expanded by zsh BANG_HIST (e.g. \"val!=x\" mangles silently). Use single quotes if no variable expansion is needed. If \$vars are required, write the content to \$TMPDIR and run from a file."
+
+rule '(^|[[:space:];|&(])![^=[:space:]"]' \
+  "An unquoted '!word' is expanded by zsh BANG_HIST as a history reference. Single-quote the argument containing '!' to prevent expansion, or restructure to avoid '!'."
+
+rule '(^|[[:space:]])\.#[a-zA-Z0-9_-]' \
+  "'.#target' — '#' is a zsh EXTENDED_GLOB repetition operator, causing 'no matches found'. Quote nix flake refs: nix build '.#target' --impure"
+
+rule '\b[0-9a-f]{6,40}\^' \
+  "'^' after a git commit hash is a zsh EXTENDED_GLOB negation operator. Quote it: 'abc123^' or 'abc123^..HEAD', or use '~1' instead of '^'"
+
+rule '--[a-zA-Z_-]+=\*' \
+  "The '*' in '--flag=*.ext' is expanded by zsh glob before reaching the command. Quote the value: --include='*.py'"
+
+rule '/nix/store/\*' \
+  "Globbing /nix/store/* is unreliable — store paths are non-deterministic hashes. Use 'rg --files /nix/store | rg pattern' or an explicit known path."
+
+
+# redirect tool calls
+
 rule '(?:^|[;|&(])\s*grep\b' \
   "Use 'rg' (ripgrep) instead of 'grep' for better performance and features"
 
 rule '^find\s+\S+\s+-name\b' \
   "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
+
+rule '\brg\b[^|]*-[a-zA-Z]*r[a-zA-Z]' \
+  "rg is recursive by default — '-r' means '--replace' (substitution), not '--recursive'. 'rg -rn' replaces matches with literal 'n' and silently corrupts output. Drop the '-r': use 'rg -n' for line numbers, 'rg -l' for filenames."
 
 rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(?:[./][\\w./]*/)?(?:python|python3)(?:[0-9.]+)?\\s" \
   "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'"
