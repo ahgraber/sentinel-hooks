@@ -98,11 +98,11 @@ rule '/nix/store/\*' \
 
 # redirect tool calls
 
-rule '(?:^|[;|&(])\s*grep\b' \
-  "Use 'rg' (ripgrep) instead of 'grep' for better performance and features"
+# rule '(?:^|[;|&(])\s*grep\b' \
+#   "Use 'rg' (ripgrep) instead of 'grep' for better performance and features"
 
-rule '^find\s+\S+\s+-name\b' \
-  "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
+# rule '^find\s+\S+\s+-name\b' \
+#   "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
 
 rule '\brg\b[^|]*-[a-zA-Z]*r[a-zA-Z]' \
   "rg is recursive by default — '-r' means '--replace' (substitution), not '--recursive'. 'rg -rn' replaces matches with literal 'n' and silently corrupts output. Drop the '-r': use 'rg -n' for line numbers, 'rg -l' for filenames."
