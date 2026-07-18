@@ -213,7 +213,7 @@ const PROTECTED_PATH_FRAGMENTS = [
   ".pi/agent/extensions/sandbox.json",
   ".pi/agent/extensions/security/",
   ".pi/agent/settings.json",
-  "configs/home-manager/pi/security/",
+  "modules/home/apps/pi/security/",
   "home-manager/pi/",
 ]
 
