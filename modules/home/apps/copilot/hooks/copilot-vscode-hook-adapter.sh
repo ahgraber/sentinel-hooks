@@ -6,9 +6,9 @@ set -euo pipefail
 # overhead on top of repeated jq/perl-heavy downstream hook invocations.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd -P)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd -P)"
 CLAUDE_HOOKS_DIR="${REPO_ROOT}/configs/home-manager/claude/hooks"
-COPILOT_HOOKS_DIR="${REPO_ROOT}/configs/home-manager/copilot/hooks"
+COPILOT_HOOKS_DIR="${REPO_ROOT}/modules/home/apps/copilot/hooks"
 TEMP_DIR=''
 
 MULTI_PATH_TARGETS='^(block-sensitive-paths\.py|block-secrets\.py|copilot-block-hook-tampering\.py)$'

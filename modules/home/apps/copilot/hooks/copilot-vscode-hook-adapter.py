@@ -18,9 +18,9 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 CLAUDE_HOOKS_DIR = REPO_ROOT / "configs" / "home-manager" / "claude" / "hooks"
-COPILOT_HOOKS_DIR = REPO_ROOT / "configs" / "home-manager" / "copilot" / "hooks"
+COPILOT_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "apps" / "copilot" / "hooks"
 
 SCRIPT_PATHS = {
     "session-tool-checks.sh": CLAUDE_HOOKS_DIR / "session-tool-checks.sh",

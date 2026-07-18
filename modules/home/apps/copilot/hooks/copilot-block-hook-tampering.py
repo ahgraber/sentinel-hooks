@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 HOME = Path.home()
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 PATCH_PATH_RE = re.compile(
     r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$",
     re.MULTILINE,
@@ -30,14 +30,14 @@ PROTECTED_SUBSTRINGS = (
     ".config/Code/User/prompts/global.instructions.md",
     ".config/Code/User/prompts/shell.instructions.md",
     ".config/Code/User/settings.json",
-    "configs/home-manager/copilot/hooks/",
-    "configs/home-manager/copilot/instructions/",
+    "modules/home/apps/copilot/hooks/",
+    "modules/home/apps/copilot/instructions/",
     "home-manager/vscode/settings.json",
 )
 
 ALLOWED_INSTRUCTION_BASES = (
     ".copilot/instructions/",
-    "configs/home-manager/copilot/instructions/",
+    "modules/home/apps/copilot/instructions/",
 )
 
 AI_INSTRUCTIONS = """
@@ -85,8 +85,8 @@ def build_protected_paths() -> tuple[str, ...]:
         str(HOME / ".config" / "Code" / "User" / "prompts" / "global.instructions.md"),
         str(HOME / ".config" / "Code" / "User" / "prompts" / "shell.instructions.md"),
         str(HOME / ".config" / "Code" / "User" / "settings.json"),
-        str(REPO_ROOT / "configs" / "home-manager" / "copilot" / "hooks"),
-        str(REPO_ROOT / "configs" / "home-manager" / "copilot" / "instructions"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "copilot" / "hooks"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "copilot" / "instructions"),
     ]
 
     users_dir = REPO_ROOT / "users"
