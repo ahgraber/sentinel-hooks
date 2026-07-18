@@ -56,13 +56,13 @@ Note: hook file renamed from `block-exfil.py` to `block-secrets.py`
 
 ## Settings and cleanup
 
-- [x] Remove `damage_control_check.py` and `damage_control_patterns.yaml` from `configs/home-manager/claude/hooks/`
+- [x] Remove `damage_control_check.py` and `damage_control_patterns.yaml` from `modules/home/apps/claude/hooks/`
 - [x] Empty `permissions.deny` (all rules now handled by hooks)
 - [x] Reduce `permissions.ask` to `WebSearch` and `WebFetch` only
 - [x] Remove any references to retired hooks from `claude-settings.json`
 - [x] Reorder hooks for fail-fast: dangerous-bash → sensitive-paths → destructive-ops → secrets → bash-command-validator
 - [x] Remove `block-sensitive-reads.sh` from PreToolUse registration (subsumed by sensitive-paths + secrets hooks)
-- [x] Remove stale files from `configs/home-manager/claude/hooks/`: `permission-request.py`, `pretooluse-check.py`, `check-uv.sh`, `block-exfil.py`, `block-sensitive-reads.sh`
+- [x] Remove stale files from `modules/home/apps/claude/hooks/`: `permission-request.py`, `pretooluse-check.py`, `check-uv.sh`, `block-exfil.py`, `block-sensitive-reads.sh`
 - [x] Verify `permissions.allow` covers auto-approve patterns from `permission-request.py` (not applicable — file was never registered in this repo's settings; current allow list is correct)
 - [x] Document the deny/ask → hook migration mapping for reviewer context (covered in `proposal.md` retirement section)
 - [x] Run `home-manager switch` and confirm hooks are symlinked into `~/.claude/hooks/`

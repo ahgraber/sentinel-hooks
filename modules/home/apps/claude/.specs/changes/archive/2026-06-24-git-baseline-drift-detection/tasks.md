@@ -13,7 +13,9 @@
 - [x] Add `PreToolUse` group (matcher `^(Bash|Write|Edit|apply_patch)$`) invoking `git-baseline.sh check`
 - [x] Add `PostToolUse` group (matcher `^Bash$`) invoking `git-baseline.sh update`
 
-## Sanitization Tests (no git subprocess required — exercise `tr` sanitization via script invocations with crafted session IDs)
+## Sanitization Tests
+
+No git subprocess is required; exercise `tr` sanitization via script invocations with crafted session IDs.
 
 - [x] Test sanitization: alphanumeric session ID produces baseline filename with ID unchanged (covers `SessionIdSafety/AlphanumericId`)
 - [x] Test sanitization: session ID with `/`, `.`, `@` produces baseline filename with those chars replaced by dashes (covers `SessionIdSafety/SpecialCharId`)

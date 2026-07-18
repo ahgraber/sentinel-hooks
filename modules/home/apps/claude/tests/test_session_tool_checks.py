@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 
-import pytest
 
 HOOK_PATH = os.path.join(
     os.path.dirname(__file__), os.pardir, "hooks", "session-tool-checks.sh"
@@ -23,7 +22,9 @@ def _make_stub_bin(bin_dir: str, name: str) -> None:
     os.chmod(stub, 0o755)
 
 
-def run_session_hook(available_tools: list[str], extra_path: str = "") -> subprocess.CompletedProcess:
+def run_session_hook(
+    available_tools: list[str], extra_path: str = ""
+) -> subprocess.CompletedProcess:
     """Run the session-tool-checks hook with only the specified tools on PATH.
 
     Creates a temp bin dir with stub executables for the listed tools,

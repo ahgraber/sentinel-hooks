@@ -35,6 +35,6 @@ def test_adapter_resolves_repository_hook_directories() -> None:
 
     assert adapter.REPO_ROOT == REPO_ROOT
     assert adapter.COPILOT_HOOKS_DIR == REPO_ROOT / "modules/home/apps/copilot/hooks"
-    assert adapter.CLAUDE_HOOKS_DIR == REPO_ROOT / "configs/home-manager/claude/hooks"
+    assert adapter.CLAUDE_HOOKS_DIR == REPO_ROOT / "modules/home/apps/claude/hooks"
     assert adapter.COPILOT_HOOKS_DIR.is_dir()
     assert adapter.CLAUDE_HOOKS_DIR.is_dir()

@@ -171,5 +171,5 @@ Drift warning example:
 ## Verification Waivers
 
 - **Requirement:** BaselineScoping (ConcurrentSessions scenario) **Reason:** Exercising two truly concurrent agent sessions against the same worktree requires a live Codex multi-agent setup; no unit test harness can reproduce the actual race condition, only the file-naming invariant.
-  **Manual evidence:** Filename uniqueness verified by `configs/home-manager/claude/tests/test_git_baseline.py::TestSessionIdSafety::test_two_session_ids_produce_distinct_filenames` (passing); the ConcurrentSessions scenario exercises the naming contract, not the race condition itself.
+  **Manual evidence:** Filename uniqueness verified by `modules/home/apps/claude/tests/test_git_baseline.py::TestSessionIdSafety::test_two_session_ids_produce_distinct_filenames` (passing); the ConcurrentSessions scenario exercises the naming contract, not the race condition itself.
   **Recorded:** 2026-06-24

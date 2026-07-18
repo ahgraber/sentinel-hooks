@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd -P)"
-CLAUDE_HOOKS_DIR="${REPO_ROOT}/configs/home-manager/claude/hooks"
+CLAUDE_HOOKS_DIR="${REPO_ROOT}/modules/home/apps/claude/hooks"
 COPILOT_HOOKS_DIR="${REPO_ROOT}/modules/home/apps/copilot/hooks"
 TEMP_DIR=''
 

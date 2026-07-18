@@ -16,7 +16,7 @@ Protected surfaces:
   - ~/.claude/hooks/**           hook scripts (this file lives here too)
   - ~/.claude/settings.json      main harness settings
   - ~/.claude/settings.local.json local overrides
-  - configs/home-manager/claude/hooks/**  repo source for the symlinked hooks
+  - modules/home/apps/claude/hooks/**  repo source for the symlinked hooks
   - users/*/home-manager/claude-settings.json  repo source for settings
 """
 
@@ -39,7 +39,7 @@ PROTECTED_SUBSTRINGS = (
     ".claude/hooks/",
     ".claude/settings.json",
     ".claude/settings.local.json",
-    "configs/home-manager/claude/hooks/",  # shared cfg
+    "modules/home/apps/claude/hooks/",  # shared cfg
     "home-manager/claude/settings.json",  # user cfg
     "home-manager/claude/settings.user.json",  # user cfg
 )
@@ -67,7 +67,7 @@ def _is_allowed_instruction_markdown_path(path: str) -> bool:
             continue
         for base in (
             ".claude/hooks/instructions/",
-            "configs/home-manager/claude/hooks/instructions/",
+            "modules/home/apps/claude/hooks/instructions/",
         ):
             if base not in normalized:
                 continue

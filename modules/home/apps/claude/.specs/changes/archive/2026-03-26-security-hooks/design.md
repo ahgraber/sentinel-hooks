@@ -6,7 +6,7 @@ Claude Code executes hooks as child processes, passing tool call data on stdin a
 The existing hook set in this repo (`bash-command-validator.sh`, `block-sensitive-reads.sh`, `damage_control_check.py`) addresses tool-use suggestions and read-path blocking but leaves write, exec, and credential attack surfaces uncovered.
 
 Hooks are registered in `settings.json` under the user's home-manager config and symlinked into `~/.claude/hooks/` at activation time.
-The Nix module at `configs/home-manager/claude/default.nix` manages that symlink tree, so any new hook script added to `configs/home-manager/claude/hooks/` is automatically available after `home-manager switch`.
+The Nix module at `modules/home/apps/claude/default.nix` manages that symlink tree, so any new hook script added to `modules/home/apps/claude/hooks/` is automatically available after `home-manager switch`.
 
 ## Decisions
 

@@ -19,7 +19,7 @@ from copy import deepcopy
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-CLAUDE_HOOKS_DIR = REPO_ROOT / "configs" / "home-manager" / "claude" / "hooks"
+CLAUDE_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "apps" / "claude" / "hooks"
 COPILOT_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "apps" / "copilot" / "hooks"
 
 SCRIPT_PATHS = {

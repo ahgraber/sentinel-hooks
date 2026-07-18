@@ -1,7 +1,7 @@
 # Delta Spec: hook-interface (deny-response-ai-guidance)
 
 > Generated from requirement analysis on 2026-03-28
-> Source files: configs/home-manager/claude/.specs/specs/hook-interface/spec.md
+> Source files: modules/home/apps/claude/.specs/specs/hook-interface/spec.md
 
 ---
 

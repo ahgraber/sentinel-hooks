@@ -242,7 +242,7 @@ class TestPackageDirExemption:
     def test_credentials_in_claude_tests_allowed(self):
         """claude/tests directory is exempt — symmetric with claude/hooks for hook test files."""
         assert_allowed(
-            write("/repo/configs/home-manager/claude/tests/test_block_secrets.py")
+            write("/repo/modules/home/apps/claude/tests/test_block_secrets.py")
         )
 
     def test_credentials_in_codex_hooks_allowed(self):

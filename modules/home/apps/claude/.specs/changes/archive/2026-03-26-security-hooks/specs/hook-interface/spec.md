@@ -18,7 +18,9 @@ The system SHALL read a JSON object from stdin containing at minimum `tool_name`
 - **WHEN** the hook attempts to parse input
 - **THEN** the hook applies `ErrorHandlingByDamagePotential`: if the hook only handles sensitive tools (`Bash`, `Write`, `Edit`), it exits 2 (fail-closed); if the hook handles read-only tools or all tools, it exits 0 (fail-open)
 
-Note: a hook that handles multiple tool types (e.g., `Bash|Write|Edit` or all tools) cannot determine the tool name from malformed input. Such hooks SHALL exit 0 on parse failure, since failing closed would block read-only tools. Hooks that exclusively handle sensitive tools (e.g., `dangerous-bash-blocking` which only handles `Bash`) SHALL exit 2 on parse failure.
+Note: a hook that handles multiple tool types (e.g., `Bash|Write|Edit` or all tools) cannot determine the tool name from malformed input.
+Such hooks SHALL exit 0 on parse failure, since failing closed would block read-only tools.
+Hooks that exclusively handle sensitive tools (e.g., `dangerous-bash-blocking` which only handles `Bash`) SHALL exit 2 on parse failure.
 
 ### Requirement: ExitCodes
 

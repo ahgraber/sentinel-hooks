@@ -305,9 +305,7 @@ class TestFilePathExemptions:
         result = run_hook(
             HOOK,
             "Read",
-            {
-                "file_path": "/repo/configs/home-manager/claude/tests/test_block_secrets.py"
-            },
+            {"file_path": "/repo/modules/home/apps/claude/tests/test_block_secrets.py"},
         )
         assert_allowed(result)
 
