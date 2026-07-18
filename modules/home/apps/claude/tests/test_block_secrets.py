@@ -314,7 +314,7 @@ class TestFilePathExemptions:
         result = run_hook(
             HOOK,
             "Read",
-            {"file_path": "/repo/configs/home-manager/codex/hooks/block-secrets.py"},
+            {"file_path": "/repo/modules/home/apps/codex/hooks/block-secrets.py"},
         )
         assert_allowed(result)
 
@@ -324,7 +324,7 @@ class TestFilePathExemptions:
             HOOK,
             "Read",
             {
-                "file_path": "/repo/configs/home-manager/codex/tests/test_codex_block_secrets.py"
+                "file_path": "/repo/modules/home/apps/codex/tests/test_codex_block_secrets.py"
             },
         )
         assert_allowed(result)

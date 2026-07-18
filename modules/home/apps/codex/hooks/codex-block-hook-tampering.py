@@ -25,15 +25,15 @@ PROTECTED_SUBSTRINGS = (
     ".codex/rules/",
     ".codex/hooks/",
     ".codex/auth.json",
-    "configs/home-manager/codex/hooks/",  # shared cfg
-    "configs/home-manager/codex/rules/",  # shared cfg
+    "modules/home/apps/codex/hooks/",  # shared cfg
+    "modules/home/apps/codex/rules/",  # shared cfg
     "home-manager/codex/hooks.json",  # user cfg
-    "home-manager/codex/settings.toml",  # user cfg
+    "home-manager/codex/config.toml",  # user cfg
 )
 
 ALLOWED_INSTRUCTION_BASES = (
     ".codex/hooks/instructions/",
-    "configs/home-manager/codex/hooks/instructions/",
+    "modules/home/apps/codex/hooks/instructions/",
 )
 
 _AI_INSTRUCTIONS = """

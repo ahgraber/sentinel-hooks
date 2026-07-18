@@ -247,12 +247,12 @@ class TestPackageDirExemption:
 
     def test_credentials_in_codex_hooks_allowed(self):
         """codex/hooks directory is exempt for name patterns."""
-        assert_allowed(write("/repo/configs/home-manager/codex/hooks/block-secrets.py"))
+        assert_allowed(write("/repo/modules/home/apps/codex/hooks/block-secrets.py"))
 
     def test_credentials_in_codex_tests_allowed(self):
         """codex/tests directory is exempt — symmetric with codex/hooks for hook test files."""
         assert_allowed(
-            write("/repo/configs/home-manager/codex/tests/test_codex_block_secrets.py")
+            write("/repo/modules/home/apps/codex/tests/test_codex_block_secrets.py")
         )
 
     def test_pem_in_venv_still_blocked(self):

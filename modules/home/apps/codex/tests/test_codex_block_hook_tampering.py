@@ -8,7 +8,7 @@ HOOK = "codex-block-hook-tampering.py"
 
 
 def repo_path(*parts: str) -> str:
-    return str(Path("configs") / "home-manager" / "codex" / Path(*parts))
+    return str(Path("modules") / "home" / "apps" / "codex" / Path(*parts))
 
 
 def user_path(*parts: str) -> str:
@@ -53,10 +53,8 @@ class TestRepoBackedLiveConfigProtection:
     def test_read_repo_rules_block(self):
         assert_block_contract(read(repo_path("rules", "default.rules")), "rules")
 
-    def test_read_repo_settings_block(self):
-        assert_block_contract(
-            read(user_path("codex", "settings.toml")), "settings.toml"
-        )
+    def test_read_repo_config_blocks(self):
+        assert_block_contract(read(user_path("codex", "config.toml")), "config.toml")
 
     def test_apply_patch_repo_hooks_json_blocks(self):
         assert_block_contract(

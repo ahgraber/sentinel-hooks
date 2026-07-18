@@ -30,6 +30,7 @@ def test_shared_hooks_are_symlinked():
     for name in SHARED_HOOKS:
         path = HOOKS_DIR / name
         assert path.is_symlink(), f"Expected {name} to be a symlink"
+        assert path.exists(), f"Expected {name} to resolve to an existing Claude hook"
         assert path.resolve() == (CLAUDE_HOOKS_DIR / name).resolve(), (
             f"Expected {name} to point at the Claude hook implementation"
         )
