@@ -5,6 +5,9 @@ from pathlib import Path
 from conftest import assert_allowed, assert_block_contract, run_hook
 
 HOOK = "codex-block-hook-tampering.py"
+# tests/ -> codex/ -> apps/ -> home/ -> modules/ -> repo root (5 levels up),
+# matching REPO_ROOT in the hook under test.
+REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
 def repo_path(*parts: str) -> str:
@@ -70,3 +73,20 @@ class TestRepoBackedLiveConfigProtection:
 
     def test_unrelated_read_allowed(self):
         assert_allowed(read("/tmp/notes.txt"))
+
+
+class TestProtectedPathResolution:
+    """Exercise the realpath-resolved PROTECTED_PATHS layer, not raw substrings.
+
+    A path written with an embedded ``/../`` contains no PROTECTED_SUBSTRINGS
+    fragment, so a block here can only come from ``REPO_ROOT``-derived
+    ``PROTECTED_PATHS`` after realpath normalization. This pins the hook's
+    ``REPO_ROOT = parents[5]`` depth against silent drift: with the wrong depth
+    the absolute entries resolve elsewhere and this read is allowed.
+    """
+
+    def test_realpath_resolved_repo_hook_blocks(self):
+        codex_dir = REPO_ROOT / "modules" / "home" / "apps" / "codex"
+        obfuscated = f"{codex_dir}/../codex/hooks/block-secrets.py"
+        assert "modules/home/apps/codex/hooks/" not in obfuscated
+        assert_block_contract(read(obfuscated), "codex")

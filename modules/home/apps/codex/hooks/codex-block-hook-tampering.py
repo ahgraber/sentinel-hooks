@@ -13,7 +13,8 @@ import sys
 from pathlib import Path
 
 HOME = os.path.expanduser("~")
-REPO_ROOT = Path(__file__).resolve().parents[4]
+# hooks/ -> codex/ -> apps/ -> home/ -> modules/ -> repo root (5 levels up).
+REPO_ROOT = Path(__file__).resolve().parents[5]
 PATCH_PATH_RE = re.compile(
     r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$",
     re.MULTILINE,
@@ -60,16 +61,16 @@ def build_protected_paths() -> tuple[str, ...]:
         os.path.join(HOME, ".codex", "rules"),
         os.path.join(HOME, ".codex", "hooks"),
         os.path.join(HOME, ".codex", "auth.json"),
-        str(REPO_ROOT / "configs" / "home-manager" / "codex" / "hooks"),
-        str(REPO_ROOT / "configs" / "home-manager" / "codex" / "rules"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "hooks"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "rules"),
     ]
 
     users_dir = REPO_ROOT / "users"
     if users_dir.is_dir():
         for user_dir in users_dir.iterdir():
             home_manager_dir = user_dir / "home-manager"
-            paths.append(str(home_manager_dir / "codex-hooks.json"))
-            paths.append(str(home_manager_dir / "codex-settings.toml"))
+            paths.append(str(home_manager_dir / "codex" / "hooks.json"))
+            paths.append(str(home_manager_dir / "codex" / "config.toml"))
 
     return tuple(paths)
 

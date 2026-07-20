@@ -10,7 +10,7 @@ HOME = os.path.expanduser("~")
 
 
 def repo_path(*parts: str) -> str:
-    return str(Path("configs") / "home-manager" / "codex" / Path(*parts))
+    return str(Path("modules") / "home" / "apps" / "codex" / Path(*parts))
 
 
 def bash(command: str):
