@@ -4,33 +4,68 @@
 
 The system SHALL only evaluate commands when `tool_name` is `Bash`.
 
-## Requirement: RedirectGrepToRipgrep
+## Requirement: ReviewHeredocsForBangHistory
 
-The system SHALL redirect bare `grep` invocations to `rg` (ripgrep).
+The system SHALL block heredoc syntax (`<<`) so the agent can verify that zsh `BANG_HIST` will not alter the body.
 
-A bare `grep` invocation is one that is not part of a pipeline (i.e., not preceded by `|`).
+### Scenario: HeredocBlocked
 
-### Scenario: BareGrepRedirected
-
-- **GIVEN** a Bash tool call contains `grep` at the start of a command not preceded by a pipe
+- **GIVEN** a Bash tool call contains heredoc syntax
 - **WHEN** the hook evaluates the command
-- **THEN** the hook exits 2 with a message directing the AI to use `rg` instead
+- **THEN** the hook exits 2 with guidance about zsh `BANG_HIST`
 
-### Scenario: PipedGrepAllowed
+### Scenario: HereStringAllowed
 
-- **GIVEN** a Bash tool call contains `grep` as part of a pipeline (e.g., `cat file | grep foo`)
+- **GIVEN** a Bash tool call contains a here-string (`<<<`)
 - **WHEN** the hook evaluates the command
-- **THEN** the hook exits 0 (piped grep is not redirected)
+- **THEN** the hook exits 0
 
-## Requirement: RedirectFindToRipgrep
+## Requirement: RejectZshExpansionHazards
 
-The system SHALL redirect `find <dir> -name` invocations to `rg`.
+The system SHALL block command text that is vulnerable to zsh history expansion,
+extended globbing, or unsafe wildcard expansion.
 
-### Scenario: FindNameRedirected
+### Scenario: BangHistoryHazardBlocked
 
-- **GIVEN** a Bash tool call contains `find <path> -name`
+- **GIVEN** a Bash tool call contains an unsafe bang in a double-quoted string or an
+  unquoted history reference
 - **WHEN** the hook evaluates the command
-- **THEN** the hook exits 2 with a message directing the AI to use `rg --files` instead
+- **THEN** the hook exits 2 with quoting guidance
+
+### Scenario: UnquotedFlakeReferenceBlocked
+
+- **GIVEN** a Bash tool call contains an unquoted Nix flake reference such as `.#host`
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 2 with guidance to quote the reference
+
+### Scenario: GitParentCaretBlocked
+
+- **GIVEN** a Bash tool call places `^` after a hexadecimal Git object ID
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 2 with a safe alternative
+
+### Scenario: UnquotedFlagGlobBlocked
+
+- **GIVEN** a Bash tool call contains an unquoted wildcard value such as `--glob=*.py`
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 2 with guidance to quote the value
+
+### Scenario: NixStoreGlobBlocked
+
+- **GIVEN** a Bash tool call contains `/nix/store/*`
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 2 with guidance to use a deterministic path
+
+## Requirement: RejectRipgrepRecursiveFlag
+
+The system SHALL reject `r` in a ripgrep short-option bundle because ripgrep is recursive
+by default and interprets `-r` as `--replace`.
+
+### Scenario: RecursiveFlagBlockedInAnyBundlePosition
+
+- **GIVEN** a Bash tool call invokes `rg` with `r` anywhere in a short-option bundle
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 2 with guidance to remove `r`
 
 ## Requirement: RedirectPythonToUv
 
@@ -101,7 +136,7 @@ The system SHALL redirect `pre-commit run` invocations to `prek run`.
 
 ## Requirement: RequireAgentCommitAlias
 
-The system SHALL block all `git commit` invocations and require use of the `git agent-commit` alias.
+The system SHALL block `commit` when it is the Git subcommand and require use of the `git agent-commit` alias.
 
 `git agent-commit` is the designated alias for AI agents; it signs with the dedicated agent key
 (`~/.ssh/id_ed25519_agent_signing`) without requiring additional flags.
@@ -117,6 +152,29 @@ The system SHALL block all `git commit` invocations and require use of the `git 
 - **GIVEN** a Bash tool call invokes `git agent-commit`
 - **WHEN** the hook evaluates the command
 - **THEN** the hook exits 0
+
+### Scenario: CommitConfigKeyAllowed
+
+- **GIVEN** a Bash tool call contains `commit` in a Git configuration key but uses another
+  Git subcommand
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 0
+
+### Scenario: CommitTextInArgumentAllowed
+
+- **GIVEN** a Bash tool call contains `git commit` as an argument to another command
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 0
+
+## Requirement: ReportAllIssues
+
+The system SHALL report every matching validation issue in one response.
+
+### Scenario: MultipleIssuesReported
+
+- **GIVEN** a Bash tool call violates more than one registered rule
+- **WHEN** the hook evaluates the command
+- **THEN** the hook exits 2 and emits guidance for every matching rule
 
 ## Requirement: RuleRegistrationPattern
 

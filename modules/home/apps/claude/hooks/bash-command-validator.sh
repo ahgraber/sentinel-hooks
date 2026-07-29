@@ -4,8 +4,8 @@ set -euo pipefail
 # Claude Code Hook: Bash Command Validator
 #
 # This hook runs as a PreToolUse hook for the Bash tool. It validates bash
-# commands against a set of rules before execution. Rules: redirects grep to rg,
-# find -name to rg, and python/pip invocations to uv.
+# commands against a set of rules before execution. Rules catch zsh expansion
+# hazards, invalid ripgrep flags, and commands that bypass repository tooling.
 #
 # Read more about hooks here: https://docs.anthropic.com/en/docs/claude-code/hooks
 #
@@ -25,12 +25,12 @@ set -euo pipefail
 #   }
 # }
 
-if ! command -v jq >/dev/null 2>&1; then
+if ! command -v jq > /dev/null 2>&1; then
   echo "Error: jq is required for bash-command-validator.sh" >&2
   exit 1
 fi
 
-if ! command -v perl >/dev/null 2>&1; then
+if ! command -v perl > /dev/null 2>&1; then
   echo "Error: perl is required for bash-command-validator.sh" >&2
   exit 1
 fi
@@ -49,17 +49,17 @@ matches_pattern() {
 
 input_json="$(cat)"
 
-if ! jq -e . >/dev/null 2>&1 <<<"${input_json}"; then
+if ! jq -e . > /dev/null 2>&1 <<< "${input_json}"; then
   echo "Error: Invalid JSON input" >&2
   exit 1
 fi
 
-tool_name="$(jq -r '.tool_name // ""' <<<"${input_json}")"
+tool_name="$(jq -r '.tool_name // ""' <<< "${input_json}")"
 if [[ "${tool_name}" != "Bash" ]]; then
   exit 0
 fi
 
-command_text="$(jq -r '.tool_input.command // ""' <<<"${input_json}")"
+command_text="$(jq -r '.tool_input.command // ""' <<< "${input_json}")"
 if [[ -z "${command_text}" ]]; then
   exit 0
 fi
@@ -74,8 +74,8 @@ rule() {
 
 # catch common mistakes in bash commands and provide guidance
 
-rule '<<[^<]' \
-  "If this heredoc body contains '!' (e.g. '!=', '!word', shebangs), zsh BANG_HIST will mangle it silently. Options: (1) rewrite the body to avoid '!'; (2) write the script to \$TMPDIR/script.sh or \$TMPDIR/script.py and run it: bash \"\$TMPDIR/script.sh\" or uv run \"\$TMPDIR/script.py\". Skip if the body has no '!'."
+rule '(?<!<)<<[^<]' \
+  "Heredoc bodies are blocked because zsh BANG_HIST can silently mangle '!' (e.g. '!=', '!word', shebangs) before Bash receives the command. Rewrite the body without '!', or write it to \$TMPDIR/script.sh or \$TMPDIR/script.py and run that file."
 
 rule '"[^"]*![^" \t][^"]*"' \
   "'!' inside a double-quoted string is expanded by zsh BANG_HIST (e.g. \"val!=x\" mangles silently). Use single quotes if no variable expansion is needed. If \$vars are required, write the content to \$TMPDIR and run from a file."
@@ -95,7 +95,6 @@ rule '--[a-zA-Z_-]+=\*' \
 rule '/nix/store/\*' \
   "Globbing /nix/store/* is unreliable — store paths are non-deterministic hashes. Use 'rg --files /nix/store | rg pattern' or an explicit known path."
 
-
 # redirect tool calls
 
 # rule '(?:^|[;|&(])\s*grep\b' \
@@ -104,7 +103,7 @@ rule '/nix/store/\*' \
 # rule '^find\s+\S+\s+-name\b' \
 #   "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
 
-rule '\brg\b[^|]*-[a-zA-Z]*r[a-zA-Z]' \
+rule '\brg\b[^|]*[[:space:]]-[a-zA-Z]*r[a-zA-Z]*(?:=[^[:space:]]*)?(?:[[:space:]]|$)' \
   "rg is recursive by default — '-r' means '--replace' (substitution), not '--recursive'. 'rg -rn' replaces matches with literal 'n' and silently corrupts output. Drop the '-r': use 'rg -n' for line numbers, 'rg -l' for filenames."
 
 rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(?:[./][\\w./]*/)?(?:python|python3)(?:[0-9.]+)?\\s" \
@@ -122,13 +121,13 @@ rule '^(?!.*\buv\s+run\b).*\bpy(?:test|\.test)\b' \
 rule '\bpre-commit\s+run\b' \
   "Use 'prek run' instead of 'pre-commit run' — prek is the sandbox-compatible wrapper available in PATH"
 
-rule '\bgit\b.*\s+commit\b' \
+rule '(?:^|[;\n|&()]{1,2})[[:space:]]*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\x27[^\x27]*\x27|\S+)[[:space:]]+)*(?:command[[:space:]]+)?git(?:[[:space:]]+(?:(?:-[cC])[[:space:]]+\S+|-[pP]|--\S+))*[[:space:]]+commit\b' \
   "Use 'git agent-commit' alias instead of 'git commit' — the alias signs with the dedicated agent key"
 
 issues=()
 
 for idx in "${!patterns[@]}"; do
-  if matches_pattern "${patterns[idx]}" <<<"${command_text}"; then
+  if matches_pattern "${patterns[idx]}" <<< "${command_text}"; then
     issues+=("${messages[idx]}")
   fi
 done
