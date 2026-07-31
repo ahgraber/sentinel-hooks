@@ -36,6 +36,7 @@ _TAMPERING_RISK = (
 # Substring match on the (expanded) path or raw bash command. Fragments are
 # specific enough that incidental collisions are negligible.
 PROTECTED_SUBSTRINGS = (
+    ".claude.json",
     ".claude/hooks/",
     ".claude/settings.json",
     ".claude/settings.local.json",
