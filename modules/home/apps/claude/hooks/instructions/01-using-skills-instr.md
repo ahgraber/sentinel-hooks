@@ -3,6 +3,9 @@
 Skills are on-demand specialized workflows available via the `Skill` tool.
 They are curated to guide _how_ you approach specific task types.
 
+This scanning behavior also doubles as a live signal source: how well a skill's description matches real requests reveals whether its trigger conditions are well calibrated (too broad, too narrow, or ambiguous).
+Skill authors use that signal, via the `optimize-skills` skill, to refine descriptions over time.
+
 ## The Rule
 
 **Before any response or action, scan the available skills list and invoke every plausibly relevant skill.**
