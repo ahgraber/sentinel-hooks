@@ -42,6 +42,8 @@ PROTECTED_SUBSTRINGS = (
     ".claude/settings.local.json",
     "modules/home/apps/claude/hooks/",  # shared cfg
     "home-manager/claude/settings.json",  # user cfg
+    "home-manager/claude/settings.darwin.json",  # user cfg
+    "home-manager/claude/settings.linux.json",  # user cfg
     "home-manager/claude/settings.user.json",  # user cfg
 )
 
@@ -53,7 +55,10 @@ def _expand(path: str) -> str:
 def _resolved(path: str) -> str:
     try:
         return os.path.realpath(_expand(path))
-    except Exception:
+    except (OSError, ValueError):
+        # ValueError covers a path carrying an embedded null byte, OSError the
+        # resolution itself. Either way the unresolved path is still worth
+        # matching against, so fall back rather than let the caller through.
         return _expand(path)
 
 
@@ -129,7 +134,9 @@ def block(target: str, tool: str) -> None:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except (OSError, ValueError):
+        # JSONDecodeError and UnicodeDecodeError are both ValueError; a payload
+        # this hook cannot parse is one it cannot judge, so it defers.
         sys.exit(0)
 
     tool_name = data.get("tool_name", "")
@@ -160,7 +167,9 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Fail-open per hook-interface spec: this hook covers Read (read-only)
         # alongside Bash/Write/Edit, and substring matching is unlikely to crash.
+        # The catch is deliberately blind — narrowing it would let an unforeseen
+        # error escape as a non-zero exit and block the tool call instead.
         sys.exit(0)
