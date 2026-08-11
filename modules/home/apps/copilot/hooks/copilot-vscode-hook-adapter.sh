@@ -188,7 +188,10 @@ main() {
   multi_path_count="$(jq -r '(.tool_input.file_paths // []) | length' <<< "${normalized_json}")"
 
   if [[ "${script_name}" =~ ${MULTI_PATH_TARGETS} ]] && [[ "${mapped_name}" =~ ^(Read|Write|Edit)$ ]] && (( multi_path_count > 1 )); then
-    mapfile -t file_paths < <(jq -r '.tool_input.file_paths[]? | select(type == "string" and length > 0)' <<< "${normalized_json}")
+    local -a file_paths=()
+    while IFS= read -r file_path; do
+      file_paths+=("${file_path}")
+    done < <(jq -r '.tool_input.file_paths[]? | select(type == "string" and length > 0)' <<< "${normalized_json}")
 
     local path
     for path in "${file_paths[@]}"; do

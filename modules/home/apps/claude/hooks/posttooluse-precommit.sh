@@ -11,7 +11,10 @@ else
   exit 0
 fi
 
-mapfile -t files < <(
+files=()
+while IFS= read -r file; do
+  files+=("${file}")
+done < <(
   jq -r '[.tool_input.file_path, (.tool_input.file_paths[]?)] | .[] | select(type=="string" and length>0)' \
     | awk '!seen[$0]++'
 )
