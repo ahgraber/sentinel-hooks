@@ -6,12 +6,12 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
 usage() {
   cat << 'USAGE'
-Usage: apps-test.sh [all|claude|codex|copilot|pi]
+Usage: apps-test.sh <claude|codex|copilot|pi>
 
-Run the test suites for agent app configurations.
+Run one agent app configuration test suite. `just apps test` composes every
+suite (and `just apps test all` is its default).
 
 Targets:
-  all      Run every app test suite (default)
   claude   Run the Claude hook tests
   codex    Run the Codex hook tests
   copilot  Run the Copilot hook-adapter tests
@@ -34,19 +34,12 @@ run_pi_suite() {
 main() {
   handle_help "${1:-}"
 
-  if (( $# > 1 )); then
+  if (( $# != 1 )); then
     usage >&2
-    die "expected at most one app test target"
+    die "expected exactly one app test target"
   fi
 
-  case "${1:-all}" in
-    all)
-      require_cmd uv node
-      run_python_suite claude
-      run_python_suite codex
-      run_python_suite copilot
-      run_pi_suite
-      ;;
+  case "${1}" in
     claude | codex | copilot)
       require_cmd uv
       run_python_suite "${1}"
