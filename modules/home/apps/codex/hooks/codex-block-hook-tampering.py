@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Codex hook: block access to Codex safety configuration and live repo sources."""
+"""Codex hook: block changes to Codex safety configuration and live repo sources."""
 
 import json
 import os
@@ -25,11 +25,22 @@ PROTECTED_SUBSTRINGS = (
     ".codex/hooks.json",
     ".codex/rules/",
     ".codex/hooks/",
+    ".codex/skills/",
+    ".codex/AGENTS.md",
     ".codex/auth.json",
+    # `-p <name>` layers $CODEX_HOME/<name>.config.toml over the base config,
+    # so a layer file can widen any permission the base config narrows. Not
+    # scoped to .codex/ because substring matching cannot express "inside this
+    # directory and ending in this suffix"; the suffix is rare enough on its
+    # own that an unrelated file colliding is cheaper than missing a layer.
+    ".config.toml",
     "modules/home/apps/codex/hooks/",  # shared cfg
     "modules/home/apps/codex/rules/",  # shared cfg
+    "justfiles/nix.just",  # managed network-review opt-in recipe
     "home-manager/codex/hooks.json",  # user cfg
     "home-manager/codex/config.toml",  # user cfg
+    "home-manager/codex/config.darwin.toml",  # user cfg
+    "home-manager/codex/config.linux.toml",  # user cfg
 )
 
 ALLOWED_INSTRUCTION_BASES = (
@@ -63,6 +74,7 @@ def build_protected_paths() -> tuple[str, ...]:
         os.path.join(HOME, ".codex", "auth.json"),
         str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "hooks"),
         str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "rules"),
+        str(REPO_ROOT / "justfiles" / "nix.just"),
     ]
 
     users_dir = REPO_ROOT / "users"
@@ -71,6 +83,8 @@ def build_protected_paths() -> tuple[str, ...]:
             home_manager_dir = user_dir / "home-manager"
             paths.append(str(home_manager_dir / "codex" / "hooks.json"))
             paths.append(str(home_manager_dir / "codex" / "config.toml"))
+            paths.append(str(home_manager_dir / "codex" / "config.darwin.toml"))
+            paths.append(str(home_manager_dir / "codex" / "config.linux.toml"))
 
     return tuple(paths)
 
@@ -168,7 +182,7 @@ def block(target: str, tool_name: str) -> None:
     sys.stderr.write(
         f"Blocked: {tool_name} targeting Codex safety/configuration path '{target}'.\n"
         "Codex hooks, rules, auth, and main configuration constrain tool behavior; "
-        "reading them can help craft bypasses, and writing them can disable guardrails."
+        "modifying them can disable guardrails."
         f"\n{_AI_INSTRUCTIONS}\n"
     )
     sys.exit(2)
@@ -177,13 +191,15 @@ def block(target: str, tool_name: str) -> None:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except (OSError, ValueError):
+        # JSONDecodeError and UnicodeDecodeError are both ValueError; a payload
+        # this hook cannot parse is one it cannot judge, so it defers.
         sys.exit(0)
 
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
 
-    if tool_name in ("Read", "Write", "Edit"):
+    if tool_name in ("Write", "Edit"):
         paths = []
         for key in ("file_path", "path"):
             value = tool_input.get(key)
@@ -229,5 +245,9 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
+        # Fail-open per hook-interface spec: this hook covers Read (read-only)
+        # alongside Bash/Write/Edit, and substring matching is unlikely to crash.
+        # The catch is deliberately blind — narrowing it would let an unforeseen
+        # error escape as a non-zero exit and block the tool call instead.
         sys.exit(0)

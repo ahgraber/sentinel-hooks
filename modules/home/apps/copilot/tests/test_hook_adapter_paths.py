@@ -4,7 +4,6 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-
 REPO_ROOT = next(
     parent
     for parent in Path(__file__).resolve().parents

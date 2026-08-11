@@ -7,7 +7,6 @@ exemptions for reverse shell patterns.
 """
 
 import pytest
-
 from conftest import assert_allowed, assert_block_contract, assert_blocked, run_hook
 
 HOOK = "block-dangerous-bash.sh"

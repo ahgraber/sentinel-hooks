@@ -187,7 +187,7 @@ def block(target: str, tool_name: str) -> None:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(0)
 
     tool_name = data.get("tool_name", "")
@@ -240,5 +240,5 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(0)

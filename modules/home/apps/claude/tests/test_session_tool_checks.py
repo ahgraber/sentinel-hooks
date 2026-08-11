@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 
-
 HOOK_PATH = os.path.join(
     os.path.dirname(__file__), os.pardir, "hooks", "session-tool-checks.sh"
 )
@@ -53,6 +52,7 @@ def run_session_hook(
             text=True,
             timeout=10,
             env=env,
+            check=False,
         )
 
 

@@ -20,8 +20,9 @@ own configuration errors rather than blocking all Bash commands).
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 
 def load_rules() -> list[dict]:
@@ -34,7 +35,7 @@ def load_rules() -> list[dict]:
     try:
         with open(patterns_file, "rb") as f:
             data = tomllib.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return []
 
     # Flat structure: [[rules]]
@@ -43,7 +44,7 @@ def load_rules() -> list[dict]:
 
     # Nested structure: [[category.rules]]
     all_rules: list[dict] = []
-    for key, section in data.items():
+    for section in data.values():
         if isinstance(section, dict) and "rules" in section:
             all_rules.extend(section["rules"])
     return all_rules
@@ -69,7 +70,7 @@ def block(reason: str) -> None:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(2)  # fail-closed: this hook only handles Bash (sensitive tool)
 
     if data.get("tool_name") != "Bash":
@@ -121,7 +122,7 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         # ErrorHandlingByDamagePotential: this hook only handles Bash
         # (a sensitive tool), so always fail-closed on internal error.
         sys.exit(2)

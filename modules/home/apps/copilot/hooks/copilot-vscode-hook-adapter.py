@@ -183,6 +183,7 @@ def execute_hook(
         input=json.dumps(payload),
         text=True,
         capture_output=True,
+        check=False,
     )
 
 
@@ -235,7 +236,7 @@ def main() -> int:
 
     try:
         raw_data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001
         raw_data = {}
 
     normalized = normalize_payload(raw_data)

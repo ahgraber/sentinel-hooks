@@ -103,9 +103,7 @@ def should_block(path: str) -> bool:
     matched, needs_exemption = is_zero_access(path)
     if not matched:
         return False
-    if needs_exemption and is_in_exempt_dir(path):
-        return False
-    return True
+    return not (needs_exemption and is_in_exempt_dir(path))
 
 
 _AI_INSTRUCTIONS = """
@@ -164,7 +162,7 @@ def extract_bash_write_targets(command: str) -> list[str]:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(
             0
         )  # fail-open: this hook handles mixed sensitive+read-only tools (Bash/Read/Write/Edit);
@@ -197,7 +195,7 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         # ErrorHandlingByDamagePotential: this hook handles Read (read-only) in addition
         # to Bash/Write/Edit (sensitive), so fail-open on internal error per hook-interface spec.
         sys.exit(0)

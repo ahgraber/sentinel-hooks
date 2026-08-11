@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from conftest import HookResult
 
 HOOK_PATH = Path(__file__).parent.parent / "hooks" / "git-baseline.sh"
@@ -112,6 +111,7 @@ def run_baseline(
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
         env=env,
     )
     return HookResult(

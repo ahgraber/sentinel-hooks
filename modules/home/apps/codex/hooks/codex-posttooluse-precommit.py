@@ -12,7 +12,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 PATCH_FILE_RE = re.compile(
     r"^\*\*\* (?:Add|Update|Delete) File: (?P<path>.+)$", re.MULTILINE
 )
@@ -66,7 +65,7 @@ def existing_repo_files(root: Path, paths: list[str]) -> list[str]:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(0)
 
     if data.get("tool_name") != "apply_patch":
@@ -84,7 +83,9 @@ def main() -> None:
     runner = "prek"
     if (
         subprocess.run(
-            ["/usr/bin/env", "bash", "-lc", "command -v prek >/dev/null"], cwd=root
+            ["/usr/bin/env", "bash", "-lc", "command -v prek >/dev/null"],
+            cwd=root,
+            check=False,
         ).returncode
         != 0
     ):
@@ -93,12 +94,13 @@ def main() -> None:
             subprocess.run(
                 ["/usr/bin/env", "bash", "-lc", "command -v pre-commit >/dev/null"],
                 cwd=root,
+                check=False,
             ).returncode
             != 0
         ):
             sys.exit(0)
 
-    result = subprocess.run([runner, "run", "--files", *files], cwd=root)
+    result = subprocess.run([runner, "run", "--files", *files], cwd=root, check=False)
     if result.returncode != 0:
         sys.stderr.write(f"{runner} failed for edited files: {', '.join(files)}\n")
         sys.exit(2)
@@ -111,6 +113,6 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"codex-posttooluse-precommit failed: {exc}\n")
         sys.exit(0)

@@ -166,11 +166,12 @@ def scan_with_gitleaks(text: str) -> bool | None:
             capture_output=True,
             text=True,
             timeout=8,
+            check=False,
         )
         return result.returncode == 1
     except FileNotFoundError:
         return None
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -235,7 +236,7 @@ def ask(reason: str) -> None:
 def main() -> None:
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(0)
 
     tool_name: str = data.get("tool_name", "")
@@ -367,13 +368,13 @@ if __name__ == "__main__":
         raw = sys.stdin.read()
         try:
             _current_tool_name = json.loads(raw).get("tool_name", "")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         sys.stdin = io.StringIO(raw)
         main()
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         if _current_tool_name in SENSITIVE_TOOLS:
             sys.exit(2)
         sys.exit(1)

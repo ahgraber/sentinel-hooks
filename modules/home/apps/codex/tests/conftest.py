@@ -45,6 +45,7 @@ def run_hook(
         input=stdin_text,
         capture_output=True,
         text=True,
+        check=False,
         timeout=timeout,
         env=env,
     )
