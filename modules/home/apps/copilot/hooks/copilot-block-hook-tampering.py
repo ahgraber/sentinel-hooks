@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Copilot hook: block access to Copilot safety/configuration paths."""
+"""Copilot hook: block access to agent safety/configuration paths."""
 
 from __future__ import annotations
 
@@ -22,6 +22,18 @@ PATCH_PATH_RE = re.compile(
 )
 
 PROTECTED_SUBSTRINGS = (
+    ".claude.json",
+    ".claude/hooks/",
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".codex/auth.json",
+    ".codex/config.toml",
+    ".codex/hooks.json",
+    ".codex/hooks/",
+    ".codex/rules/",
+    ".codex/skills/",
+    ".codex/AGENTS.md",
+    ".config.toml",
     ".copilot/hooks/",
     ".copilot/instructions/",
     "Library/Application Support/Code/User/prompts/global.instructions.md",
@@ -30,12 +42,27 @@ PROTECTED_SUBSTRINGS = (
     ".config/Code/User/prompts/global.instructions.md",
     ".config/Code/User/prompts/shell.instructions.md",
     ".config/Code/User/settings.json",
+    "modules/home/apps/claude/hooks/",
+    "modules/home/apps/codex/hooks/",
+    "modules/home/apps/codex/rules/",
     "modules/home/apps/copilot/hooks/",
     "modules/home/apps/copilot/instructions/",
+    "home-manager/claude/settings.json",
+    "home-manager/claude/settings.darwin.json",
+    "home-manager/claude/settings.linux.json",
+    "home-manager/claude/settings.user.json",
+    "home-manager/codex/hooks.json",
+    "home-manager/codex/config.toml",
+    "home-manager/codex/config.darwin.toml",
+    "home-manager/codex/config.linux.toml",
     "home-manager/vscode/settings.json",
 )
 
 ALLOWED_INSTRUCTION_BASES = (
+    ".claude/hooks/instructions/",
+    "modules/home/apps/claude/hooks/instructions/",
+    ".codex/hooks/instructions/",
+    "modules/home/apps/codex/hooks/instructions/",
     ".copilot/instructions/",
     "modules/home/apps/copilot/instructions/",
 )
@@ -59,6 +86,17 @@ def expand(path: str) -> str:
 
 def build_protected_paths() -> tuple[str, ...]:
     paths = [
+        str(HOME / ".claude.json"),
+        str(HOME / ".claude" / "hooks"),
+        str(HOME / ".claude" / "settings.json"),
+        str(HOME / ".claude" / "settings.local.json"),
+        str(HOME / ".codex" / "auth.json"),
+        str(HOME / ".codex" / "config.toml"),
+        str(HOME / ".codex" / "hooks.json"),
+        str(HOME / ".codex" / "hooks"),
+        str(HOME / ".codex" / "rules"),
+        str(HOME / ".codex" / "skills"),
+        str(HOME / ".codex" / "AGENTS.md"),
         str(HOME / ".copilot" / "hooks"),
         str(HOME / ".copilot" / "instructions"),
         str(
@@ -85,6 +123,9 @@ def build_protected_paths() -> tuple[str, ...]:
         str(HOME / ".config" / "Code" / "User" / "prompts" / "global.instructions.md"),
         str(HOME / ".config" / "Code" / "User" / "prompts" / "shell.instructions.md"),
         str(HOME / ".config" / "Code" / "User" / "settings.json"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "claude" / "hooks"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "hooks"),
+        str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "rules"),
         str(REPO_ROOT / "modules" / "home" / "apps" / "copilot" / "hooks"),
         str(REPO_ROOT / "modules" / "home" / "apps" / "copilot" / "instructions"),
     ]
@@ -93,6 +134,26 @@ def build_protected_paths() -> tuple[str, ...]:
     if users_dir.is_dir():
         for user_dir in users_dir.iterdir():
             home_manager_dir = user_dir / "home-manager"
+            claude_dir = home_manager_dir / "claude"
+            paths.extend(
+                str(claude_dir / name)
+                for name in (
+                    "settings.json",
+                    "settings.darwin.json",
+                    "settings.linux.json",
+                    "settings.user.json",
+                )
+            )
+            codex_dir = home_manager_dir / "codex"
+            paths.extend(
+                str(codex_dir / name)
+                for name in (
+                    "hooks.json",
+                    "config.toml",
+                    "config.darwin.toml",
+                    "config.linux.toml",
+                )
+            )
             paths.append(str(home_manager_dir / "vscode" / "settings.json"))
 
     return tuple(expand(path) for path in paths)
@@ -140,7 +201,9 @@ def is_protected_path(path: str) -> bool:
 
 
 def command_mentions_protected_path(command: str) -> bool:
-    return matches_protected_fragment(command) or ("~/.copilot/" in command)
+    return matches_protected_fragment(command) or any(
+        path in command for path in ("~/.claude/", "~/.codex/", "~/.copilot/")
+    )
 
 
 def command_references_only_allowed_instruction_markdown(command: str) -> bool:
@@ -176,8 +239,8 @@ def apply_patch_targets_only_allowed_instruction_markdown(command: str) -> bool:
 
 def block(target: str, tool_name: str) -> None:
     sys.stderr.write(
-        f"Blocked: {tool_name} targeting Copilot safety/configuration path '{target}'.\n"
-        "Copilot hook files, instructions, and VS Code prompt/settings files constrain "
+        f"Blocked: {tool_name} targeting agent safety/configuration path '{target}'.\n"
+        "Claude, Codex, and Copilot hooks, rules, instructions, and settings constrain "
         "tool behavior; reading them can help craft bypasses, and writing them can disable guardrails."
         f"\n{AI_INSTRUCTIONS}\n"
     )
