@@ -36,7 +36,6 @@ PROTECTED_SUBSTRINGS = (
     ".config.toml",
     "modules/home/apps/codex/hooks/",  # shared cfg
     "modules/home/apps/codex/rules/",  # shared cfg
-    "justfiles/nix.just",  # managed network-review opt-in recipe
     "home-manager/codex/hooks.json",  # user cfg
     "home-manager/codex/config.toml",  # user cfg
     "home-manager/codex/config.darwin.toml",  # user cfg
@@ -74,7 +73,6 @@ def build_protected_paths() -> tuple[str, ...]:
         os.path.join(HOME, ".codex", "auth.json"),
         str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "hooks"),
         str(REPO_ROOT / "modules" / "home" / "apps" / "codex" / "rules"),
-        str(REPO_ROOT / "justfiles" / "nix.just"),
     ]
 
     users_dir = REPO_ROOT / "users"
