@@ -4,13 +4,19 @@
 # dependencies = []
 # ///
 """
-Claude Code Hook: Block reads and writes to Claude's own hooks and settings.
+Claude Code Hook: Block writes to Claude's own hooks and settings.
 
-PreToolUse hook for Read, Write, Edit, and Bash tools.
-Hard-blocks (exit 2) any attempt to read or modify the files that constrain
-Claude's behaviour: hook scripts and settings files. Reading enables crafting
-bypasses; writing disables enforcement outright. Both must be blocked even when
-the access appears routine.
+PreToolUse hook for Write, Edit, and Bash tools.
+Hard-blocks (exit 2) any attempt to modify the files that constrain Claude's
+behaviour: hook scripts and settings files. Writing disables enforcement
+outright, so it is blocked even when the change appears routine.
+
+Reads are deliberately not blocked. The OS sandbox cannot enforce a read-deny
+on these paths here: they are Home Manager symlinks into the Nix store, and
+bubblewrap resolves a mount destination against its setup-time root, where an
+absolute symlink target does not exist. A directory read-deny therefore aborts
+every sandboxed command with "Can't mount tmpfs on <path>". Write protection is
+unaffected, because write-denies are symlink-resolved before mounting.
 
 Protected surfaces:
   - ~/.claude/hooks/**           hook scripts (this file lives here too)
@@ -28,8 +34,8 @@ import sys
 # ── Risk explanation ──────────────────────────────────────────────────────────
 _TAMPERING_RISK = (
     "Hook scripts and settings files enforce safety constraints on Claude. "
-    "Reading them enables crafting bypasses; writing to them disables "
-    "enforcement outright. Both are blocked unconditionally."
+    "Writing to them disables enforcement outright, so writes are blocked "
+    "unconditionally."
 )
 
 # ── Protected path fragments ──────────────────────────────────────────────────
@@ -142,10 +148,10 @@ def main() -> None:
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
 
-    if tool_name not in ("Bash", "Read", "Write", "Edit"):
+    if tool_name not in ("Bash", "Write", "Edit"):
         sys.exit(0)
 
-    if tool_name in ("Read", "Write", "Edit"):
+    if tool_name in ("Write", "Edit"):
         path = tool_input.get("file_path") or tool_input.get("path", "")
         if path and is_protected_path(path):
             block(path, tool_name)
@@ -168,8 +174,8 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001
-        # Fail-open per hook-interface spec: this hook covers Read (read-only)
-        # alongside Bash/Write/Edit, and substring matching is unlikely to crash.
-        # The catch is deliberately blind — narrowing it would let an unforeseen
-        # error escape as a non-zero exit and block the tool call instead.
+        # Fail-open per hook-interface spec: this hook covers Bash/Write/Edit,
+        # and substring matching is unlikely to crash. The catch is
+        # deliberately blind — narrowing it would let an unforeseen error
+        # escape as a non-zero exit and block the tool call instead.
         sys.exit(0)

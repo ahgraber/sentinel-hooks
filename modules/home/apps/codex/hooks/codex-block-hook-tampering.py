@@ -244,8 +244,9 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001
-        # Fail-open per hook-interface spec: this hook covers Read (read-only)
-        # alongside Bash/Write/Edit, and substring matching is unlikely to crash.
-        # The catch is deliberately blind — narrowing it would let an unforeseen
-        # error escape as a non-zero exit and block the tool call instead.
+        # Fail-open per hook-interface spec: this hook covers
+        # Bash/Write/Edit/apply_patch, and substring matching is unlikely to
+        # crash. The catch is deliberately blind — narrowing it would let an
+        # unforeseen error escape as a non-zero exit and block the tool call
+        # instead.
         sys.exit(0)

@@ -256,7 +256,7 @@ def main() -> None:
     tool_name = data.get("tool_name", "")
     tool_input = data.get("tool_input", {})
 
-    if tool_name in ("Read", "Write", "Edit"):
+    if tool_name in ("Write", "Edit"):
         paths: list[str] = []
         for key in ("file_path", "path"):
             value = tool_input.get(key)
