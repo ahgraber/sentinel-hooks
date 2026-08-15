@@ -9,7 +9,7 @@
  *   - bash-command-validator.sh    → BASH_VALIDATOR_RULES
  *   - block-hook-tampering.py      → PROTECTED_PATH_FRAGMENTS
  *   - session-tool-checks.sh       → session_start tool checks
- *   - posttooluse-precommit.sh     → tool_result pre-commit spawn
+ *   - stop-precommit.sh            → agent_settled pre-commit run
  *   - session-instructions.sh      → injects instructions/*.md context fragments; not ported (Pi surfaces skills natively)
  *   - reload-skills-catalog.py     → Pi surfaces skills natively; no hook needed
  *
@@ -382,6 +382,63 @@ function toolExists(name: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pre-commit over the changed set (from stop-precommit.sh)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PRECOMMIT_TIMEOUT_MS = 300_000
+
+// quotePath=false keeps non-ASCII names literal so they round-trip to the runner.
+function gitLines(root: string, args: string[]): string[] {
+  try {
+    const out = execFileSync("git", ["-C", root, "-c", "core.quotePath=false", ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    return out.split("\n").filter((line) => line.length > 0)
+  } catch {
+    return []
+  }
+}
+
+function gitRoot(cwd: string): string | null {
+  const lines = gitLines(cwd, ["rev-parse", "--show-toplevel"])
+  return lines[0] ?? null
+}
+
+function hasPrecommitConfig(root: string): boolean {
+  return existsSync(join(root, ".pre-commit-config.yaml")) || existsSync(join(root, ".pre-commit-config.yml"))
+}
+
+function changedFiles(root: string): string[] {
+  // Lowercase `d` drops deletions, which the runner cannot open.
+  const tracked =
+    gitLines(root, ["rev-parse", "--verify", "--quiet", "HEAD"]).length > 0
+      ? gitLines(root, ["diff", "--name-only", "--diff-filter=d", "HEAD"])
+      : gitLines(root, ["diff", "--cached", "--name-only", "--diff-filter=d"])
+  return [...new Set([...tracked, ...gitLines(root, ["ls-files", "--others", "--exclude-standard"])])]
+}
+
+// Resolves to the runner's output when it fails, or null when it passes or could
+// not be started. `run --files` does no stashing; a bare `run` stashes the work
+// tree and leaves it reverted if the cycle fails partway.
+async function runPrecommit(runner: string, root: string, files: string[]): Promise<string | null> {
+  return new Promise((res) => {
+    execFileCb(
+      runner,
+      ["run", "--files", ...files],
+      { cwd: root, timeout: PRECOMMIT_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
+      (err: ExecFileException | null, stdout: string, stderr: string) => {
+        if (err === null || (err as NodeJS.ErrnoException).code === "ENOENT") {
+          res(null)
+          return
+        }
+        res(`${stdout}${stderr}`.trim() || err.message)
+      },
+    )
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Extension entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -643,33 +700,44 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
-  // ── Post-write: run pre-commit ────────────────────────────────────────────
-  // Cache tool call inputs so we can correlate file paths at result time.
-  const pendingInputs = new Map<string, Record<string, unknown>>()
+  // ── End-of-turn: run pre-commit ───────────────────────────────────────────
+  // `agent_settled` is the Stop-hook analogue: it fires only once Pi will not
+  // continue on its own. `turn_end` is the wrong event — it fires per LLM
+  // response, which reintroduces the mid-sequence autofix race (a fixer strips a
+  // just-added import before its first use lands) and misses files written by
+  // bash rather than by the write/edit tools.
+  let reportedThisStreak = false
 
-  pi.on("tool_call", async (event) => {
-    if (event.toolName === "write" || event.toolName === "edit") {
-      pendingInputs.set(event.toolCallId, event.input as Record<string, unknown>)
-    }
+  pi.on("message_start", async (event) => {
+    // A fresh user prompt starts a new streak, so the next settle may report again.
+    if (event.message.role === "user") reportedThisStreak = false
   })
 
-  pi.on("tool_result", async (event) => {
-    if (event.toolName !== "write" && event.toolName !== "edit") return
-    const cachedInput = pendingInputs.get(event.toolCallId)
-    pendingInputs.delete(event.toolCallId)
+  pi.on("agent_settled", async (_event, ctx) => {
+    // Injecting below settles Pi again; this caps the agent at one round, the way
+    // `stop_hook_active` does for the other agents.
+    if (reportedThisStreak) return
 
-    const p = String(cachedInput?.file_path ?? cachedInput?.path ?? "")
-    if (!p) return
+    const runner = toolExists("prek") ? "prek" : toolExists("pre-commit") ? "pre-commit" : null
+    if (!runner) return
 
-    const preCommit = toolExists("prek") ? "prek" : toolExists("pre-commit") ? "pre-commit" : null
-    if (!preCommit) return
+    const root = gitRoot(ctx.cwd)
+    if (!root || !hasPrecommitConfig(root)) return
 
-    // Fire-and-forget so pre-commit doesn't block the agent loop.
-    // Exit code 1 means lint findings (advisory, silent); other errors are surfaced.
-    execFileCb(preCommit, ["run", "--files", p], { timeout: 30000 }, (err: ExecFileException | null) => {
-      if (err && err.code !== 1) {
-        console.warn(`[security] ${preCommit} failed for ${p}: ${err.message}`)
-      }
-    })
+    const files = changedFiles(root)
+    if (files.length === 0) return
+
+    const output = await runPrecommit(runner, root, files)
+    if (output === null) return
+
+    reportedThisStreak = true
+    pi.sendMessage(
+      {
+        customType: "security-precommit",
+        content: `${runner} failed on the changed files. Fix the reported problems before finishing; hooks that rewrote files have already applied their changes, so re-read those files rather than trusting your in-context copy.\n\n${output}`,
+        display: true,
+      },
+      { deliverAs: "followUp", triggerTurn: true },
+    )
   })
 }

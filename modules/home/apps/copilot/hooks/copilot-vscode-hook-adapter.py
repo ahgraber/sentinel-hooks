@@ -31,7 +31,7 @@ SCRIPT_PATHS = {
     "block-destructive-ops.py": CLAUDE_HOOKS_DIR / "block-destructive-ops.py",
     "block-secrets.py": CLAUDE_HOOKS_DIR / "block-secrets.py",
     "bash-command-validator.sh": CLAUDE_HOOKS_DIR / "bash-command-validator.sh",
-    "posttooluse-precommit.sh": CLAUDE_HOOKS_DIR / "posttooluse-precommit.sh",
+    "stop-precommit.sh": CLAUDE_HOOKS_DIR / "stop-precommit.sh",
     "copilot-block-hook-tampering.py": COPILOT_HOOKS_DIR
     / "copilot-block-hook-tampering.py",
 }

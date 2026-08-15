@@ -39,7 +39,7 @@ emit_result() {
 
 resolve_hook_path() {
   case "${1}" in
-    session-tool-checks.sh|session-instructions.sh|git-baseline.sh|block-dangerous-bash.sh|block-sensitive-paths.py|block-destructive-ops.py|block-secrets.py|bash-command-validator.sh|posttooluse-precommit.sh)
+    session-tool-checks.sh|session-instructions.sh|git-baseline.sh|block-dangerous-bash.sh|block-sensitive-paths.py|block-destructive-ops.py|block-secrets.py|bash-command-validator.sh|stop-precommit.sh)
       printf '%s\n' "${CLAUDE_HOOKS_DIR}/${1}"
       ;;
     copilot-block-hook-tampering.py)

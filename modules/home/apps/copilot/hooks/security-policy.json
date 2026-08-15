@@ -59,13 +59,15 @@
     "PostToolUse": [
       {
         "type": "command",
-        "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py posttooluse-precommit.sh",
-        "timeout": 120
-      },
-      {
-        "type": "command",
         "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py git-baseline.sh update",
         "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py stop-precommit.sh",
+        "timeout": 300
       }
     ]
   }

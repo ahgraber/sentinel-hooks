@@ -10,7 +10,8 @@ SHARED_HOOKS = [
     "block-dangerous-bash.sh",
     "block-destructive-ops-patterns.toml",
     "block-hook-tampering.py",
-    "posttooluse-precommit.sh",
+    "git-baseline.sh",
+    "stop-precommit.sh",
     "reload-skills-catalog.py",
     "session-tool-checks.sh",
     "instructions",  # dir symlink: shares all session-instruction fragments
@@ -22,7 +23,6 @@ CODEX_SPECIFIC_HOOKS = [
     "block-secrets.py",
     "block-sensitive-paths.py",
     "codex-block-hook-tampering.py",
-    "codex-posttooluse-precommit.py",
 ]
 
 
@@ -43,3 +43,24 @@ def test_codex_specific_hooks_remain_real_files():
         assert not path.is_symlink(), (
             f"Expected {name} to remain a Codex-specific implementation"
         )
+
+
+def test_every_hook_is_classified():
+    """The two lists above must account for the whole directory.
+
+    Without this, a hook added as a real file — rather than as a symlink to the
+    Claude implementation — is invisible to both tests above, which only assert
+    over names they already know.
+    """
+    present = {
+        entry.name
+        for entry in HOOKS_DIR.iterdir()
+        if not entry.name.startswith(".") and entry.name != "__pycache__"
+    }
+    unclassified = present - set(SHARED_HOOKS) - set(CODEX_SPECIFIC_HOOKS)
+
+    assert not unclassified, (
+        f"Unclassified hooks in {HOOKS_DIR.name}/: {sorted(unclassified)}. "
+        "Add each to SHARED_HOOKS (symlink to the Claude implementation) or to "
+        "CODEX_SPECIFIC_HOOKS (deliberate Codex-only implementation)."
+    )

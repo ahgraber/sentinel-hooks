@@ -1,0 +1,1 @@
+../../claude/hooks/stop-precommit.sh
