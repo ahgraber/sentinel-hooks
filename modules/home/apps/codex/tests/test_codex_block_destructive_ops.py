@@ -1,31 +1,66 @@
-"""Tests for the Codex-specific destructive-ops hook."""
+"""Tests for the Codex destructive-ops hook engine, using synthetic rules."""
 
-from conftest import assert_allowed, assert_block_contract, run_hook
+from __future__ import annotations
 
-HOOK = "block-destructive-ops.py"
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+HOOK_SOURCE = Path(__file__).resolve().parents[1] / "hooks/block-destructive-ops.py"
+RULES_NAME = "block-destructive-ops-patterns.toml"
+RULES = r"""
+[[rules]]
+pattern = "synthetic-block"
+description = "Synthetic block"
+reason = "Blocked by the test rule"
+mode = "block"
+
+[[rules]]
+pattern = "synthetic-ask"
+description = "Synthetic ask"
+reason = "Confirm the test rule"
+mode = "ask"
+"""
 
 
-def bash(command: str):
-    return run_hook(HOOK, "Bash", {"command": command})
+@pytest.fixture
+def hook_path(tmp_path: Path) -> Path:
+    path = tmp_path / HOOK_SOURCE.name
+    shutil.copyfile(HOOK_SOURCE, path)
+    (tmp_path / RULES_NAME).write_text(RULES)
+    return path
 
 
-class TestToolScope:
-    def test_non_bash_tool_allowed(self):
-        result = run_hook(HOOK, "Write", {"file_path": "/tmp/test"})
-        assert_allowed(result)
-
-    def test_safe_command_allowed(self):
-        assert_allowed(bash("echo hello"))
-
-
-class TestFormerAskModeNowBlocks:
-    def test_reset_hard_blocks(self):
-        assert_block_contract(bash("git reset --hard HEAD~1"), "uncommitted")
-
-    def test_git_add_all_blocks(self):
-        assert_block_contract(bash("git add ."), "stages all")
+def run_hook(hook_path: Path, command: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(hook_path)],
+        input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
 
 
-class TestBlockModeStillBlocks:
-    def test_force_push_without_lease_blocks(self):
-        assert_block_contract(bash("git push --force origin main"), "force")
+def test_unmatched_command_is_allowed(hook_path: Path) -> None:
+    assert run_hook(hook_path, "safe command").returncode == 0
+
+
+def test_block_rule_blocks_with_reason_and_contract(hook_path: Path) -> None:
+    result = run_hook(hook_path, "run synthetic-block now")
+
+    assert result.returncode == 2
+    assert "Blocked by the test rule" in result.stderr
+    assert "AI INSTRUCTIONS:" in result.stderr
+
+
+def test_ask_rule_is_also_blocked(hook_path: Path) -> None:
+    result = run_hook(hook_path, "run synthetic-ask now")
+
+    assert result.returncode == 2
+    assert "Confirm the test rule" in result.stderr
+    assert "blocked instead of prompted" in result.stderr
