@@ -139,7 +139,7 @@ The system SHALL redirect `pre-commit run` invocations to `prek run`.
 The system SHALL block `commit` when it is the Git subcommand and require use of the `git agent-commit` alias.
 
 `git agent-commit` is the designated alias for AI agents; it signs with the dedicated agent key
-(`~/.ssh/id_ed25519_agent_signing`) without requiring additional flags.
+(`~/.local/share/git-signing/agent-signing`) without requiring additional flags.
 
 ### Scenario: DirectGitCommitBlocked
 
