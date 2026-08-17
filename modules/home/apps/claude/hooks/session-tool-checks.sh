@@ -19,7 +19,7 @@ set -uo pipefail
 required_tools=()
 recommended_tools=()
 
-require_tool()   { required_tools+=("$1" "$2"); }
+require_tool() { required_tools+=("$1" "$2"); }
 recommend_tool() { recommended_tools+=("$1" "$2"); }
 
 # ── Required tools ────────────────────────────────────────────────────────────
@@ -52,20 +52,20 @@ recommend_tool gitleaks \
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 
-for (( i = 0; i < ${#required_tools[@]}; i += 2 )); do
+for ((i = 0; i < ${#required_tools[@]}; i += 2)); do
   name="${required_tools[i]}"
-  hint="${required_tools[i+1]}"
-  if ! command -v "${name}" >/dev/null 2>&1; then
+  hint="${required_tools[i + 1]}"
+  if ! command -v "${name}" > /dev/null 2>&1; then
     printf '⚠️  %s is not installed or not in PATH.\n\n' "${name}" >&2
     printf '  %s\n' "${hint}" >&2
     exit 2
   fi
 done
 
-for (( i = 0; i < ${#recommended_tools[@]}; i += 2 )); do
+for ((i = 0; i < ${#recommended_tools[@]}; i += 2)); do
   name="${recommended_tools[i]}"
-  hint="${recommended_tools[i+1]}"
-  if ! command -v "${name}" >/dev/null 2>&1; then
+  hint="${recommended_tools[i + 1]}"
+  if ! command -v "${name}" > /dev/null 2>&1; then
     printf '⚠️  %s is not installed or not in PATH.\n\n' "${name}" >&2
     printf '  %s\n' "${hint}" >&2
     # exit 0: recommended tools are not required — session proceeds

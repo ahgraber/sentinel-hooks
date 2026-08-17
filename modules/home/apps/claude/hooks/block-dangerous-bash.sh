@@ -42,10 +42,10 @@ block() {
 # Read stdin; fail closed on any error (Bash-only hook)
 input_json="$(cat)" || exit 2
 
-tool_name="$(jq -re '.tool_name // empty' 2>/dev/null <<< "${input_json}")" || exit 2
+tool_name="$(jq -re '.tool_name // empty' 2> /dev/null <<< "${input_json}")" || exit 2
 [[ "${tool_name}" == "Bash" ]] || exit 0
 
-command_text="$(jq -r '.tool_input.command // ""' 2>/dev/null <<< "${input_json}")" || exit 2
+command_text="$(jq -r '.tool_input.command // ""' 2> /dev/null <<< "${input_json}")" || exit 2
 [[ -n "${command_text}" ]] || exit 0
 
 # Loopback exemption constants used by the evaluation loop.
@@ -98,72 +98,72 @@ This command launches applications, runs AppleScript, or modifies system prefere
 
 # ── Reverse shells ────────────────────────────────────────────────────────────
 # bash -i redirected to /dev/tcp or /dev/udp
-rule devtcp  'bash\s+-i\b.*/dev/(tcp|udp)/'                                    "${_MSG_REVERSE_SHELL}"
+rule devtcp 'bash\s+-i\b.*/dev/(tcp|udp)/' "${_MSG_REVERSE_SHELL}"
 # Direct /dev/tcp or /dev/udp socket usage (e.g. exec 5<>/dev/tcp/host/port)
-rule devtcp  '/dev/(tcp|udp)/[^/\s]+/[0-9]+'                                   "${_MSG_REVERSE_SHELL}"
+rule devtcp '/dev/(tcp|udp)/[^/\s]+/[0-9]+' "${_MSG_REVERSE_SHELL}"
 # netcat / ncat with -e (exec) or -c (command)
-rule nc      '\b(nc|ncat)\b[^;|&\n]*\s-(e|c)\s'                                "${_MSG_REVERSE_SHELL}"
+rule nc '\b(nc|ncat)\b[^;|&\n]*\s-(e|c)\s' "${_MSG_REVERSE_SHELL}"
 # Named pipe (mkfifo) piped through nc — bidirectional shell over netcat
-rule nc      '\bmkfifo\b[^;|&\n]*\|\s*.*\bnc\s'                                "${_MSG_REVERSE_SHELL}"
+rule nc '\bmkfifo\b[^;|&\n]*\|\s*.*\bnc\s' "${_MSG_REVERSE_SHELL}"
 # socat forwarding to an interactive shell
-rule generic '\bsocat\b[^;|&\n]*(exec:|system:)[^;|&\n]*(sh|bash|zsh)'         "${_MSG_REVERSE_SHELL}"
+rule generic '\bsocat\b[^;|&\n]*(exec:|system:)[^;|&\n]*(sh|bash|zsh)' "${_MSG_REVERSE_SHELL}"
 # telnet piped to a shell
-rule generic '\btelnet\s+\S+\s+[0-9]+\s*\|.*\b(sh|bash)\b'                    "${_MSG_REVERSE_SHELL}"
+rule generic '\btelnet\s+\S+\s+[0-9]+\s*\|.*\b(sh|bash)\b' "${_MSG_REVERSE_SHELL}"
 # Scripting language one-liner reverse shells
-rule generic '\bpython[0-9.]?\b[^;|&\n]*socket[^;|&\n]*(exec|connect)'         "${_MSG_REVERSE_SHELL}"
-rule generic '\bperl\b[^;|&\n]*-e[^;|&\n]*socket'                              "${_MSG_REVERSE_SHELL}"
-rule generic '\bruby\b[^;|&\n]*-e[^;|&\n]*TCPSocket'                           "${_MSG_REVERSE_SHELL}"
-rule generic '\bphp\b[^;|&\n]*-r[^;|&\n]*fsockopen'                            "${_MSG_REVERSE_SHELL}"
+rule generic '\bpython[0-9.]?\b[^;|&\n]*socket[^;|&\n]*(exec|connect)' "${_MSG_REVERSE_SHELL}"
+rule generic '\bperl\b[^;|&\n]*-e[^;|&\n]*socket' "${_MSG_REVERSE_SHELL}"
+rule generic '\bruby\b[^;|&\n]*-e[^;|&\n]*TCPSocket' "${_MSG_REVERSE_SHELL}"
+rule generic '\bphp\b[^;|&\n]*-r[^;|&\n]*fsockopen' "${_MSG_REVERSE_SHELL}"
 
 # ── Pipe-to-shell ─────────────────────────────────────────────────────────────
-rule none '(curl|wget|fetch)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?|ruby)\b'      "${_MSG_PIPE_TO_SHELL}"
+rule none '(curl|wget|fetch)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?|ruby)\b' "${_MSG_PIPE_TO_SHELL}"
 
 # ── Obfuscated execution ──────────────────────────────────────────────────────
 # base64 decode piped directly to a shell
-rule none 'base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?)'        "${_MSG_OBFUSCATED}"
+rule none 'base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?)' "${_MSG_OBFUSCATED}"
 # pipeline that decodes base64 before passing to a shell
-rule none '\|\s*base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh)'                 "${_MSG_OBFUSCATED}"
+rule none '\|\s*base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh)' "${_MSG_OBFUSCATED}"
 # eval of a command substitution (classic arbitrary-code injection)
-rule none '\beval\s*\$\('                                                        "${_MSG_OBFUSCATED}"
-rule none '\beval\s*`'                                                           "${_MSG_OBFUSCATED}"
+rule none '\beval\s*\$\(' "${_MSG_OBFUSCATED}"
+rule none '\beval\s*`' "${_MSG_OBFUSCATED}"
 # hex decode piped to a shell
-rule none 'xxd\s+-r\b[^|]*\|\s*(ba?sh|zsh)'                                    "${_MSG_OBFUSCATED}"
+rule none 'xxd\s+-r\b[^|]*\|\s*(ba?sh|zsh)' "${_MSG_OBFUSCATED}"
 
 # ── Clipboard reads ───────────────────────────────────────────────────────────
-rule none '\bpbpaste\b'                                                          "${_MSG_CLIPBOARD}"
-rule none '\bxclip\b[^;|&\n]*(--output|-o)\b'                                  "${_MSG_CLIPBOARD}"
-rule none '\bxsel\b[^;|&\n]*(--output|-o)\b'                                   "${_MSG_CLIPBOARD}"
-rule none '\bwl-paste\b'                                                         "${_MSG_CLIPBOARD}"
-rule none '\bGet-Clipboard\b'                                                    "${_MSG_CLIPBOARD}"
+rule none '\bpbpaste\b' "${_MSG_CLIPBOARD}"
+rule none '\bxclip\b[^;|&\n]*(--output|-o)\b' "${_MSG_CLIPBOARD}"
+rule none '\bxsel\b[^;|&\n]*(--output|-o)\b' "${_MSG_CLIPBOARD}"
+rule none '\bwl-paste\b' "${_MSG_CLIPBOARD}"
+rule none '\bGet-Clipboard\b' "${_MSG_CLIPBOARD}"
 
 # ── Fork bomb ─────────────────────────────────────────────────────────────────
 # Canonical bash fork bomb: :(){ :|:& };:
-rule none ':\s*\(\s*\)\s*\{[^}]*:\s*\|[^}]*:\s*&[^}]*\}'                      "${_MSG_FORK_BOMB}"
+rule none ':\s*\(\s*\)\s*\{[^}]*:\s*\|[^}]*:\s*&[^}]*\}' "${_MSG_FORK_BOMB}"
 
 # ── Cron injection ────────────────────────────────────────────────────────────
-rule none '\|\s*crontab\b'                                                       "${_MSG_CRON}"
-rule none '\bcrontab\s+-\s*$'                                                    "${_MSG_CRON}"
-rule none '\bcrontab\s+[^-\s]'                                                   "${_MSG_CRON}"
+rule none '\|\s*crontab\b' "${_MSG_CRON}"
+rule none '\bcrontab\s+-\s*$' "${_MSG_CRON}"
+rule none '\bcrontab\s+[^-\s]' "${_MSG_CRON}"
 
 # ── SSH key manipulation ──────────────────────────────────────────────────────
-rule none '>>\s*~?/?\S*\.ssh/authorized_keys'                                   "${_MSG_SSH_KEY}"
-rule none '>\s*~?/?\S*\.ssh/authorized_keys'                                    "${_MSG_SSH_KEY}"
-rule none '\bcp\b[^;|&\n]*\.ssh/(?:id_|authorized_keys)'                        "${_MSG_SSH_KEY}"
+rule none '>>\s*~?/?\S*\.ssh/authorized_keys' "${_MSG_SSH_KEY}"
+rule none '>\s*~?/?\S*\.ssh/authorized_keys' "${_MSG_SSH_KEY}"
+rule none '\bcp\b[^;|&\n]*\.ssh/(?:id_|authorized_keys)' "${_MSG_SSH_KEY}"
 
 # ── Privilege escalation ──────────────────────────────────────────────────────
-rule none '(?:^|[;\n|&]\s*)sudo\b'                                              "${_MSG_PRIVILEGE}"
-rule none '(?:^|[;\n|&]\s*)su\b'                                                "${_MSG_PRIVILEGE}"
+rule none '(?:^|[;\n|&]\s*)sudo\b' "${_MSG_PRIVILEGE}"
+rule none '(?:^|[;\n|&]\s*)su\b' "${_MSG_PRIVILEGE}"
 
 # ── macOS system interaction ──────────────────────────────────────────────────
-rule none '\bosascript\b'                                                        "${_MSG_MACOS}"
-rule none '\bdefaults\s+write\b'                                                 "${_MSG_MACOS}"
+rule none '\bosascript\b' "${_MSG_MACOS}"
+rule none '\bdefaults\s+write\b' "${_MSG_MACOS}"
 
 # ── Evaluation loop ───────────────────────────────────────────────────────────
 
-for (( i = 0; i < ${#rules[@]}; i += 3 )); do
+for ((i = 0; i < ${#rules[@]}; i += 3)); do
   exemption="${rules[i]}"
-  pattern="${rules[i+1]}"
-  message="${rules[i+2]}"
+  pattern="${rules[i + 1]}"
+  message="${rules[i + 2]}"
 
   if matches_pattern "${pattern}" <<< "${command_text}"; then
     case "${exemption}" in
@@ -176,7 +176,7 @@ for (( i = 0; i < ${#rules[@]}; i += 3 )); do
       generic)
         matches_pattern "${LOCAL_GENERIC_RE}" <<< "${command_text}" && continue
         ;;
-      none) ;;  # no exemption — fall through to block()
+      none) ;; # no exemption — fall through to block()
       *)
         printf 'block-dangerous-bash.sh: unknown exemption type "%s"\n' "${exemption}" >&2
         exit 2

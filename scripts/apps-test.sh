@@ -34,7 +34,7 @@ run_pi_suite() {
 main() {
   handle_help "${1:-}"
 
-  if (( $# != 1 )); then
+  if (($# != 1)); then
     usage >&2
     die "expected exactly one app test target"
   fi

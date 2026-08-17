@@ -39,7 +39,7 @@ emit_result() {
 
 resolve_hook_path() {
   case "${1}" in
-    session-tool-checks.sh|session-instructions.sh|git-baseline.sh|block-dangerous-bash.sh|block-sensitive-paths.py|block-destructive-ops.py|block-secrets.py|bash-command-validator.sh|stop-precommit.sh)
+    session-tool-checks.sh | session-instructions.sh | git-baseline.sh | block-dangerous-bash.sh | block-sensitive-paths.py | block-destructive-ops.py | block-secrets.py | bash-command-validator.sh | stop-precommit.sh)
       printf '%s\n' "${CLAUDE_HOOKS_DIR}/${1}"
       ;;
     copilot-block-hook-tampering.py)
@@ -53,16 +53,16 @@ resolve_hook_path() {
 
 map_tool_name() {
   case "${1}" in
-    Bash|runInTerminal|run_in_terminal|terminal)
+    Bash | runInTerminal | run_in_terminal | terminal)
       printf '%s\n' 'Bash'
       ;;
-    Read|readFile|read_file)
+    Read | readFile | read_file)
       printf '%s\n' 'Read'
       ;;
-    Write|create_file|createFile)
+    Write | create_file | createFile)
       printf '%s\n' 'Write'
       ;;
-    Edit|editFiles|replace_string_in_file|insert_edit_into_file|delete_file|rename_file)
+    Edit | editFiles | replace_string_in_file | insert_edit_into_file | delete_file | rename_file)
       printf '%s\n' 'Edit'
       ;;
     apply_patch)
@@ -167,7 +167,7 @@ main() {
 
   local raw_json
   raw_json="$(cat)"
-  if ! jq -e . >/dev/null 2>&1 <<< "${raw_json}"; then
+  if ! jq -e . > /dev/null 2>&1 <<< "${raw_json}"; then
     raw_json='{}'
   fi
 
@@ -187,7 +187,7 @@ main() {
   local multi_path_count
   multi_path_count="$(jq -r '(.tool_input.file_paths // []) | length' <<< "${normalized_json}")"
 
-  if [[ "${script_name}" =~ ${MULTI_PATH_TARGETS} ]] && [[ "${mapped_name}" =~ ^(Read|Write|Edit)$ ]] && (( multi_path_count > 1 )); then
+  if [[ "${script_name}" =~ ${MULTI_PATH_TARGETS} ]] && [[ "${mapped_name}" =~ ^(Read|Write|Edit)$ ]] && ((multi_path_count > 1)); then
     local -a file_paths=()
     while IFS= read -r file_path; do
       file_paths+=("${file_path}")
@@ -198,7 +198,7 @@ main() {
       local per_path_json
       per_path_json="$(jq -c --arg path "${path}" '.tool_input.file_path = $path | .tool_input.path = $path' <<< "${normalized_json}")"
       execute_hook "${script_name}" "${per_path_json}" "${script_args[@]}"
-      if (( HOOK_EXIT_CODE != 0 )) || [[ -s "${HOOK_STDOUT_FILE}" ]]; then
+      if ((HOOK_EXIT_CODE != 0)) || [[ -s "${HOOK_STDOUT_FILE}" ]]; then
         emit_result "${HOOK_STDOUT_FILE}" "${HOOK_STDERR_FILE}"
         return "${HOOK_EXIT_CODE}"
       fi

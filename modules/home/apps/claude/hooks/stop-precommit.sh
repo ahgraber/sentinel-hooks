@@ -13,15 +13,15 @@ set -euo pipefail
 payload="$(cat)"
 
 # Set on the pass after a block, so this caps the agent at one blocking round.
-if [[ "$(jq -r '.stop_hook_active // false' <<<"${payload}")" == "true" ]]; then
+if [[ "$(jq -r '.stop_hook_active // false' <<< "${payload}")" == "true" ]]; then
   exit 0
 fi
 
-cwd="$(jq -r '.cwd // empty' <<<"${payload}")"
+cwd="$(jq -r '.cwd // empty' <<< "${payload}")"
 [[ -d "${cwd}" ]] || cwd="${CLAUDE_PROJECT_DIR:-${PWD}}"
 [[ -d "${cwd}" ]] || cwd="${PWD}"
 
-root="$(git -C "${cwd}" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+root="$(git -C "${cwd}" rev-parse --show-toplevel 2> /dev/null)" || exit 0
 
 if [[ ! -f "${root}/.pre-commit-config.yaml" && ! -f "${root}/.pre-commit-config.yml" ]]; then
   exit 0
@@ -36,7 +36,7 @@ while IFS= read -r file; do
 done < <(
   {
     # Lowercase `d` drops deletions, which the runner cannot open.
-    if git_repo rev-parse --verify --quiet HEAD >/dev/null; then
+    if git_repo rev-parse --verify --quiet HEAD > /dev/null; then
       git_repo diff --name-only --diff-filter=d HEAD
     else
       git_repo diff --cached --name-only --diff-filter=d
@@ -47,9 +47,9 @@ done < <(
 
 ((${#files[@]})) || exit 0
 
-if command -v prek >/dev/null 2>&1; then
+if command -v prek > /dev/null 2>&1; then
   runner="prek"
-elif command -v pre-commit >/dev/null 2>&1; then
+elif command -v pre-commit > /dev/null 2>&1; then
   runner="pre-commit"
 else
   exit 0

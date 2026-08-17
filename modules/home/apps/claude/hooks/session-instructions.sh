@@ -11,7 +11,7 @@ INSTRUCTIONS_DIR="${SCRIPT_DIR}/instructions"
 
 if [[ ! -d "$INSTRUCTIONS_DIR" ]]; then
   echo "session-instructions: instructions directory not found: ${INSTRUCTIONS_DIR}" >&2
-  exit 0  # non-fatal — don't block the session
+  exit 0 # non-fatal — don't block the session
 fi
 
 shopt -s nullglob
@@ -20,12 +20,12 @@ shopt -u nullglob
 
 if [[ ${#content_files[@]} -eq 0 ]]; then
   echo "session-instructions: no instruction fragments found in: ${INSTRUCTIONS_DIR}" >&2
-  exit 0  # non-fatal — don't block the session
+  exit 0 # non-fatal — don't block the session
 fi
 
 content=""
 for content_file in "${content_files[@]}"; do
-  fragment=$(<"$content_file")
+  fragment=$(< "$content_file")
   if [[ -n "$content" ]]; then
     content+=$'\n\n'
   fi
@@ -36,7 +36,7 @@ done
 to_json_string_literal() {
   local s="$1"
 
-  if command -v jq >/dev/null 2>&1; then
+  if command -v jq > /dev/null 2>&1; then
     printf '%s' "${s}" | jq -Rs .
     return
   fi

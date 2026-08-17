@@ -17,7 +17,7 @@ set -uo pipefail
 
 os="$(uname -s)"
 if [[ "${os}" != "Darwin" ]]; then
-  cat >/dev/null
+  cat > /dev/null
   exit 0
 fi
 
@@ -26,9 +26,9 @@ fi
 # default, used when the file is absent because the app has not run yet.
 # Backgrounded so a stalled or absent listener never delays the event.
 
-port="$(cat "${HOME}/.claude/claudebar-hook-port" 2>/dev/null || echo 19847)"
+port="$(cat "${HOME}/.claude/claudebar-hook-port" 2> /dev/null || echo 19847)"
 
 cat | curl -s -X POST "http://localhost:${port}/hook" \
-  -H 'Content-Type: application/json' -d @- >/dev/null 2>&1 &
+  -H 'Content-Type: application/json' -d @- > /dev/null 2>&1 &
 
 exit 0
