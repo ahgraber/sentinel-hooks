@@ -58,7 +58,13 @@ def run_hook(
     payload = stdin_text
     if payload is None:
         payload = json.dumps(
-            {"tool_name": tool_name, "tool_input": {"command": command}}
+            {
+                "tool_name": tool_name,
+                "tool_input": {"command": command},
+                # Claude includes transcript_path; its presence marks an
+                # ask-capable agent so `ask` rules prompt rather than block.
+                "transcript_path": "/tmp/transcript.jsonl",
+            }
         )
     return subprocess.run(
         [sys.executable, str(hook_path)],
@@ -124,3 +130,17 @@ mode = "block"
     )
 
     assert run_hook(hook_path, "nested-rule").returncode == 2
+
+
+def test_block_wins_over_earlier_ask_rule(hook_path: Path) -> None:
+    """A block rule must win even when an ask rule matches earlier in the file.
+
+    'synthetic-ask' (ask, rule index 1) and 'case-sensitive-source' (block, rule
+    index 2) both match. First-match-wins would downgrade the block to a prompt;
+    the two-pass engine blocks.
+    """
+    result = run_hook(hook_path, "synthetic-ask and case-sensitive-source together")
+
+    assert result.returncode == 2
+    assert "Matched without case" in result.stderr  # the block rule's reason
+    assert "permissionDecision" not in result.stdout  # not downgraded to ask

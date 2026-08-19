@@ -4,12 +4,19 @@
 # dependencies = []
 # ///
 """
-Claude Code Hook: Block destructive operations.
+Claude Code / Codex Hook: Block destructive operations.
+
+Shared (symlinked) between Claude Code and Codex.
 
 PreToolUse hook for the Bash tool.
 Loads rules from block-destructive-ops-patterns.toml and matches each command
-against them, producing a hard block (exit 2) or a confirmation prompt
-(exit 0 + JSON) as specified by the matched rule's mode.
+against them, producing a hard block (exit 2) or — for `ask` rules — a
+confirmation prompt (exit 0 + JSON).
+
+Confirmation prompts only work under Claude, which supports PreToolUse prompts.
+Codex does not, so `ask` rules are blocked instead (fail closed). The agent is
+detected from the payload: Claude sends `transcript_path`; when it is absent
+(Codex, or an unknown agent) the hook blocks rather than prompt.
 
 If the pattern file is missing or unreadable, the hook exits 0 (fail-open on
 own configuration errors rather than blocking all Bash commands).
@@ -60,6 +67,16 @@ Stop and report the following to the user immediately:
 4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed"""
 
 
+def supports_ask(data: dict) -> bool:
+    """Whether the running agent can honour a PreToolUse confirmation prompt.
+
+    Claude Code sends `transcript_path` in the hook payload; Codex does not
+    (it sends `turn_id`). Fail safe: when we cannot confirm Claude, treat the
+    agent as unable to prompt and block instead of asking.
+    """
+    return "transcript_path" in data
+
+
 def make_ask_json(reason: str) -> str:
     return json.dumps(
         {
@@ -85,9 +102,19 @@ def main() -> None:
     if not command:
         sys.exit(0)
 
+    can_ask = supports_ask(data)
+
     rules = load_rules()
     if not rules:
         sys.exit(0)
+
+    # Two-pass: collect the first `block` and first `ask` match separately. A
+    # `block` rule must win over an `ask` rule regardless of file order —
+    # otherwise an earlier ask rule (e.g. `git add -A`) masks a later
+    # catastrophic block (`rm -rf /`) in a chained command, downgrading it to a
+    # mere prompt. First-match-within-a-mode preserves the existing message.
+    first_block: str | None = None
+    first_ask: str | None = None
 
     for rule in rules:
         pattern = rule.get("pattern", "")
@@ -111,12 +138,27 @@ def main() -> None:
         if reason:
             explanation += f"\n\n{reason}"
 
-        if mode == "block":
-            sys.stderr.write(f"Blocked: {explanation}\n{_AI_INSTRUCTIONS}\n")
-            sys.exit(2)
-        elif mode == "ask":
-            sys.stdout.write(make_ask_json(explanation))
+        if mode == "block" and first_block is None:
+            first_block = explanation
+        elif mode == "ask" and first_ask is None:
+            first_ask = explanation
+
+    if first_block is not None:
+        sys.stderr.write(f"Blocked: {first_block}\n{_AI_INSTRUCTIONS}\n")
+        sys.exit(2)
+
+    if first_ask is not None:
+        if can_ask:
+            sys.stdout.write(make_ask_json(first_ask))
             sys.exit(0)
+        # The agent cannot require confirmation from a PreToolUse hook
+        # (e.g. Codex): fail closed and block instead of prompting.
+        first_ask += (
+            "\n\nThis agent cannot require confirmation from a PreToolUse "
+            "hook, so this command is blocked instead of prompted."
+        )
+        sys.stderr.write(f"Blocked: {first_ask}\n{_AI_INSTRUCTIONS}\n")
+        sys.exit(2)
 
     sys.exit(0)
 

@@ -2,7 +2,11 @@
 
 ## Requirement: ToolScope
 
-The system SHALL evaluate tool calls when `tool_name` is `Bash`, `Read`, `Write`, or `Edit`.
+The system SHALL evaluate tool calls when `tool_name` is `Bash`, `Read`, `Write`, `Edit`, or `apply_patch`.
+
+The hook is shared (symlinked) between Claude Code and Codex, which send the same snake_case `{tool_name, tool_input}` PreToolUse payload.
+`Read`/`Write`/`Edit` are Claude tools; `apply_patch` is the Codex edit tool; `Bash` is common (Codex's shell tool also reports `tool_name == "Bash"`).
+A tool a given agent never emits is an inert branch there.
 
 Because the hook handles a mix of sensitive tools (`Bash`, `Write`, `Edit`) and a read-only tool (`Read`), it cannot determine the tool type on a JSON parse failure.
 The system SHALL exit 0 on parse failure (fail-open), per `hook-interface` `ErrorHandlingByDamagePotential`.
@@ -13,13 +17,13 @@ The system SHALL define a set of zero-access paths that may never be written to 
 
 Zero-access paths include:
 
-- Dot-env files: `.env`, `.env.*`, `.envrc`
-- SSH directory and contents: `~/.ssh/**`
-- AWS credentials directory: `~/.aws/**`
-- Kubernetes config directory: `~/.kube/**`
-- GPG directory: `~/.gnupg/**`
+- Dot-env files: `.env`, `.env.*`, `.envrc` (case-insensitive; the `.env` forms also match shell globs such as `*.env` and `.env*`)
+- Credential directories, matched wherever they appear in a path (not only under `~`): `.ssh/`, `.aws/`, `.kube/`, `.gnupg/`, `.azure/`
+- SSH key filenames anywhere: `id_rsa*`, `id_dsa*`, `id_ecdsa*`, `id_ed25519*` (private and public)
+- Credential config files anywhere: `.netrc`, `.npmrc`, `.pypirc`, `.git-credentials`, `.docker/config.json`, `service-account*.json`
 - Certificate and key files: `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.crt`, `*.cer`
 - Terraform state files: `*.tfstate`, `*.tfstate.backup`
+- Shell history files: `.bash_history`, `.zsh_history`, `.sh_history`, `.node_repl_history`, `.python_history`
 - Files whose name contains `credentials` or `secret` (case-insensitive), unless the path falls within a package or dependency directory (see `PackageDirExemption`)
 
 ### Requirement: PackageDirExemption
@@ -61,6 +65,18 @@ The system SHALL block `Write` and `Edit` tool calls targeting a zero-access pat
 
 - **GIVEN** an Edit tool call is intercepted
 - **WHEN** `tool_input.path` is within `~/.ssh/`
+- **THEN** the hook exits 2
+
+### Requirement: BlockApplyPatchToZeroAccessPath
+
+The system SHALL block a Codex `apply_patch` tool call that adds, updates, deletes, or moves a zero-access path.
+
+The `apply_patch` target paths SHALL be read from the command body (`*** Add File:`, `*** Update File:`, `*** Delete File:`, `*** Move to:` lines) in `tool_input.command`.
+
+#### Scenario: ApplyPatchToEnvFile
+
+- **GIVEN** an `apply_patch` tool call is intercepted
+- **WHEN** the patch body names a zero-access path (e.g. `*** Add File: config/.env`)
 - **THEN** the hook exits 2
 
 ### Requirement: BlockReadFromZeroAccessPath
@@ -110,6 +126,7 @@ Write-to-path patterns in Bash include:
 - Output redirection (`>`, `>>`) to a zero-access path
 - `cp`, `mv`, `install`, `tee` with a zero-access path as the destination
 - `chmod` or `chown` targeting a zero-access path
+- `dd of=` a zero-access path
 
 #### Scenario: RedirectToEnvFile
 
@@ -122,3 +139,61 @@ Write-to-path patterns in Bash include:
 - **GIVEN** a Bash tool call is intercepted
 - **WHEN** the command copies a file into `~/.ssh/`
 - **THEN** the hook exits 2
+
+### Requirement: BlockBashReadFromZeroAccessPath
+
+The system SHALL block `Bash` commands that read a zero-access path, so its contents cannot enter Claude's context.
+
+This enforcement matters most on Linux, where the OS sandbox (bubblewrap) ignores glob deny rules such as `Read(**/.env)` and so does not stop a plain `cat ./project/.env`; on macOS the Seatbelt sandbox honours those globs.
+The hook makes read blocking uniform across platforms.
+
+The check SHALL be fail-safe rather than precise: the goal is to prevent operations over secrets, not to model shell grammar.
+Commands SHALL be tokenised with `shlex` (quote- and operator-aware) so quoting and escapes resolve (`\cat`, `c""at`, `'cat'`) and quoted operators do not split the command.
+If a command segment invokes a recognised read command, EVERY token in that segment SHALL be checked against the zero-access rules and any match SHALL block.
+There SHALL be no option/operand modelling: a zero-access path that appears anywhere — as an operand, an attached option value (`-f.env`, `if=.env`), or behind a wrapper (`sudo -u root cat .env`) — SHALL block.
+Input redirection targets (`<`, `0<`) SHALL be checked regardless of the command word.
+
+This bias SHALL prefer false positives over false negatives: a zero-access-looking search pattern (e.g. `grep -r secret .`) SHALL block even though it names no file.
+
+Read-from-path forms in Bash include:
+
+- A recognised read command (`cat`, `head`, `grep`, `sed`, `awk`, `jq`, `sort`, `source`, `openssl`, `tar`, `unzip`, `install`, an editor, ...) in a segment that also contains a zero-access token
+- Input redirection (`<`, `0<`, `$(< file)`, `mapfile`/`read < file`) from a zero-access path
+- `dd if=` a zero-access path
+
+#### Scenario: CatEnvFile
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** the command reads a zero-access path (e.g. `cat ./project/.env`)
+- **THEN** the hook exits 2
+
+#### Scenario: RedirectReadWithoutCommand
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** a zero-access path is read via input redirection with no external command (e.g. `mapfile -t a < .env`, `x=$(< .env)`)
+- **THEN** the hook exits 2
+
+#### Scenario: BareCredentialFilename
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** a read command targets an extensionless credential file operand (e.g. `cat credentials`, `cat id_rsa`) outside a package directory
+- **THEN** the hook exits 2
+
+#### Scenario: SecretWordPatternOverDenies
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** a search command uses a zero-access-looking token as its pattern, not a file (e.g. `grep -r secret .`, `jq '.credentials' config.json`)
+- **THEN** the hook exits 2 (accepted over-deny; the fail-safe bias blocks rather than risk a miss)
+
+### Requirement: BashReadBestEffort
+
+Bash read blocking is fail-safe but not a boundary: some ways of reading a file need real shell evaluation that command-text parsing cannot do.
+
+The following are OUT OF SCOPE and SHALL NOT be relied upon:
+
+- Interpreters that open the file in code (`python -c`, `node -e`, `perl`, `ruby`)
+- Command words hidden behind a variable (`c=cat; $c .env`)
+- Wrappers whose child is a nested command string (`bash -c '...'`, `eval`, backticks) or where the secret and the reader land in different pipeline segments (`echo .env | xargs cat`)
+- Symlink indirection (`ln -s <secret> link`, then reading `link`)
+
+For these, the boundary is the OS sandbox's literal-prefix denies (which protect the home credential stores regardless of command), the network egress allowlist, and `block-secrets.py`.

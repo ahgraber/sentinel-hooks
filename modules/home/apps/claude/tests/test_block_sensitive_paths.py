@@ -363,3 +363,37 @@ class TestBlockContract:
 
     def test_bash_redirect_to_env_includes_ai_instructions(self):
         assert_block_contract(bash("echo SECRET=val > .env"), "zero-access")
+
+
+# ── apply_patch (Codex edit tool; shared hook) ───────────────────────────────
+
+
+def apply_patch(command: str):
+    return run_hook(HOOK, "apply_patch", {"command": command})
+
+
+class TestApplyPatch:
+    """Codex applies edits via `apply_patch`; the shared hook checks its targets."""
+
+    def test_add_file_to_env_blocks(self):
+        patch = "*** Begin Patch\n*** Add File: config/.env\n+X=1\n*** End Patch"
+        assert_blocked(apply_patch(patch), "zero-access")
+
+    def test_update_credentials_json_blocks(self):
+        patch = (
+            "*** Begin Patch\n*** Update File: app/credentials.json\n+{}\n*** End Patch"
+        )
+        assert_blocked(apply_patch(patch), "zero-access")
+
+    def test_move_to_ssh_key_blocks(self):
+        patch = f"*** Begin Patch\n*** Move to: {HOME}/.ssh/id_rsa\n*** End Patch"
+        assert_blocked(apply_patch(patch), "zero-access")
+
+    def test_update_normal_file_allowed(self):
+        patch = (
+            "*** Begin Patch\n*** Update File: src/main.py\n+print(1)\n*** End Patch"
+        )
+        assert_allowed(apply_patch(patch))
+
+    def test_empty_command_allowed(self):
+        assert_allowed(apply_patch(""))

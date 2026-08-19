@@ -51,6 +51,12 @@ reason = "Can erase other contributors' work without warning; use --force-with-l
 mode = "block"
 
 [[git.rules]]
+pattern = '\bgit\s+push\b(?!.*--force-with-lease)[^|;&]*\s\+\S'
+description = "Force-pushes via a leading-+ refspec, overwriting remote history"
+reason = "A +ref refspec force-updates the remote with no --force flag; can erase other contributors' work"
+mode = "block"
+
+[[git.rules]]
 pattern = '\bgit\s+push\s+--delete\b'
 description = "Deletes a remote branch or tag"
 reason = "Remote branch deletion affects all collaborators; confirm the target ref"
@@ -125,25 +131,25 @@ description = "File and directory operations with broad or irreversible effects"
 
 # rm -rf targeting absolute or home paths (catastrophic)
 [[filesystem.rules]]
-pattern = '\brm\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*(?:[rR][a-zA-Z]*[fF]|[fF][a-zA-Z]*[rR])[a-zA-Z]*\s+(?:~|/)'
+pattern = '''\brm\s+(?:-{1,2}[A-Za-z-]+\s+)*(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)\b(?:\s+-{1,2}[A-Za-z-]+)*\s+["']?(?:/|~|\$\{?HOME)'''
 description = "Recursively force-deletes files starting from the home directory or an absolute path"
 reason = "Irreversibly deletes entire directory trees; absolute-path rm -rf is almost always catastrophic"
 mode = "block"
 
 [[filesystem.rules]]
-pattern = '\bmkfs\.'
+pattern = '\bmkfs(?:\.[a-z0-9]+)?\b'
 description = "Formats a disk partition with a new filesystem"
 reason = "Formatting a partition irreversibly erases all data on it"
 mode = "block"
 
 [[filesystem.rules]]
-pattern = '\bdd\b.*\bof=/dev/[sh]d'
+pattern = '\bdd\b.*\bof=/dev/(?:sd|hd|nvme|vd|mmcblk|xvd|loop|disk|mapper|dm-)'
 description = "Writes raw data directly to a disk device"
 reason = "dd to a disk device can overwrite partition tables and data with no recovery"
 mode = "block"
 
 [[filesystem.rules]]
-pattern = '\bchmod\s+777\s+/'
+pattern = '''\bchmod\s+(?:-{1,2}[A-Za-z-]+\s+)*(?:0?777|[ugoa]*[-+=][rwxXst]*[wx][rwxXst]*)\s+["']?(?:/|~|\$\{?HOME)'''
 description = "Sets world-readable/writable/executable permissions on a system path"
 reason = "chmod 777 on system paths is a severe security risk"
 mode = "block"
@@ -432,14 +438,14 @@ reason = "SQL DROP is irreversible; all data in the dropped object is permanentl
 mode = "block"
 
 [[database.rules]]
-pattern = '\bDELETE\s+FROM\s+\w+\s*;'
+pattern = '\bDELETE\s+FROM\s+[\w.`\[\]]+\s*;'
 case_insensitive = true
 description = "Deletes every row from a SQL table (no WHERE clause)"
 reason = "DELETE without WHERE removes all rows; this is almost never intentional"
 mode = "block"
 
 [[database.rules]]
-pattern = '\bDELETE\s+FROM\s+\w+\s*$'
+pattern = '\bDELETE\s+FROM\s+[\w.`\[\]]+\s*$'
 case_insensitive = true
 description = "Deletes every row from a SQL table (no WHERE clause)"
 reason = "DELETE without WHERE removes all rows; add a WHERE clause to scope the deletion"

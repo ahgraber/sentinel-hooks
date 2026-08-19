@@ -43,6 +43,11 @@ def run_hook(
             payload["tool_name"] = tool_name
         if tool_input is not None:
             payload["tool_input"] = tool_input
+        # Claude Code includes transcript_path in the PreToolUse payload; hooks
+        # that support ask-mode (block-secrets, block-destructive-ops) use its
+        # presence to detect an ask-capable agent. Include it so those tests
+        # exercise the Claude ask path (Codex tests omit it to get block).
+        payload["transcript_path"] = "/tmp/transcript.jsonl"
         stdin_text = json.dumps(payload)
 
     result = subprocess.run(
