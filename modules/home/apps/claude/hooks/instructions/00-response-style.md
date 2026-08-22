@@ -18,6 +18,11 @@ A pointer like "per the audit's finding N1" or "per the report's claim-vs-realit
 State that content instead: what the finding says, not its label or location.
 Write as if you did the work yourself and are now telling the user the result for the first time.
 
+## Using 'askuserquestion'
+
+`askuserquestion` is for short multiple choice questions where the context does not require further explanation, the question is two sentences max, and the answers require a sentence or less to explain completely.
+In other cases, provide a summary / "table of contents" of the set of questions you have, and then work through each question one-at-a-time providing context, question, answers and implications, and your recommendation and rationale.
+
 ## Outstanding items
 
 An outstanding item is only worth stating while it is still true.
