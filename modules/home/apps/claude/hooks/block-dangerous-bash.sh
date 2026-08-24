@@ -5,6 +5,10 @@
 # Blocks reverse shells, pipe-to-shell, obfuscated exec, clipboard reads,
 # and fork bombs before they can be executed.
 #
+# Each rule is tested against the command as written and against a normalized
+# spelling of it (see normalize_text), so a rule written for `| bash` still
+# fires on `| b'a'sh`. Testing both can only add matches, never drop one.
+#
 # Exit codes:
 #   0 = allow
 #   2 = block (hard block, no recovery path in current invocation)
@@ -20,6 +24,46 @@ matches_pattern() {
     my $regex = eval { qr{$pattern}si };
     exit 1 if $@;
     exit($text =~ $regex ? 0 : 1);
+  '
+}
+
+# Helper: rewrite shell spellings that hide a command word from the rules.
+#
+# Bash accepts many spellings of one word. A line continuation splits it across
+# lines, and quote pairs splice into the middle of it, so `| b'a'sh` and a
+# backslash-newline inside `| bash` both reach the shell as `| bash`. The rules
+# are written against the plain spelling, so they need to see it.
+#
+# Quotes are dropped only where they cannot be delimiting an argument: an empty
+# pair, a span with no internal whitespace, or a span glued to an adjacent word
+# character. A standalone quoted argument such as `grep 'curl | bash'` keeps its
+# quotes, so searching for a string is never rewritten into running it.
+#
+# Backslash-escaped word characters are left as written; undoing those needs
+# quote-context tracking this does not do.
+normalize_text() {
+  perl -0e '
+    my $text = do { local $/; <STDIN> };
+    $text =~ s/\\\n//g;
+    my $src = $text;
+    my $seps = " \t\n|&;()<>";
+    $text =~ s{([\x27"])(.*?)\1}{
+      my $body  = $2;
+      my $whole = $&;
+      my $s     = $-[0];
+      my $e     = $+[0];
+      my $keep  = 0;
+      if ($body =~ /\s/) {
+        my $before = $s > 0 ? substr($src, $s - 1, 1) : "";
+        my $after  = $e < length($src) ? substr($src, $e, 1) : "";
+        my $splices = 0;
+        $splices = 1 if length($before) && index($seps, $before) < 0;
+        $splices = 1 if length($after) && index($seps, $after) < 0;
+        $keep = $splices ? 0 : 1;
+      }
+      $keep ? $whole : $body;
+    }gse;
+    print $text;
   '
 }
 
@@ -47,6 +91,15 @@ tool_name="$(jq -re '.tool_name // empty' 2> /dev/null <<< "${input_json}")" || 
 
 command_text="$(jq -r '.tool_input.command // ""' 2> /dev/null <<< "${input_json}")" || exit 2
 [[ -n "${command_text}" ]] || exit 0
+
+# Normalize once, up front: every rule reuses the result, and a rule that fires
+# on either spelling blocks. Fail closed if normalization itself cannot run.
+normalized_text="$(normalize_text <<< "${command_text}")" || exit 2
+
+candidate_texts=("${command_text}")
+if [[ "${normalized_text}" != "${command_text}" ]]; then
+  candidate_texts+=("${normalized_text}")
+fi
 
 # Loopback exemption constants used by the evaluation loop.
 # For /dev/tcp and nc patterns the loopback check is positional (host segment)
@@ -165,16 +218,19 @@ for ((i = 0; i < ${#rules[@]}; i += 3)); do
   pattern="${rules[i + 1]}"
   message="${rules[i + 2]}"
 
-  if matches_pattern "${pattern}" <<< "${command_text}"; then
+  # The exemption is evaluated against whichever spelling matched, so a
+  # loopback target still exempts the rewritten text and not just the original.
+  for text in "${candidate_texts[@]}"; do
+    matches_pattern "${pattern}" <<< "${text}" || continue
     case "${exemption}" in
       devtcp)
-        matches_pattern "${LOCAL_DEVTCP_RE}" <<< "${command_text}" && continue
+        matches_pattern "${LOCAL_DEVTCP_RE}" <<< "${text}" && continue
         ;;
       nc)
-        matches_pattern "${LOCAL_NC_RE}" <<< "${command_text}" && continue
+        matches_pattern "${LOCAL_NC_RE}" <<< "${text}" && continue
         ;;
       generic)
-        matches_pattern "${LOCAL_GENERIC_RE}" <<< "${command_text}" && continue
+        matches_pattern "${LOCAL_GENERIC_RE}" <<< "${text}" && continue
         ;;
       none) ;; # no exemption — fall through to block()
       *)
@@ -183,7 +239,7 @@ for ((i = 0; i < ${#rules[@]}; i += 3)); do
         ;;
     esac
     block "${message}"
-  fi
+  done
 done
 
 exit 0

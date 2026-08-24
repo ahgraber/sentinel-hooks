@@ -13,6 +13,10 @@ Loads rules from block-destructive-ops-patterns.toml and matches each command
 against them, producing a hard block (exit 2) or — for `ask` rules — a
 confirmation prompt (exit 0 + JSON).
 
+Each rule is matched against the command as written and against a normalized
+spelling of it (see `normalize`), so a rule written for `rm -rf /` still fires
+on `r'm' -rf /`. Matching both can only add matches, never drop one.
+
 Confirmation prompts only work under Claude, which supports PreToolUse prompts.
 Codex does not, so `ask` rules are blocked instead (fail closed). The agent is
 detected from the payload: Claude sends `transcript_path`; when it is absent
@@ -89,6 +93,50 @@ def make_ask_json(reason: str) -> str:
     )
 
 
+_LINE_CONTINUATION = re.compile(r"\\\n")
+_QUOTED_SPAN = re.compile(r"""(['"])(.*?)\1""", re.DOTALL)
+# Characters that end a shell word. A quote touching anything else is spliced
+# into the neighbouring word rather than delimiting an argument of its own.
+_WORD_SEPARATORS = frozenset(" \t\n|&;()<>")
+
+
+def _splices_word(char: str) -> bool:
+    """Whether `char` joins an adjacent quoted span into one shell word."""
+    return bool(char) and char not in _WORD_SEPARATORS
+
+
+def normalize(command: str) -> str:
+    """Rewrite shell spellings that hide a command word from the rule patterns.
+
+    Bash accepts many spellings of one word. A line continuation splits it
+    across lines, and quote pairs splice into the middle of it, so `r'm' -rf /`
+    and a backslash-newline inside `rm -rf /` both reach the shell as the same
+    three words. Patterns are written against the plain spelling, so they need
+    to see the plain spelling.
+
+    Quotes are dropped only where they cannot be delimiting an argument: an
+    empty pair, a span with no internal whitespace, or a span glued to an
+    adjacent word character. A standalone quoted argument such as
+    `grep 'rm -rf /'` keeps its quotes, so searching for a string is never
+    rewritten into running it.
+
+    Backslash-escaped word characters are left as written. Undoing those
+    needs quote-context tracking, which this does not do.
+    """
+    text = _LINE_CONTINUATION.sub("", command)
+
+    def unquote(match: re.Match[str]) -> str:
+        body = match.group(2)
+        if any(char.isspace() for char in body):
+            before = text[match.start() - 1] if match.start() else ""
+            after = text[match.end()] if match.end() < len(text) else ""
+            if not (_splices_word(before) or _splices_word(after)):
+                return match.group(0)
+        return body
+
+    return _QUOTED_SPAN.sub(unquote, text)
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -101,6 +149,9 @@ def main() -> None:
     command = data.get("tool_input", {}).get("command", "")
     if not command:
         sys.exit(0)
+
+    normalized = normalize(command)
+    candidates = (command,) if normalized == command else (command, normalized)
 
     can_ask = supports_ask(data)
 
@@ -127,7 +178,7 @@ def main() -> None:
         except re.error:
             continue
 
-        if not compiled.search(command):
+        if not any(compiled.search(text) for text in candidates):
             continue
 
         description = rule.get("description", "")
