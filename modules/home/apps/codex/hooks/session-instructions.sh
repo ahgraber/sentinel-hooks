@@ -1,1 +1,0 @@
-../../claude/hooks/session-instructions.sh

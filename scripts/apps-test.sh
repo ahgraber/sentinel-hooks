@@ -23,12 +23,12 @@ run_python_suite() {
   local app="${1}"
 
   echo "==> Testing ${app}"
-  uv run --with pytest pytest -q "${REPO_ROOT}/modules/home/apps/${app}/tests"
+  uv run --with pytest pytest -q "${REPO_ROOT}/modules/home/ai/${app}/tests"
 }
 
 run_pi_suite() {
   echo "==> Testing pi"
-  node --test "${REPO_ROOT}/modules/home/apps/pi/security/security-extension-index.test.mjs"
+  node --test "${REPO_ROOT}/modules/home/ai/pi/security/security-extension-index.test.mjs"
 }
 
 main() {

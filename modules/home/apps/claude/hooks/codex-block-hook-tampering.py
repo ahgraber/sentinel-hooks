@@ -1,1 +1,0 @@
-../../codex/hooks/codex-block-hook-tampering.py

@@ -1,1 +1,0 @@
-../../claude/hooks/git-baseline.sh
