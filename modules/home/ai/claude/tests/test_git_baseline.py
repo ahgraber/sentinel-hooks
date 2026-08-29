@@ -11,11 +11,6 @@ from conftest import HookResult
 HOOK_PATH = Path(__file__).parents[2] / "shared" / "hooks" / "git-baseline.sh"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _create_git_repo(path: Path) -> Path:
     """Initialize a git repo with one commit at the given path."""
     path.mkdir(parents=True, exist_ok=True)
@@ -121,24 +116,14 @@ def run_baseline(
     )
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def git_repo(tmp_path: Path) -> Path:
     """Create a temporary git repo with one commit."""
     return _create_git_repo(tmp_path / "repo")
 
 
-# ---------------------------------------------------------------------------
-# SessionIdSafety — covers sanitization of session ID in baseline filename
-# ---------------------------------------------------------------------------
-
-
 class TestSessionIdSafety:
-    """Covers SessionIdSafety/AlphanumericId, SpecialCharId, and BaselineScoping filename invariants."""
+    """Baseline filenames are derived from the session ID and scoped to one GIT_DIR."""
 
     def test_alphanumeric_id_unchanged_in_filename(self, git_repo: Path) -> None:
         """Alphanumeric session ID is used as-is in the baseline filename."""
@@ -172,13 +157,8 @@ class TestSessionIdSafety:
         assert baseline_a.resolve() != baseline_b.resolve()
 
 
-# ---------------------------------------------------------------------------
-# BaselineCapture
-# ---------------------------------------------------------------------------
-
-
 class TestBaselineCapture:
-    """Covers BaselineCapture/GitRepository and NonGitDirectory."""
+    """The init stage records HEAD in a git repo and does nothing outside one."""
 
     def test_init_writes_head_sha_in_git_repo(self, git_repo: Path) -> None:
         """init stage writes the current HEAD SHA to the baseline file."""
@@ -198,13 +178,8 @@ class TestBaselineCapture:
         assert list(tmp_path.rglob("agent-baseline-*")) == []
 
 
-# ---------------------------------------------------------------------------
-# DriftWarning
-# ---------------------------------------------------------------------------
-
-
 class TestDriftWarning:
-    """Covers DriftWarning/NoDrift and DriftDetected."""
+    """The check stage is silent unless HEAD has moved off the session baseline."""
 
     def test_check_silent_when_head_matches_baseline(self, git_repo: Path) -> None:
         """check stage exits 0 with no output when HEAD matches the session baseline."""
@@ -230,13 +205,8 @@ class TestDriftWarning:
         assert branch in ctx
 
 
-# ---------------------------------------------------------------------------
-# DriftWarningPersistence
-# ---------------------------------------------------------------------------
-
-
 class TestDriftWarningPersistence:
-    """Covers DriftWarningPersistence/RepeatedWarning and WarningClearedAfterBash."""
+    """The warning repeats until an update advances the baseline; check never does."""
 
     def test_warning_repeats_and_baseline_unchanged_between_checks(
         self, git_repo: Path
@@ -269,13 +239,8 @@ class TestDriftWarningPersistence:
         assert silent.stdout == ""
 
 
-# ---------------------------------------------------------------------------
-# BaselineAdvancement
-# ---------------------------------------------------------------------------
-
-
 class TestBaselineAdvancement:
-    """Covers BaselineAdvancement/BashAdvancesBaseline."""
+    """The update stage moves the baseline to current HEAD."""
 
     def test_update_overwrites_baseline_with_current_head(self, git_repo: Path) -> None:
         """update stage overwrites the baseline file with the current HEAD SHA."""
@@ -286,13 +251,8 @@ class TestBaselineAdvancement:
         assert baseline.read_text() == new_sha
 
 
-# ---------------------------------------------------------------------------
-# FailSilent
-# ---------------------------------------------------------------------------
-
-
 class TestFailSilent:
-    """Covers FailSilent/NoBaseline and InternalError."""
+    """A missing baseline or unusable input exits 0 silently, never as an error."""
 
     def test_check_silent_when_no_baseline_exists(self, git_repo: Path) -> None:
         """check exits 0 with no output when no baseline file exists for the session."""

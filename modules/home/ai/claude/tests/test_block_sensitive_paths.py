@@ -1,9 +1,4 @@
-"""Tests for block-sensitive-paths.py hook.
-
-Validates zero-access path blocking for Read, Write, Edit, and Bash tools,
-including dot-env files, SSH/AWS/Kube/GPG directories, certificate files,
-Terraform state, and name-based patterns with package-dir exemption.
-"""
+"""Tests for zero-access path blocking in the block-sensitive-paths.py hook."""
 
 import os
 
@@ -31,20 +26,14 @@ def bash(command: str):
     return run_hook(HOOK, "Bash", {"command": command})
 
 
-# ── Tool scope ────────────────────────────────────────────────────────────────
-
-
 class TestToolScope:
     def test_read_tool_blocked_for_zero_access(self):
-        """Read tool is now covered — zero-access paths are hard-blocked."""
+        """Zero-access paths are hard-blocked for Read, not merely gated."""
         assert_blocked(read(f"{HOME}/.ssh/id_rsa"), "zero-access")
 
     def test_glob_tool_allowed(self):
         result = run_hook(HOOK, "Glob", {"pattern": "*.pem"})
         assert_allowed(result)
-
-
-# ── Read tool blocking ───────────────────────────────────────────────────────
 
 
 class TestReadTool:
@@ -75,9 +64,6 @@ class TestReadTool:
         assert_allowed(read("/project/src/main.py"))
 
 
-# ── Dot-env files ────────────────────────────────────────────────────────────
-
-
 class TestDotEnvFiles:
     def test_write_dot_env(self):
         assert_blocked(write("/project/.env"), "zero-access")
@@ -95,9 +81,6 @@ class TestDotEnvFiles:
         assert_blocked(edit("/project/.env"), "zero-access")
 
 
-# ── SSH directory ────────────────────────────────────────────────────────────
-
-
 class TestSshDirectory:
     def test_write_ssh_id_rsa(self):
         assert_blocked(write(f"{HOME}/.ssh/id_rsa"), "zero-access")
@@ -111,8 +94,12 @@ class TestSshDirectory:
     def test_write_ssh_known_hosts(self):
         assert_blocked(write(f"{HOME}/.ssh/known_hosts"), "zero-access")
 
-
-# ── AWS directory ────────────────────────────────────────────────────────────
+    def test_case_variant_directory_blocks_on_any_volume(self):
+        """This set is matched by what a path looks like, not by which file it
+        is, so a heuristic that stopped applying because a letter was
+        capitalised would be defeated by capitalising a letter."""
+        assert_blocked(write(f"{HOME}/.SSH/id_rsa"), "zero-access")
+        assert_blocked(write(f"{HOME}/Certs/Server.PEM"), "zero-access")
 
 
 class TestAwsDirectory:
@@ -123,15 +110,9 @@ class TestAwsDirectory:
         assert_blocked(write(f"{HOME}/.aws/config"), "zero-access")
 
 
-# ── Kube directory ───────────────────────────────────────────────────────────
-
-
 class TestKubeDirectory:
     def test_write_kube_config(self):
         assert_blocked(write(f"{HOME}/.kube/config"), "zero-access")
-
-
-# ── GPG directory ────────────────────────────────────────────────────────────
 
 
 class TestGnupgDirectory:
@@ -140,9 +121,6 @@ class TestGnupgDirectory:
 
     def test_write_gnupg_trustdb(self):
         assert_blocked(write(f"{HOME}/.gnupg/trustdb.gpg"), "zero-access")
-
-
-# ── Certificate and key files ────────────────────────────────────────────────
 
 
 class TestCertificateFiles:
@@ -165,18 +143,12 @@ class TestCertificateFiles:
         assert_blocked(write("/project/server.cer"), "zero-access")
 
 
-# ── Terraform state ─────────────────────────────────────────────────────────
-
-
 class TestTerraformState:
     def test_write_tfstate(self):
         assert_blocked(write("/project/terraform.tfstate"), "zero-access")
 
     def test_write_tfstate_backup(self):
         assert_blocked(write("/project/terraform.tfstate.backup"), "zero-access")
-
-
-# ── Name-based patterns ─────────────────────────────────────────────────────
 
 
 class TestNameBasedPatterns:
@@ -196,9 +168,6 @@ class TestNameBasedPatterns:
         assert_blocked(edit("/project/credentials.ini"), "zero-access")
 
 
-# ── Shell history files ─────────────────────────────────────────────────────
-
-
 class TestShellHistory:
     def test_write_bash_history(self):
         assert_blocked(write(f"{HOME}/.bash_history"), "zero-access")
@@ -211,9 +180,6 @@ class TestShellHistory:
 
     def test_write_python_history(self):
         assert_blocked(write(f"{HOME}/.python_history"), "zero-access")
-
-
-# ── Package-dir exemption ───────────────────────────────────────────────────
 
 
 class TestPackageDirExemption:
@@ -260,9 +226,6 @@ class TestPackageDirExemption:
         assert_blocked(write("/project/.venv/cert.pem"), "zero-access")
 
 
-# ── Bash write-to-path detection ────────────────────────────────────────────
-
-
 class TestBashWriteDetection:
     def test_redirect_to_env_file(self):
         assert_blocked(bash("echo SECRET=val > .env"), "zero-access")
@@ -292,9 +255,6 @@ class TestBashWriteDetection:
         assert_allowed(bash("ls -la ~/.ssh/"))
 
 
-# ── Normal files allowed ────────────────────────────────────────────────────
-
-
 class TestNormalFilesAllowed:
     def test_write_py_file(self):
         assert_allowed(write("/project/src/main.py"))
@@ -312,17 +272,11 @@ class TestNormalFilesAllowed:
         assert_allowed(edit("/project/src/app.ts"))
 
 
-# ── Error handling ──────────────────────────────────────────────────────────
-
-
 class TestErrorHandling:
     def test_malformed_json_fails_open(self):
         """Mixed sensitive+read-only hook fails-open on malformed JSON (cannot determine tool type)."""
         result = run_hook(HOOK, stdin_text="not json")
         assert result.exit_code == 0
-
-
-# ── Directory prefix false positive ─────────────────────────────────────────
 
 
 class TestDirectoryPrefixBoundary:
@@ -343,9 +297,6 @@ class TestDirectoryPrefixBoundary:
         assert_blocked(write("/project/codex/tests-extra/secret.json"), "zero-access")
 
 
-# ── Block contract ───────────────────────────────────────────────────────────
-
-
 class TestBlockContract:
     """Verify every block-mode response includes the two-section AI guidance contract."""
 
@@ -363,9 +314,6 @@ class TestBlockContract:
 
     def test_bash_redirect_to_env_includes_ai_instructions(self):
         assert_block_contract(bash("echo SECRET=val > .env"), "zero-access")
-
-
-# ── apply_patch (Codex edit tool; shared hook) ───────────────────────────────
 
 
 def apply_patch(command: str):

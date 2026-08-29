@@ -50,10 +50,8 @@ def run_hook(
             payload["tool_name"] = tool_name
         if tool_input is not None:
             payload["tool_input"] = tool_input
-        # Claude Code includes transcript_path in the PreToolUse payload; hooks
-        # that support ask-mode (block-secrets, block-destructive-ops) use its
-        # presence to detect an ask-capable agent. Include it so those tests
-        # exercise the Claude ask path (Codex tests omit it to get block).
+        # transcript_path marks an ask-capable agent, so ask-mode hooks prompt
+        # here where the Codex suites, which omit it, see a block.
         payload["transcript_path"] = "/tmp/transcript.jsonl"
         stdin_text = json.dumps(payload)
 
@@ -92,7 +90,6 @@ def assert_blocked(result: HookResult, message_substring: str = "") -> None:
         )
 
 
-# Directives that the AI instruction block must contain (checked case-insensitively).
 _AI_BLOCK_CHECKS = [
     ("section delimiter", "---"),
     ("AI INSTRUCTIONS header", "ai instructions:"),
@@ -105,17 +102,7 @@ _AI_BLOCK_CHECKS = [
 
 
 def assert_block_contract(result: HookResult, message_substring: str = "") -> None:
-    """Assert exit 2 and that stderr follows the two-section block contract.
-
-    Verifies:
-    - exit code 2 (hard block)
-    - human explanation present (via message_substring if given)
-    - '---' section delimiter present
-    - 'AI INSTRUCTIONS:' header present
-    - workaround prohibition present
-    - all four directive items (current task, intended step, what was blocked,
-      how the user can help) present in the AI instruction block
-    """
+    """Assert exit 2 and that stderr carries every element of the block contract."""
     assert_blocked(result, message_substring)
     stderr_lower = result.stderr.lower()
     for label, needle in _AI_BLOCK_CHECKS:

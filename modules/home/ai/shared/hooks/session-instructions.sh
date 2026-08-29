@@ -32,7 +32,6 @@ for content_file in "${content_files[@]}"; do
   content+="${fragment}"
 done
 
-# Escape for safe JSON string embedding.
 to_json_string_literal() {
   local s="$1"
 
@@ -51,10 +50,8 @@ to_json_string_literal() {
 
 escaped=$(to_json_string_literal "${content}")
 
-# Both paths produce a complete JSON string literal (e.g. "...").
-# Claude Code expects hookSpecificOutput.additionalContext (nested JSON).
-# Uses printf to avoid bash 5.3+ heredoc hang.
+# `escaped` is already a complete JSON string literal, quotes included, so the
+# %s must NOT be quoted here. printf rather than a heredoc: bash 5.3+ hangs.
 printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": %s\n  }\n}\n' "${escaped}"
-# DO NOT quote the %s in `"additionalContext": %s`!
 
 exit 0

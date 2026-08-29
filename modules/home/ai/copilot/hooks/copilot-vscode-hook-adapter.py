@@ -5,14 +5,14 @@
 # ///
 """Normalize VS Code hook payloads and dispatch to shared hook scripts.
 
-Benchmark note: keep this Python adapter as the default. In local measurements it
-was faster than the bash adapter because the bash path pays additional shell
-plumbing costs plus repeated jq/perl-heavy downstream invocations.
+Kept as the default: the bash adapter measured slower, paying shell orchestration
+on top of jq/perl-heavy downstream hook invocations.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from copy import deepcopy
@@ -20,20 +20,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SHARED_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "ai" / "shared" / "hooks"
-COPILOT_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "ai" / "copilot" / "hooks"
+
+# The shared hooks infer the agent from their invocation path, which this adapter bypasses.
+HOOK_ENV = {**os.environ, "AI_HOOK_AGENT": "copilot"}
 
 SCRIPT_PATHS = {
     "session-tool-checks.sh": SHARED_HOOKS_DIR / "session-tool-checks.sh",
     "session-instructions.sh": SHARED_HOOKS_DIR / "session-instructions.sh",
     "git-baseline.sh": SHARED_HOOKS_DIR / "git-baseline.sh",
     "block-dangerous-bash.sh": SHARED_HOOKS_DIR / "block-dangerous-bash.sh",
+    "block-hook-tampering.py": SHARED_HOOKS_DIR / "block-hook-tampering.py",
     "block-sensitive-paths.py": SHARED_HOOKS_DIR / "block-sensitive-paths.py",
     "block-destructive-ops.py": SHARED_HOOKS_DIR / "block-destructive-ops.py",
     "block-secrets.py": SHARED_HOOKS_DIR / "block-secrets.py",
     "bash-command-validator.sh": SHARED_HOOKS_DIR / "bash-command-validator.sh",
     "stop-precommit.sh": SHARED_HOOKS_DIR / "stop-precommit.sh",
-    "copilot-block-hook-tampering.py": COPILOT_HOOKS_DIR
-    / "copilot-block-hook-tampering.py",
 }
 
 TERMINAL_TOOLS = {
@@ -68,10 +69,12 @@ PATCH_TOOLS = {
     "apply_patch": "apply_patch",
 }
 
+# Hooks that judge one path per call, so a multi-path edit must be fanned out.
+# `block-hook-tampering.py` is absent deliberately: it judges the whole set and
+# answers with the most restrictive class in it, which fanning out would defeat.
 MULTI_PATH_TARGETS = {
     "block-sensitive-paths.py",
     "block-secrets.py",
-    "copilot-block-hook-tampering.py",
 }
 
 
@@ -184,6 +187,7 @@ def execute_hook(
         text=True,
         capture_output=True,
         check=False,
+        env=HOOK_ENV,
     )
 
 
@@ -255,6 +259,8 @@ def main() -> int:
             per_path_input = _copy_dict(per_path.get("tool_input"))
             per_path_input["file_path"] = path
             per_path_input["path"] = path
+            # Leaving the list behind would make every fanned-out call judge the whole set.
+            per_path_input.pop("file_paths", None)
             per_path["tool_input"] = per_path_input
             result = execute_hook(script_name, script_args, per_path)
             if result.returncode != 0 or result.stdout:

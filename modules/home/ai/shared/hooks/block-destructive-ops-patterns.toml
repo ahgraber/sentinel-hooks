@@ -4,17 +4,14 @@
 #   pattern     - regex matched against the Bash command
 #   description - what the matched operation does and its effect
 #   reason      - why it is blocked or flagged (safety/security concern)
-#   mode        - "block" (exit 2) or "ask" (exit 0 + permission dialog)
+#   mode        - "block" (refuse) or "ask" (put the call to the user, where the
+#                 agent can prompt; a refusal where it cannot)
 #
 # Optional:
 #   case_insensitive = true   (for SQL patterns; shell patterns match as-is)
 #
-# Rules are evaluated in order; the first match wins.
-# Structure: [[category.rules]] groups rules by concern for readability.
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GIT
-# ─────────────────────────────────────────────────────────────────────────────
+# Any matching "block" rule wins over any matching "ask" rule regardless of
+# order here; within one mode, the first match supplies the message.
 
 [git]
 description = "Version control history and branch operations"
@@ -37,7 +34,6 @@ description = "Expires reflog entries, removing the safety net for recovering lo
 reason = "Destroys the reflog; without it, accidental resets or lost branches cannot be recovered"
 mode = "block"
 
-# Force push: --force without --force-with-lease (both long and short flags)
 [[git.rules]]
 pattern = '\bgit\s+push\b(?!.*--force-with-lease).*\s--force\b'
 description = "Force-pushes changes to the remote, overwriting its history unconditionally"
@@ -122,14 +118,9 @@ description = "Deletes an entire GitHub repository"
 reason = "Repository deletion removes all code, issues, PRs, and history permanently"
 mode = "block"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FILESYSTEM
-# ─────────────────────────────────────────────────────────────────────────────
-
 [filesystem]
 description = "File and directory operations with broad or irreversible effects"
 
-# rm -rf targeting absolute or home paths (catastrophic)
 [[filesystem.rules]]
 pattern = '''\brm\s+(?:-{1,2}[A-Za-z-]+\s+)*(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)\b(?:\s+-{1,2}[A-Za-z-]+)*\s+["']?(?:/|~|\$\{?HOME)'''
 description = "Recursively force-deletes files starting from the home directory or an absolute path"
@@ -154,7 +145,6 @@ description = "Sets world-readable/writable/executable permissions on a system p
 reason = "chmod 777 on system paths is a severe security risk"
 mode = "block"
 
-# General recursive rm (not just -rf to absolute paths)
 [[filesystem.rules]]
 pattern = '\brm\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*r\b'
 description = "Recursively deletes files and directories"
@@ -179,10 +169,6 @@ description = "Clears the current shell history"
 reason = "Clearing history removes the audit trail of commands run in this session"
 mode = "ask"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PROCESS MANAGEMENT
-# ─────────────────────────────────────────────────────────────────────────────
-
 [process]
 description = "Process signaling and termination"
 
@@ -204,14 +190,9 @@ description = "Sends SIGKILL to a process, forcing immediate termination"
 reason = "SIGKILL prevents the process from cleaning up; data corruption or resource leaks may result"
 mode = "ask"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CLOUD PROVIDERS
-# ─────────────────────────────────────────────────────────────────────────────
-
 [cloud]
 description = "Cloud provider CLI operations that delete or destroy resources"
 
-# AWS
 [[cloud.rules]]
 pattern = '\baws\s+s3\s+rm\b.*\s--recursive\b'
 description = "Recursively deletes all objects under an S3 prefix"
@@ -224,105 +205,87 @@ description = "Syncs to S3 and deletes remote objects not present in the source"
 reason = "Can silently erase production data that exists in S3 but not in the sync source"
 mode = "ask"
 
-# GCP
 [[cloud.rules]]
 pattern = '\bgcloud\b.*\s(?:delete|destroy)\b'
 description = "Deletes or destroys a Google Cloud resource"
 reason = "Cloud resource deletions may be irreversible and can affect live production systems"
 mode = "ask"
 
-# Firebase
 [[cloud.rules]]
 pattern = '\bfirebase\b.*\s(?:delete|projects:delete)\b'
 description = "Deletes a Firebase resource or entire project"
 reason = "Firebase project deletion is permanent and cannot be undone"
 mode = "ask"
 
-# Vercel
 [[cloud.rules]]
 pattern = '\bvercel\b.*\s(?:projects\s+rm|remove)\b'
 description = "Removes a Vercel project or deployment"
 reason = "Vercel project removal permanently deletes all deployments and configuration"
 mode = "ask"
 
-# Netlify
 [[cloud.rules]]
 pattern = '\bnetlify\b.*\s(?:sites:delete|delete)\b'
 description = "Deletes a Netlify site"
 reason = "Site deletion removes all deploys and configuration permanently"
 mode = "ask"
 
-# Cloudflare
 [[cloud.rules]]
 pattern = '\bwrangler\b.*\s(?:delete|destroy)\b'
 description = "Deletes a Cloudflare Workers or Pages resource"
 reason = "Cloudflare resource deletion affects live traffic immediately"
 mode = "ask"
 
-# Heroku
 [[cloud.rules]]
 pattern = '\bheroku\s+apps:destroy\b'
 description = "Destroys a Heroku application"
 reason = "App destruction removes all dynos, add-ons, and configuration permanently"
 mode = "ask"
 
-# Fly.io
 [[cloud.rules]]
 pattern = '\bfly\s+apps\s+destroy\b'
 description = "Destroys a Fly.io application"
 reason = "App destruction removes all machines and volumes permanently"
 mode = "ask"
 
-# DigitalOcean
 [[cloud.rules]]
 pattern = '\bdoctl\b.*\s(?:delete|destroy)\b'
 description = "Deletes a DigitalOcean resource"
 reason = "Resource deletion may destroy droplets, databases, or storage volumes"
 mode = "ask"
 
-# Supabase
 [[cloud.rules]]
 pattern = '\bsupabase\b.*\s(?:projects\s+delete|db\s+reset)\b'
 description = "Deletes a Supabase project or resets a database"
 reason = "Project deletion or database reset permanently removes data and configuration"
 mode = "ask"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# INFRASTRUCTURE & ORCHESTRATION
-# ─────────────────────────────────────────────────────────────────────────────
-
 [infra]
 description = "Infrastructure-as-code and container orchestration operations"
 
-# Terraform / OpenTofu
 [[infra.rules]]
 pattern = '\b(?:terraform|tofu)\s+destroy\b'
 description = "Destroys all infrastructure resources managed by this workspace"
 reason = "Irreversibly removes cloud resources including databases, servers, and networks"
 mode = "ask"
 
-# Pulumi
 [[infra.rules]]
 pattern = '\bpulumi\s+destroy\b'
 description = "Destroys all resources in a Pulumi stack"
 reason = "Irreversibly removes infrastructure resources managed by this stack"
 mode = "ask"
 
-# Serverless Framework
 [[infra.rules]]
 pattern = '\b(?:serverless|sls)\s+remove\b'
 description = "Removes a Serverless Framework service and all its cloud resources"
 reason = "Removes Lambda functions, API Gateways, and associated resources permanently"
 mode = "ask"
 
-# AWS SAM
 [[infra.rules]]
 pattern = '\bsam\s+delete\b'
 description = "Deletes an AWS SAM application stack"
 reason = "Removes all CloudFormation resources created by the stack"
 mode = "ask"
 
-# Kubernetes
 [[infra.rules]]
 pattern = '\bkubectl\s+delete\b.*\s(?:--all\b|-A\b|--all-namespaces\b)'
 description = "Deletes Kubernetes resources across all namespaces or all resources of a type"
@@ -335,7 +298,6 @@ description = "Deletes an entire Kubernetes namespace and all resources within i
 reason = "Namespace deletion cascades to all pods, services, and configs in the namespace"
 mode = "ask"
 
-# Helm
 [[infra.rules]]
 pattern = '\bhelm\s+(?:uninstall|delete)\b'
 description = "Uninstalls a Helm release and removes all associated Kubernetes resources"
@@ -348,7 +310,6 @@ description = "Installs or upgrades a Helm chart on a Kubernetes cluster"
 reason = "Helm install/upgrade modifies live cluster workloads"
 mode = "ask"
 
-# Docker
 [[infra.rules]]
 pattern = '\bdocker\s+system\s+prune\b.*\s-a\b'
 description = "Removes all unused Docker images, containers, volumes, and build cache"
@@ -367,14 +328,9 @@ description = "Removes Docker volumes containing persistent data"
 reason = "Volume removal permanently deletes data stored outside containers"
 mode = "ask"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DATABASES
-# ─────────────────────────────────────────────────────────────────────────────
-
 [database]
 description = "Database operations that delete or wipe data"
 
-# Redis
 [[database.rules]]
 pattern = '\bFLUSHALL\b'
 case_insensitive = true
@@ -396,7 +352,6 @@ description = "Invokes a Redis FLUSH command via the CLI"
 reason = "Redis FLUSH commands permanently wipe all data with no recovery"
 mode = "block"
 
-# MongoDB
 [[database.rules]]
 pattern = 'dropDatabase\s*\('
 description = "Drops an entire MongoDB database and all its collections"
@@ -415,21 +370,18 @@ description = "Drops a MongoDB database or collection via CLI eval"
 reason = "MongoDB drop operations are permanent and irreversible"
 mode = "block"
 
-# PostgreSQL
 [[database.rules]]
 pattern = '\bdropdb\b'
 description = "Drops a PostgreSQL database via the CLI utility"
 reason = "dropdb permanently deletes the database and all its data"
 mode = "block"
 
-# MySQL
 [[database.rules]]
 pattern = '\bmysqladmin\s+drop\b'
 description = "Drops a MySQL database via the mysqladmin utility"
 reason = "mysqladmin drop permanently deletes the database"
 mode = "block"
 
-# SQL (generic — case-insensitive)
 [[database.rules]]
 pattern = '(?:^|\b)DROP\s+(?:TABLE|DATABASE|SCHEMA)\b'
 case_insensitive = true
@@ -458,10 +410,6 @@ description = "Removes all rows from a SQL table without logging individual dele
 reason = "TRUNCATE is faster than DELETE but equally destructive; all data is permanently removed"
 mode = "ask"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PUBLISHING & DISTRIBUTION
-# ─────────────────────────────────────────────────────────────────────────────
-
 [publishing]
 description = "Package and image publishing to registries"
 
@@ -489,10 +437,6 @@ description = "Publishes a Python package to PyPI"
 reason = "Publishing to PyPI is public and version numbers cannot be reused once published"
 mode = "ask"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PACKAGE MANAGEMENT (destructive)
-# ─────────────────────────────────────────────────────────────────────────────
-
 [package]
 description = "Package operations that remove dependencies"
 
@@ -501,10 +445,6 @@ pattern = '\buv\s+(?:pip\s+)?(?:remove|uninstall)\b'
 description = "Removes a Python package from the environment"
 reason = "Package removal may break dependent code; confirm this is intentional"
 mode = "ask"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# NETWORK ACCESS
-# ─────────────────────────────────────────────────────────────────────────────
 
 [network]
 description = "Commands establishing connections to remote hosts"

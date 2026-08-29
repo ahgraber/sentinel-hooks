@@ -12,10 +12,12 @@ from pathlib import Path
 import pytest
 from conftest import run_hook as run_installed_hook
 
-HOOK_SOURCE = (
-    Path(__file__).resolve().parents[2] / "shared/hooks/block-destructive-ops.py"
-)
+HOOKS_DIR = Path(__file__).resolve().parents[2] / "shared" / "hooks"
+HOOK_SOURCE = HOOKS_DIR / "block-destructive-ops.py"
 RULES_NAME = "block-destructive-ops-patterns.toml"
+# The hook reads rules from its own directory, so tests run a copy beside
+# synthetic ones; its sibling imports have to travel with the copy.
+SIBLING_MODULES = ("hook_response.py",)
 RULES = r"""
 [[rules]]
 pattern = "synthetic-block"
@@ -57,6 +59,10 @@ def _load_hook_module():
     """
     spec = importlib.util.spec_from_file_location("block_destructive_ops", HOOK_SOURCE)
     module = importlib.util.module_from_spec(spec)
+    # Loading by location does not put the hook's directory on the import path
+    # the way running it by path does.
+    if str(HOOKS_DIR) not in sys.path:
+        sys.path.insert(0, str(HOOKS_DIR))
     spec.loader.exec_module(module)
     return module
 
@@ -64,10 +70,18 @@ def _load_hook_module():
 normalize = _load_hook_module().normalize
 
 
+def install_hook(directory: Path) -> Path:
+    """Place a runnable copy of the hook in `directory`, siblings included."""
+    path = directory / HOOK_SOURCE.name
+    shutil.copyfile(HOOK_SOURCE, path)
+    for name in SIBLING_MODULES:
+        shutil.copyfile(HOOKS_DIR / name, directory / name)
+    return path
+
+
 @pytest.fixture
 def hook_path(tmp_path: Path) -> Path:
-    path = tmp_path / HOOK_SOURCE.name
-    shutil.copyfile(HOOK_SOURCE, path)
+    path = install_hook(tmp_path)
     (tmp_path / RULES_NAME).write_text(RULES)
     return path
 
@@ -85,8 +99,7 @@ def run_hook(
             {
                 "tool_name": tool_name,
                 "tool_input": {"command": command},
-                # Claude includes transcript_path; its presence marks an
-                # ask-capable agent so `ask` rules prompt rather than block.
+                # Marks an ask-capable agent, so `ask` rules prompt not block.
                 "transcript_path": "/tmp/transcript.jsonl",
             }
         )
@@ -130,19 +143,21 @@ def test_case_insensitive_rules_match_and_invalid_regexes_are_skipped(
 
 
 def test_missing_rules_fail_open(tmp_path: Path) -> None:
-    hook_path = tmp_path / HOOK_SOURCE.name
-    shutil.copyfile(HOOK_SOURCE, hook_path)
-
-    assert run_hook(hook_path, "synthetic-block").returncode == 0
+    assert run_hook(install_hook(tmp_path), "synthetic-block").returncode == 0
 
 
 def test_malformed_hook_input_fails_closed(hook_path: Path) -> None:
-    assert run_hook(hook_path, stdin_text="not json").returncode == 2
+    """Even a parse failure must state why: the agent is told to stop and report,
+    and it cannot report a reason it was never given."""
+    result = run_hook(hook_path, stdin_text="not json")
+
+    assert result.returncode == 2
+    assert "could not parse the hook payload" in result.stderr
+    assert "AI INSTRUCTIONS:" in result.stderr
 
 
 def test_nested_rule_sections_are_loaded(tmp_path: Path) -> None:
-    hook_path = tmp_path / HOOK_SOURCE.name
-    shutil.copyfile(HOOK_SOURCE, hook_path)
+    hook_path = install_hook(tmp_path)
     (tmp_path / RULES_NAME).write_text(
         r"""
 [[synthetic.rules]]
@@ -166,8 +181,8 @@ def test_block_wins_over_earlier_ask_rule(hook_path: Path) -> None:
     result = run_hook(hook_path, "synthetic-ask and case-sensitive-source together")
 
     assert result.returncode == 2
-    assert "Matched without case" in result.stderr  # the block rule's reason
-    assert "permissionDecision" not in result.stdout  # not downgraded to ask
+    assert "Matched without case" in result.stderr
+    assert "permissionDecision" not in result.stdout
 
 
 class TestNormalize:
@@ -265,9 +280,6 @@ def _verdict(command: str) -> str:
     return "allow"
 
 
-# Plain spelling paired with an obfuscated spelling of the same command. The
-# pairs name no rule and assert no verdict, so editing the catalogue moves both
-# sides together and leaves these tests alone.
 NORMALIZATION_PAIRS = [
     pytest.param("rm -rf /tmp/scratch", "r'm' -rf /tmp/scratch", id="rm-quote-splice"),
     pytest.param("rm -rf ~/data", "rm \\\n-rf ~/data", id="rm-line-continuation"),

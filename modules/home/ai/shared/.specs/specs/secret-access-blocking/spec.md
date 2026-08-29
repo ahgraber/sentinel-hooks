@@ -99,6 +99,15 @@ The system SHALL ask (confirm) when a Bash command reads from a system credentia
 
 This covers legitimate debugging: checking which credentials are stored, verifying a token value, or inspecting a credential helper.
 
+Whether a supplied path denotes a credential store SHALL be determined according to `path-matching`.
+A store reached by a differing letter case on a case-insensitive filesystem is the same store, and SHALL prompt.
+
+#### Scenario: CaseVariantCredentialStore
+
+- **GIVEN** a Read tool call is intercepted on a case-insensitive filesystem
+- **WHEN** the target is a credential store named under a differing letter case
+- **THEN** the hook asks
+
 #### Scenario: KeychainReadLocal
 
 - **GIVEN** a Bash tool call is intercepted
@@ -120,6 +129,9 @@ This hook's `ask` for credential-dir reads remains the protection layer for path
 
 Every ask response produced by this requirement SHALL comply with the `ExplanationContract` defined in `hook-interface`: the `permissionDecisionReason` MUST state both what the operation would do (read/write a likely-secret file) and what the specific danger is (exposure of credentials to Claude's context window, enabling potential downstream exfiltration).
 It SHALL name the specific file.
+
+Location matching SHALL be determined according to `path-matching`.
+Basename matching in this requirement applies case-insensitively and is unaffected.
 
 Detection uses two independent heuristic checks:
 

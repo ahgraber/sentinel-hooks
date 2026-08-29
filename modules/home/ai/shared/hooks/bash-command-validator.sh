@@ -3,27 +3,8 @@ set -euo pipefail
 
 # Claude Code Hook: Bash Command Validator
 #
-# This hook runs as a PreToolUse hook for the Bash tool. It validates bash
-# commands against a set of rules before execution. Rules catch zsh expansion
-# hazards, invalid ripgrep flags, and commands that bypass repository tooling.
-#
-# Read more about hooks here: https://docs.anthropic.com/en/docs/claude-code/hooks
-#
-# {
-#   "hooks": {
-#     "PreToolUse": [
-#       {
-#         "matcher": "Bash",
-#         "hooks": [
-#           {
-#             "type": "command",
-#             "command": "/path/to/bash-command-validator.sh"
-#           }
-#         ]
-#       }
-#     ]
-#   }
-# }
+# PreToolUse hook for the Bash tool. Rules catch zsh expansion hazards, invalid
+# ripgrep flags, and commands that bypass repository tooling.
 
 if ! command -v jq > /dev/null 2>&1; then
   echo "Error: jq is required for bash-command-validator.sh" >&2
@@ -71,8 +52,6 @@ rule() {
   patterns+=("$1")
   messages+=("$2")
 }
-
-# catch common mistakes in bash commands and provide guidance
 
 rule '(?<!<)<<[^<]' \
   "Heredoc bodies are blocked because zsh BANG_HIST can silently mangle '!' (e.g. '!=', '!word', shebangs) before Bash receives the command. Rewrite the body without '!', or write it to \$TMPDIR/script.sh or \$TMPDIR/script.py and run that file."

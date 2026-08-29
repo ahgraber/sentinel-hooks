@@ -22,7 +22,6 @@ requires_runner = pytest.mark.skipif(
     RUNNER is None, reason="neither prek nor pre-commit is on PATH"
 )
 
-# A hook that always passes, so a clean run stays silent.
 PASSING_CONFIG = """repos:
   - repo: local
     hooks:
@@ -44,11 +43,6 @@ def _rejecting_config(filename: str) -> str:
         entry: "false"
         files: ^{filename}$
 """
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _create_git_repo(path: Path, config: str | None = None) -> Path:
@@ -113,11 +107,6 @@ def _assert_silent(result: HookResult) -> None:
     assert result.stderr.strip() == "", f"Expected no stderr, got: {result.stderr}"
 
 
-# ---------------------------------------------------------------------------
-# Early returns
-# ---------------------------------------------------------------------------
-
-
 class TestEarlyReturns:
     def test_loop_guard_skips_run(self, tmp_path):
         """stop_hook_active caps the agent at one blocking round."""
@@ -148,11 +137,6 @@ class TestEarlyReturns:
         repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
 
         _assert_silent(_run_hook(repo))
-
-
-# ---------------------------------------------------------------------------
-# Which files reach the runner
-# ---------------------------------------------------------------------------
 
 
 @requires_runner
@@ -238,11 +222,6 @@ class TestChangedFileSet:
 
         assert result.exit_code == 2
         assert "reject-target" in result.stderr
-
-
-# ---------------------------------------------------------------------------
-# Failure reporting
-# ---------------------------------------------------------------------------
 
 
 @requires_runner

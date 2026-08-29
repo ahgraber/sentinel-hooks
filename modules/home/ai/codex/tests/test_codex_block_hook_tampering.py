@@ -1,20 +1,17 @@
 """Tests for the Codex-specific tamper-protection hook.
 
-Kept in the same shape as the Claude and Copilot tamper suites, because the
-three hooks enforce one policy over different path sets: reads are allowed,
-mutations are blocked, and `instructions/*.md` is the only carve-out. A policy
-change that reaches one hook and not the others should show up as a diff
-between these three files.
+Deliberately parallel to the Claude and Copilot tamper suites: one policy over
+three path sets, so a change reaching one hook and not the others shows up as a
+diff between the files.
 """
 
 from pathlib import Path
 
 from conftest import assert_allowed, assert_block_contract, run_hook
 
-HOOK = "codex-block-hook-tampering.py"
+HOOK = "block-hook-tampering.py"
 HOOKS_DIR = Path(__file__).parents[2] / "shared" / "hooks"
-# tests/ -> codex/ -> ai/ -> home/ -> modules/ -> repo root (5 levels up),
-# matching REPO_ROOT in the hook under test.
+# Must match REPO_ROOT in the hook under test.
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
@@ -64,9 +61,8 @@ def apply_patch(path: str):
 
 
 class TestReadAccess:
-    """Reads stay unblocked: a read-deny on these paths cannot be enforced by
-    the OS sandbox, because they are symlinks into the Nix store and bubblewrap
-    aborts every sandboxed command when it cannot mount over one."""
+    """Reads stay unblocked: these paths are Nix store symlinks, and bubblewrap
+    aborts a sandboxed command when it cannot mount over one."""
 
     def test_deployed_codex_config_is_readable(self):
         assert_allowed(read("~/.codex/config.toml"))
@@ -113,8 +109,8 @@ class TestMutationProtection:
 
 class TestBashCommandProtection:
     def test_bash_touching_repo_hook_blocks(self):
-        # The Bash branch matches on mention, not on intent: the effect of a
-        # shell command cannot be read off its text, so any reference blocks.
+        # Bash matches on mention, not intent: a command's effect is not
+        # readable off its text, so any reference blocks.
         assert_block_contract(
             bash(f"cat {repo_path('hooks', 'block-secrets.py')}"),
             "hooks",
@@ -163,8 +159,7 @@ class TestApplyPatchProtection:
 
 
 class TestInstructionMarkdownAllowlist:
-    """`instructions/*.md` is prompt text rather than enforcement, so it stays
-    writable; anything else under the same directory does not."""
+    """`instructions/*.md` is prompt text rather than enforcement, so it stays writable."""
 
     def test_repo_instruction_markdown_write_allowed(self):
         assert_allowed(
@@ -190,10 +185,9 @@ class TestInstructionMarkdownAllowlist:
 class TestPathResolution:
     """Exercise the realpath-resolved PROTECTED_PATHS layer.
 
-    The target must be a file Codex owns outright. This layer compares a
-    realpath against a prefix, and `hooks/` is shared with the other agents, so
-    an alias to one of those resolves outside the prefix this hook defends;
-    Claude's `block-hook-tampering.py` owns the resolved path instead.
+    The target must be a file Codex owns outright: this layer compares a realpath
+    against a prefix, and `hooks/` resolves into the shared directory, outside the
+    prefix this hook defends.
     """
 
     CODEX_OWNED_FILE = (
@@ -204,7 +198,7 @@ class TestPathResolution:
         alias = tmp_path / "notes.rules"
         alias.symlink_to(self.CODEX_OWNED_FILE)
 
-        assert_block_contract(write(str(alias)), "Codex")
+        assert_block_contract(write(str(alias)), "notes.rules")
 
     def test_traversal_normalized_repo_source_write_blocks(self):
         codex_dir = REPO_ROOT / "modules" / "home" / "ai" / "codex"

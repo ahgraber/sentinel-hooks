@@ -1,0 +1,198 @@
+{
+  "$comment": [
+    "Zero-access path verdicts, asserted by every implementation of the policy.",
+    "block-sensitive-paths.py is the Python one; pi's security extension is a",
+    "TypeScript port that cannot import it. Nothing but a shared table of cases",
+    "keeps the two honest — the last drift between them made a guardrail source",
+    "unreadable to its own maintainers.",
+    "Paths are given as a tool call would supply them. `~` means the user's home."
+  ],
+  "cases": [
+    {
+      "path": "~/.ssh/id_rsa",
+      "blocked": true,
+      "why": "ssh key in a credential directory"
+    },
+    {
+      "path": "~/.ssh/id_ed25519_agent",
+      "blocked": true,
+      "why": "ssh key name with a suffix"
+    },
+    {
+      "path": "project/.ssh/id_ecdsa",
+      "blocked": true,
+      "why": "credential directory anywhere, not only under home"
+    },
+    {
+      "path": "~/.aws/credentials",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.kube/config",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.gnupg/pubring.kbx",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.azure/azureProfile.json",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.docker/config.json",
+      "blocked": true,
+      "why": "registry credential store"
+    },
+    {
+      "path": "~/.netrc",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "~/.npmrc",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "~/.pypirc",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "~/.git-credentials",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "deploy/service-account-prod.json",
+      "blocked": true,
+      "why": "cloud service-account key"
+    },
+    {
+      "path": "app/credentials.json",
+      "blocked": true,
+      "why": "credential file name"
+    },
+    {
+      "path": "certs/server.pem",
+      "blocked": true,
+      "why": "certificate extension"
+    },
+    {
+      "path": "certs/server.key",
+      "blocked": true,
+      "why": "key extension"
+    },
+    {
+      "path": "infra/terraform.tfstate",
+      "blocked": true,
+      "why": "state file carrying provider credentials"
+    },
+    {
+      "path": ".env",
+      "blocked": true,
+      "why": "dot-env file"
+    },
+    {
+      "path": "app/.env.production",
+      "blocked": true,
+      "why": "dot-env variant"
+    },
+    {
+      "path": "app/.envrc",
+      "blocked": true,
+      "why": "direnv file"
+    },
+    {
+      "path": "~/.zsh_history",
+      "blocked": true,
+      "why": "shell history"
+    },
+    {
+      "path": "src/secret_rotation.py",
+      "blocked": true,
+      "why": "name-based signal outside any exempt directory"
+    },
+    {
+      "path": "env/secrets.py",
+      "blocked": true,
+      "why": "a directory named env is not a package directory and can hold real secrets"
+    },
+
+    {
+      "path": "README.md",
+      "blocked": false,
+      "why": "ordinary source"
+    },
+    {
+      "path": "src/main.py",
+      "blocked": false,
+      "why": "ordinary source"
+    },
+    {
+      "path": "project/.venv/lib/python3.11/site-packages/google/auth/credentials.py",
+      "blocked": false,
+      "why": "package directory"
+    },
+    {
+      "path": "node_modules/dotenv/lib/secret.js",
+      "blocked": false,
+      "why": "package directory"
+    },
+    {
+      "path": "modules/home/ai/shared/hooks/block-secrets.py",
+      "blocked": false,
+      "why": "a guardrail source named for what it blocks"
+    },
+    {
+      "path": "modules/home/ai/claude/hooks/block-secrets.py",
+      "blocked": false,
+      "why": "a guardrail source named for what it blocks"
+    },
+    {
+      "path": "modules/home/ai/copilot/hooks/security-policy.json",
+      "blocked": false,
+      "why": "a guardrail source named for what it guards"
+    },
+    {
+      "path": "modules/home/ai/codex/tests/test_block_secrets.py",
+      "blocked": false,
+      "why": "a guardrail test named for what it covers"
+    },
+    {
+      "path": "~/.claude/.credentials.json",
+      "blocked": true,
+      "why": "agent credential store, and .claude/ is exempt from the name heuristic"
+    },
+    {
+      "path": "~/.codex/auth.json",
+      "blocked": true,
+      "why": "agent credential store with no generic credential name"
+    },
+    {
+      "path": "~/.pi/agent/auth.json",
+      "blocked": true,
+      "why": "agent credential store with no generic credential name"
+    },
+    {
+      "path": "~/.pi/agent/settings.json",
+      "blocked": false,
+      "why": "agent configuration, guarded for writes elsewhere, not secret material"
+    },
+    {
+      "path": "~/.pi/agent/deploy-secrets.txt",
+      "blocked": true,
+      "why": "an agent's home directory earns no blanket exemption from the name heuristic"
+    },
+    {
+      "path": "~/.claude/hooks/block-secrets.py",
+      "blocked": false,
+      "why": "a deployed guardrail hook named for what it blocks stays readable"
+    }
+  ]
+}

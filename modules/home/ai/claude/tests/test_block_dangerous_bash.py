@@ -1,10 +1,4 @@
-"""Tests for block-dangerous-bash.sh hook.
-
-Validates reverse shell blocking, pipe-to-shell, obfuscated exec,
-clipboard reads, fork bombs, cron injection, SSH key manipulation,
-privilege escalation, and macOS interaction blocking — with localhost
-exemptions for reverse shell patterns.
-"""
+"""Tests for dangerous command-pattern blocking in the block-dangerous-bash.sh hook."""
 
 import pytest
 from conftest import assert_allowed, assert_block_contract, assert_blocked, run_hook
@@ -14,9 +8,6 @@ HOOK = "block-dangerous-bash.sh"
 
 def bash(command: str):
     return run_hook(HOOK, "Bash", {"command": command})
-
-
-# ── Tool scope ────────────────────────────────────────────────────────────────
 
 
 class TestToolScope:
@@ -33,9 +24,6 @@ class TestToolScope:
     def test_malformed_json_fails_closed(self):
         result = run_hook(HOOK, stdin_text="not json at all")
         assert result.exit_code == 2
-
-
-# ── Reverse shells ───────────────────────────────────────────────────────────
 
 
 class TestReverseShells:
@@ -135,9 +123,6 @@ class TestReverseShellLocalhostExemption:
         assert_allowed(bash("ruby -e 'f=TCPSocket.open(\"localhost\",4444).to_i'"))
 
 
-# ── Pipe-to-shell ────────────────────────────────────────────────────────────
-
-
 class TestPipeToShell:
     def test_curl_pipe_bash(self):
         assert_blocked(
@@ -165,9 +150,6 @@ class TestPipeToShell:
         assert_allowed(bash("wget http://example.com/file.tar.gz"))
 
 
-# ── Obfuscated execution ────────────────────────────────────────────────────
-
-
 class TestObfuscatedExec:
     def test_base64_pipe_bash(self):
         assert_blocked(bash("echo dW5hbWU= | base64 -d | bash"), "obfuscated execution")
@@ -188,9 +170,6 @@ class TestObfuscatedExec:
 
     def test_base64_decode_no_pipe_allowed(self):
         assert_allowed(bash("base64 -d encoded.txt > decoded.txt"))
-
-
-# ── Clipboard reads ──────────────────────────────────────────────────────────
 
 
 class TestClipboardReads:
@@ -227,9 +206,6 @@ class TestClipboardReads:
         assert_allowed(bash("echo test | pbcopy"))
 
 
-# ── Fork bombs ───────────────────────────────────────────────────────────────
-
-
 class TestForkBombs:
     def test_canonical_fork_bomb(self):
         assert_blocked(bash(":(){ :|:& };:"), "fork bomb")
@@ -240,9 +216,6 @@ class TestForkBombs:
     def test_legitimate_function_allowed(self):
         """A function with pipe and background that doesn't self-recurse."""
         assert_allowed(bash("myfunc(){ echo hello | grep h & }; myfunc"))
-
-
-# ── Cron injection ───────────────────────────────────────────────────────────
 
 
 class TestCronInjection:
@@ -257,9 +230,6 @@ class TestCronInjection:
 
     def test_crontab_list_allowed(self):
         assert_allowed(bash("crontab -l"))
-
-
-# ── SSH key manipulation ────────────────────────────────────────────────────
 
 
 class TestSshKeyManipulation:
@@ -282,9 +252,6 @@ class TestSshKeyManipulation:
         assert_allowed(bash("ssh-keygen -t ed25519"))
 
 
-# ── Privilege escalation ────────────────────────────────────────────────────
-
-
 class TestPrivilegeEscalation:
     def test_sudo(self):
         assert_blocked(bash("sudo apt install foo"), "privilege escalation")
@@ -303,9 +270,6 @@ class TestPrivilegeEscalation:
 
     def test_su_on_second_line(self):
         assert_blocked(bash("echo test\nsu -"), "privilege escalation")
-
-
-# ── macOS system interaction ─────────────────────────────────────────────────
 
 
 class TestMacOSInteraction:
@@ -333,9 +297,6 @@ class TestMacOSInteraction:
 
     def test_open_app_allowed(self):
         assert_allowed(bash("open -a 'Visual Studio Code' ."))
-
-
-# ── Block contract ───────────────────────────────────────────────────────────
 
 
 class TestBlockContract:
@@ -378,9 +339,6 @@ class TestBlockContract:
             bash("osascript -e 'tell application \"Finder\" to activate'"),
             "macOS system interaction",
         )
-
-
-# ── Obfuscated spelling ──────────────────────────────────────────────────────
 
 
 class TestObfuscatedSpelling:

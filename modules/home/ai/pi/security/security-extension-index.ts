@@ -1,37 +1,11 @@
-/**
- * Pi Security Extension
- *
- * Full port of Claude Code security hooks:
- *   - block-dangerous-bash.sh      → dangerousBashRules
- *   - block-sensitive-paths.py     → isSensitivePath / bashWriteTargets
- *   - block-destructive-ops.py     → loadDestructiveRules (TOML-driven)
- *   - block-secrets.py             → hasSecret / gitleaks integration
- *   - bash-command-validator.sh    → BASH_VALIDATOR_RULES
- *   - block-hook-tampering.py      → PROTECTED_PATH_FRAGMENTS
- *   - session-tool-checks.sh       → session_start tool checks
- *   - stop-precommit.sh            → agent_settled pre-commit run
- *   - session-instructions.sh      → injects instructions/*.md context fragments; not ported (Pi surfaces skills natively)
- *   - reload-skills-catalog.py     → Pi surfaces skills natively; no hook needed
- *
- * Dependencies: smol-toml (install via `npm install smol-toml` in this dir)
- *
- * Place this file at:   ~/.pi/agent/extensions/security/index.ts
- * Place the TOML at:    ~/.pi/agent/extensions/security/block-destructive-ops-patterns.toml
- *
- * package.json in this directory:
- *   { "dependencies": { "smol-toml": "^1.6.1" } }
- */
+/** Pi security extension — port of the shared hook scripts into Pi's extension API. */
 
 import { type ExecFileException, execFile as execFileCb, execFileSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join, normalize, resolve } from "node:path"
+import { dirname, isAbsolute, join, normalize, relative, resolve } from "node:path"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { parse as parseToml } from "smol-toml"
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface DestructiveRule {
   pattern: string
@@ -40,10 +14,6 @@ interface DestructiveRule {
   mode: "block" | "ask"
   case_insensitive?: boolean
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TOML rule loader
-// ─────────────────────────────────────────────────────────────────────────────
 
 function loadDestructiveRules(): DestructiveRule[] {
   const tomlPath = join(dirname(new URL(import.meta.url).pathname), "block-destructive-ops-patterns.toml")
@@ -54,7 +24,6 @@ function loadDestructiveRules(): DestructiveRule[] {
   try {
     const data = parseToml(readFileSync(tomlPath, "utf8")) as Record<string, unknown>
     const rules: DestructiveRule[] = []
-    // Support both flat [[rules]] and nested [[category.rules]]
     if (Array.isArray(data.rules)) {
       rules.push(...(data.rules as DestructiveRule[]))
     } else {
@@ -76,10 +45,6 @@ function loadDestructiveRules(): DestructiveRule[] {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Compiled destructive rules (loaded once at extension startup)
-// ─────────────────────────────────────────────────────────────────────────────
-
 const DESTRUCTIVE_RULES: Array<{
   re: RegExp
   rule: DestructiveRule
@@ -92,10 +57,6 @@ const DESTRUCTIVE_RULES: Array<{
     return []
   }
 })
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dangerous bash patterns (from block-dangerous-bash.sh)
-// ─────────────────────────────────────────────────────────────────────────────
 
 const REVERSE_SHELL_RULES: Array<{ re: RegExp; exemption: "devtcp" | "nc" | "generic" | "none"; msg: string }> = [
   { re: /bash\s+-i\b.*\/dev\/(tcp|udp)\//is, exemption: "devtcp", msg: "Blocked: reverse shell via /dev/tcp." },
@@ -138,48 +99,185 @@ const SUDO_RE = /(?:^|[;\n|&]\s*)sudo\b/m
 const SU_RE = /(?:^|[;\n|&]\s*)su\b/m
 const MACOS_SYS_RE = /\bosascript\b|\bdefaults\s+write\b/is
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sensitive path detection (from block-sensitive-paths.py)
-// ─────────────────────────────────────────────────────────────────────────────
+// Declarations in guarded-paths.toml, shared with the Python hooks.
+interface GuardedManifest {
+  gatedDeployed: string[]
+  gatedSources: string[]
+  credentialPaths: string[]
+  instructionLayers: Array<[string, string]>
+  locationOnlyPaths: string[]
+}
+
+function loadGuardedManifest(): { manifest: GuardedManifest | null; error: string | null } {
+  const tomlPath = join(dirname(new URL(import.meta.url).pathname), "guarded-paths.toml")
+  if (!existsSync(tomlPath)) {
+    return { manifest: null, error: `guarded-paths.toml not found: ${tomlPath}` }
+  }
+  try {
+    const data = parseToml(readFileSync(tomlPath, "utf8")) as Record<string, unknown>
+    const gated = (data.gated ?? {}) as { deployed?: string[]; sources?: string[] }
+    const credentials = (data.credentials ?? {}) as { paths?: string[] }
+    const instructionLayers = (data["instruction-layers"] ?? {}) as { layers?: Array<[string, string]> }
+    const locationOnly = (data["location-only"] ?? {}) as { paths?: string[] }
+    return {
+      manifest: {
+        gatedDeployed: gated.deployed ?? [],
+        gatedSources: gated.sources ?? [],
+        credentialPaths: credentials.paths ?? [],
+        instructionLayers: instructionLayers.layers ?? [],
+        locationOnlyPaths: locationOnly.paths ?? [],
+      },
+      error: null,
+    }
+  } catch (err) {
+    return { manifest: null, error: `Failed to parse guarded-paths.toml: ${err}` }
+  }
+}
+
+const { manifest: GUARDED_MANIFEST, error: GUARDED_MANIFEST_ERROR } = loadGuardedManifest()
+
+const GUARDED_FILES = GUARDED_MANIFEST ? [...GUARDED_MANIFEST.gatedDeployed, ...GUARDED_MANIFEST.gatedSources] : []
+
+// Credential writes are refused outright, never prompted.
+const CREDENTIAL_FILES = GUARDED_MANIFEST ? GUARDED_MANIFEST.credentialPaths : []
+
+// Instruction markdown stays writable; only enforcement is gated.
+const INSTRUCTION_LAYERS: Array<[string, string]> = GUARDED_MANIFEST ? GUARDED_MANIFEST.instructionLayers : []
+
+// Matched by resolved location only; text matching would over-refuse.
+const LOCATION_ONLY = GUARDED_MANIFEST ? GUARDED_MANIFEST.locationOnlyPaths : []
 
 const EXTENSION_RE = /\.(pem|key|p12|pfx|crt|cer|tfstate|tfstate\.backup)$/i
-const DOTENV_RE = /(?:^|[/\\])\.env(?:\.[^/\\]+)?$/
-const ENVRC_RE = /(?:^|[/\\])\.envrc$/
+const DOTENV_RE = /(?:^|[/\\*])\.env(?:\.[^/\\]+|\*)?$/i
+const ENVRC_RE = /(?:^|[/\\*])\.envrc$/i
+const SSH_KEY_RE = /(?:^|[/\\])id_(?:rsa|dsa|ecdsa|ed25519)[^/\\]*$/i
+const CRED_FILE_RE =
+  /(?:^|[/\\])(?:\.netrc|\.npmrc|\.pypirc|\.git-credentials|service-account[^/\\]*\.json|credentials\.json)$/i
+const DOCKER_CONFIG_RE = /(?:^|[/\\])\.docker[/\\]config\.json$/i
+// Built from the manifest's [credentials] class, so a store added there gates both read and write.
+function credentialAlternation(paths: string[]): string {
+  return paths
+    .map((p) =>
+      p
+        .replace(/^~\//, "")
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/\//g, "[/\\\\]"),
+    )
+    .join("|")
+}
+
+// `(?!)` never matches, so a manifest that failed to load leaves this gate covering
+// nothing; session_start reports the failure rather than letting it narrow silently.
+const AGENT_CREDENTIAL_RE = new RegExp(
+  CREDENTIAL_FILES.length > 0 ? `(?:^|[/\\\\])(?:${credentialAlternation(CREDENTIAL_FILES)})[^/\\\\]*$` : "(?!)",
+  "i",
+)
+const CRED_DIR_RE = /(?:^|[/\\])\.(?:ssh|aws|kube|gnupg|azure)(?:[/\\]|$)/i
 const ZERO_ACCESS_FILES = /(?:^|[/\\])\.(bash_history|zsh_history|sh_history|node_repl_history|python_history)$/i
 const NAME_PATTERN_RE = /credentials|secret/i
-const EXEMPT_DIR_RE =
-  /(?:^|[/\\])(?:\.venv|venv|env|site-packages|node_modules|\.pi|\.claude|(?:claude|codex)[/\\](?:hooks|tests))(?:[/\\]|$)/i
-
-const ZERO_ACCESS_DIR_PREFIXES = ["~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/"]
+// Must match guarded_paths.py's NAME_HEURISTIC_EXEMPT_RE; shared/tests/sensitive-path-cases.json catches drift.
+const NAME_HEURISTIC_EXEMPT_RE =
+  /(?:^|[/\\])(?:\.venv|venv|site-packages|node_modules|\.claude|(?:claude|codex|copilot|shared)[/\\](?:hooks|tests))(?:[/\\]|$)/i
 
 function expandPath(p: string): string {
   return normalize(p.replace(/^~/, homedir()))
 }
 
-function isSensitivePath(rawPath: string): boolean {
-  if (!rawPath) return false
-  const expanded = expandPath(rawPath)
-
-  if (EXTENSION_RE.test(expanded)) return true
-  if (DOTENV_RE.test(rawPath) || ENVRC_RE.test(rawPath)) return true
-  if (ZERO_ACCESS_FILES.test(rawPath)) return true
-
-  for (const dir of ZERO_ACCESS_DIR_PREFIXES) {
-    const prefix = expandPath(dir)
-    if (expanded.startsWith(prefix + "/") || expanded === prefix) return true
+// realpathSync gives up on a path whose leaf does not exist yet, but a write creates
+// what is missing, so resolve to the longest existing ancestor with the rest appended.
+// Matches Python's os.path.realpath, and keeps a path under a link to a guarded
+// directory guarded.
+function resolveLinks(p: string): string {
+  const missing: string[] = []
+  let current = resolve(p)
+  for (let step = 0; step < 64; step += 1) {
+    try {
+      return join(realpathSync(current), ...missing)
+    } catch {
+      // Not there. It may still be a link the caller wrote by hand.
+    }
+    try {
+      current = resolve(dirname(current), readlinkSync(current))
+      continue
+    } catch {
+      // Not a link either, so walk up.
+    }
+    const parent = dirname(current)
+    if (parent === current) break
+    missing.unshift(current.slice(parent.length + 1))
+    current = parent
   }
-
-  const basename = expanded.split(/[/\\]/).pop() ?? ""
-  if (NAME_PATTERN_RE.test(basename) && !EXEMPT_DIR_RE.test(rawPath)) return true
-
-  return false
+  return join(current, ...missing)
 }
 
-/** Extract likely write-destination paths from a bash command string. */
+/** Every form a path must be judged in: as written, expanded, and resolved. */
+function spellings(rawPath: string): string[] {
+  const expanded = expandPath(rawPath)
+  return [rawPath, expanded, resolveLinks(expanded)]
+}
+
+const swapCase = (name: string) =>
+  name.replace(/\p{L}/gu, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()))
+
+/** True where the filesystem holding `p` treats two spellings differing only in case as one file. */
+function foldsCase(p: string): boolean {
+  let current = resolve(p)
+  for (;;) {
+    const parent = dirname(current)
+    const name = current.slice(parent.length + 1)
+    if (!name || parent === current) return false
+    const swapped = swapCase(name)
+    if (swapped !== name && existsSync(current)) {
+      try {
+        const here = statSync(current)
+        const there = statSync(join(parent, swapped))
+        return here.dev === there.dev && here.ino === there.ino
+      } catch {
+        return false
+      }
+    }
+    current = parent
+  }
+}
+
+// Probed, not assumed: case folding is a property of the volume, not the OS. Default
+// macOS folds; a case-sensitive volume on the same machine does not.
+export const FOLDS_CASE = foldsCase(homedir())
+
+/** Put text in the form comparisons are made in. */
+function normalizeForMatch(text: string): string {
+  const forward = text.replace(/\\/g, "/")
+  return FOLDS_CASE ? forward.toLowerCase() : forward
+}
+
+function isZeroAccess(p: string): boolean {
+  return (
+    EXTENSION_RE.test(p) ||
+    DOTENV_RE.test(p) ||
+    ENVRC_RE.test(p) ||
+    ZERO_ACCESS_FILES.test(p) ||
+    SSH_KEY_RE.test(p) ||
+    CRED_FILE_RE.test(p) ||
+    DOCKER_CONFIG_RE.test(p) ||
+    CRED_DIR_RE.test(p) ||
+    AGENT_CREDENTIAL_RE.test(p)
+  )
+}
+
+function isNamedForSecrets(p: string): boolean {
+  const basename = p.split(/[/\\]/).pop() ?? ""
+  return NAME_PATTERN_RE.test(basename) && !NAME_HEURISTIC_EXEMPT_RE.test(p)
+}
+
+export function isSensitivePath(rawPath: string): boolean {
+  if (!rawPath) return false
+  return spellings(rawPath).some((p) => isZeroAccess(p) || isNamedForSecrets(p))
+}
+
+/** Likely write destinations a shell command names. */
 function bashWriteTargets(command: string): string[] {
   const targets: string[] = []
 
-  // Output redirections: > or >> path (exclude <<, 2>, etc.)
   for (const m of command.matchAll(/(?<![<2&])>>?\s*([^\s|&;><]+)/g)) {
     targets.push(m[1])
   }
@@ -204,35 +302,268 @@ function bashWriteTargets(command: string): string[] {
   return targets
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook/settings tampering protection (from block-hook-tampering.py)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const PROTECTED_PATH_FRAGMENTS = [
-  ".pi/agent/extensions/sandbox/",
-  ".pi/agent/extensions/sandbox.json",
-  ".pi/agent/extensions/security/",
-  ".pi/agent/settings.json",
-  "modules/home/ai/pi/security/",
-  "home-manager/pi/",
-]
-
-function isProtectedPath(raw: string): boolean {
-  if (!raw) return false
-  const expanded = expandPath(raw)
-  const resolved = (() => {
-    try {
-      return resolve(expanded)
-    } catch {
-      return expanded
-    }
-  })()
-  return PROTECTED_PATH_FRAGMENTS.some((f) => raw.includes(f) || expanded.includes(f) || resolved.includes(f))
+/** The trailing portion of a declaration that identifies it in arbitrary text. */
+function declarationFragment(declaration: string): string {
+  const star = declaration.lastIndexOf("*")
+  if (star !== -1) return declaration.slice(star + 1).replace(/^\/+/, "")
+  for (const prefix of ["~/", "<repo>/"]) {
+    if (declaration.startsWith(prefix)) return declaration.slice(prefix.length)
+  }
+  return declaration
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Secret detection (from block-secrets.py)
-// ─────────────────────────────────────────────────────────────────────────────
+/** Python `fnmatch.fnmatchcase` as a regular expression: `*` crosses `/`, `?` is one character. */
+function globToRegExp(pattern: string): RegExp {
+  let source = ""
+  for (let i = 0; i < pattern.length; i += 1) {
+    const c = pattern[i]
+    if (c === "*") {
+      source += "[\\s\\S]*"
+    } else if (c === "?") {
+      source += "[\\s\\S]"
+    } else if (c === "[") {
+      const close = pattern.indexOf("]", i + 1)
+      if (close === -1) {
+        source += "\\["
+      } else {
+        const body = pattern.slice(i + 1, close).replace(/\\/g, "\\\\")
+        source += `[${body.startsWith("!") ? `^${body.slice(1)}` : body}]`
+        i = close
+      }
+    } else {
+      source += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    }
+  }
+  return new RegExp(`^${source}$`)
+}
+
+/** The glob patterns a declaration's relative part matches; a trailing `/` also covers what is below. */
+function declarationPatterns(relative: string): string[] {
+  if (relative.endsWith("/")) {
+    const base = relative.replace(/\/+$/, "")
+    return [base, `${base}/*`]
+  }
+  return [relative]
+}
+
+const REPO_ROOT_CACHE = new Map<string, string | null>()
+
+/** The repository holding `p`, or null. A worktree's `.git` is a file, not a directory. */
+function repositoryRootOf(p: string): string | null {
+  const cached = REPO_ROOT_CACHE.get(p)
+  if (cached !== undefined) return cached
+
+  let current = p
+  try {
+    if (!statSync(p).isDirectory()) current = dirname(p)
+  } catch {
+    current = dirname(p)
+  }
+  let found: string | null = null
+  for (;;) {
+    try {
+      lstatSync(join(current, ".git"))
+      found = current
+      break
+    } catch {
+      // Not a repository root. Keep walking.
+    }
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  REPO_ROOT_CACHE.set(p, found)
+  return found
+}
+
+/** Port of guarded_paths.py's GuardedLocations; shared verdict tables in shared/tests hold them in sync. */
+class GuardedLocations {
+  private readonly fragments: string[]
+  private readonly locations: string[]
+  private readonly homePrefixes: string[]
+  private readonly homePatterns: RegExp[]
+  private readonly repoPatterns: RegExp[]
+
+  constructor(declarations: string[], locationOnly: string[] = []) {
+    // Location-only declarations contribute no text fragment (too broad to match as text).
+    this.fragments = declarations.map((d) => normalizeForMatch(declarationFragment(d)))
+
+    const homeDeclarations = [...declarations, ...locationOnly].filter((d) => d.startsWith("~/"))
+
+    // Both expanded and resolved, so a symlinked home directory matches under either spelling.
+    this.locations = [
+      ...new Set(
+        homeDeclarations
+          .filter((d) => !d.includes("*"))
+          .flatMap((d) => {
+            const expanded = expandPath(d.replace(/\/+$/, ""))
+            return [expanded, resolveLinks(expanded)]
+          })
+          .map(normalizeForMatch),
+      ),
+    ]
+    this.homePrefixes = [...new Set([homedir(), resolveLinks(homedir())].map(normalizeForMatch))]
+    this.homePatterns = homeDeclarations
+      .flatMap((d) => declarationPatterns(d.slice("~/".length)))
+      .map((p) => globToRegExp(normalizeForMatch(p)))
+    this.repoPatterns = declarations
+      .filter((d) => d.startsWith("<repo>/"))
+      .flatMap((d) => declarationPatterns(d.slice("<repo>/".length)))
+      .map((p) => globToRegExp(normalizeForMatch(p)))
+  }
+
+  /** True if `text` names a guarded location anywhere within it, including a whole shell command. */
+  mentionedIn(text: string): boolean {
+    const normalized = normalizeForMatch(text)
+    return this.fragments.some((fragment) => normalized.includes(fragment))
+  }
+
+  private withinHome(candidate: string): boolean {
+    const normalized = normalizeForMatch(candidate)
+    if (this.locations.some((l) => normalized === l || normalized.startsWith(`${l}/`))) return true
+    for (const prefix of this.homePrefixes) {
+      if (normalized.startsWith(`${prefix}/`)) {
+        const relative = normalized.slice(prefix.length + 1)
+        if (this.homePatterns.some((p) => p.test(relative))) return true
+      }
+    }
+    return false
+  }
+
+  private withinRepository(candidate: string): boolean {
+    if (!isAbsolute(candidate)) return false
+    const root = repositoryRootOf(candidate)
+    if (root === null) return false
+    return this.repoPatterns.some((p) => p.test(normalizeForMatch(relative(root, candidate))))
+  }
+
+  /** True if `path` denotes a guarded location, however it is spelled. */
+  contains(path: string): boolean {
+    if (!path) return false
+    const expanded = expandPath(path)
+    if (!isAbsolute(expanded) && this.mentionedIn(path)) {
+      // A relative path means whatever the working directory makes it mean, and the
+      // extension is not told that directory, so refuse an ambiguous path on shape.
+      return true
+    }
+    // Both spellings: Home Manager / sops-nix resolve outside guarded dirs; links resolve inside them.
+    return [expanded, resolveLinks(expanded)].some(
+      (candidate) => this.withinHome(candidate) || this.withinRepository(candidate),
+    )
+  }
+}
+
+const GUARDED = new GuardedLocations(
+  [...GUARDED_FILES, ...CREDENTIAL_FILES, ...INSTRUCTION_LAYERS.map(([location]) => location)],
+  LOCATION_ONLY,
+)
+
+const CREDENTIALS = new GuardedLocations(CREDENTIAL_FILES)
+
+const INSTRUCTION_BASES = INSTRUCTION_LAYERS.map(([location, layer]) =>
+  normalizeForMatch(declarationFragment(location) + layer),
+)
+
+function mentionsGuardedFragment(text: string): boolean {
+  return GUARDED.mentionedIn(text)
+}
+
+function guardsPath(raw: string): boolean {
+  return GUARDED.contains(raw)
+}
+
+/** True if `raw` denotes stored agent authentication material. */
+function isCredentialPath(raw: string): boolean {
+  return CREDENTIALS.contains(raw)
+}
+
+function commandMentionsCredential(command: string): boolean {
+  return CREDENTIALS.mentionedIn(command) || pathsIn(command).some((path) => isCredentialPath(path))
+}
+
+// Judged on the resolved destination only: a link is a write to whatever it points
+// at, so a qualifying name does not make the write qualify.
+function isInstructionMarkdown(raw: string): boolean {
+  if (!raw) return false
+  const candidates = spellings(raw)
+  const normalized = normalizeForMatch(candidates[candidates.length - 1])
+  if (!normalized.endsWith(".md")) return false
+  return INSTRUCTION_BASES.some((base) => {
+    const index = normalized.lastIndexOf(base)
+    if (index === -1) return false
+    const name = normalized.slice(index + base.length)
+    return name.length > 0 && !name.includes("/")
+  })
+}
+
+export function isProtectedPath(raw: string): boolean {
+  return guardsPath(raw) && !isInstructionMarkdown(raw)
+}
+
+// The lexer splits words, not shell syntax, so an operator written against its
+// operand stays attached to it: `>file` and `--flag=file` arrive as one word.
+const ATTACHED_OPERAND_RE = /^(?:[0-9]*(?:&?>{1,2}\|?|<{1,2}&?)|[^\s=]*=)/
+
+/** Split a command into words the way a shell does, so a quoted path is one word. */
+function shellWords(command: string): string[] {
+  const words: string[] = []
+  let current = ""
+  let quote: string | null = null
+  let started = false
+  for (let i = 0; i < command.length; i += 1) {
+    const c = command[i]
+    if (quote) {
+      if (c === quote) {
+        quote = null
+      } else if (c === "\\" && quote === '"' && i + 1 < command.length) {
+        i += 1
+        current += command[i]
+      } else {
+        current += c
+      }
+      continue
+    }
+    if (c === "'" || c === '"') {
+      quote = c
+      started = true
+    } else if (c === "\\" && i + 1 < command.length) {
+      i += 1
+      current += command[i]
+      started = true
+    } else if (/\s/.test(c)) {
+      if (started) words.push(current)
+      current = ""
+      started = false
+    } else {
+      current += c
+      started = true
+    }
+  }
+  if (started) words.push(current)
+  return words
+}
+
+/** Each word of `command`, plus the path any word carries. */
+function pathsIn(command: string): string[] {
+  const found: string[] = []
+  for (const word of shellWords(command)) {
+    found.push(word)
+    const carried = word.replace(ATTACHED_OPERAND_RE, "")
+    if (carried && carried !== word) found.push(carried)
+  }
+  return found
+}
+
+/** Judged as text and as paths: text misses a link to a guarded location, paths miss what the splitter mishandles. */
+export function commandMentionsProtectedPath(command: string): boolean {
+  return mentionsGuardedFragment(command) || pathsIn(command).some((path) => guardsPath(path))
+}
+
+/** The carve-out covers a command only when every guarded path in it qualifies. */
+function onlyInstructionMarkdown(paths: string[]): boolean {
+  const guarded = paths.filter((path) => guardsPath(path))
+  return guarded.length > 0 && guarded.every((path) => isInstructionMarkdown(path))
+}
 
 const BUILTIN_SECRET_RES = [
   /\bAKIA[0-9A-Z]{16}\b/,
@@ -260,7 +591,7 @@ const CRED_FILE_PIPE_RE =
   /\b(?:cat|less|head|tail|bat)\s+[^\s|;&#]*(?:\.env\b|\.envrc\b|\.npmrc\b|\.netrc\b|\.git-credentials\b|\.aws\/credentials\b|\.ssh\/id_\w+\b|\.kube\/config\b|credentials\b|secret\b)[^|;&#]*\|/i
 const CRED_STORE_RE =
   /\bsecurity\s+find-(?:generic|internet)-password\b|\bvault\s+(?:read|kv\s+get)\b|\bop\s+(?:read|item\s+get|run)\b|\baws\s+secretsmanager\b|\bkubectl\s+get\s+secret\b/i
-const CRED_FILE_RE =
+const CREDENTIAL_FILE_RE =
   /(?:^|[/\\])(?:id_rsa|id_ed25519|id_ecdsa|id_dsa|[^/\\]*\.(?:key|pem|keystore|jks|p12|pfx)|[^/\\]*(?:token|password|passwd|api[_-]?key|auth_key|secret|credential)[^/\\]*|\.npmrc|\.netrc|\.git-credentials)$/i
 const CRED_DIR_PREFIXES = ["~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/"]
 
@@ -307,10 +638,6 @@ async function hasSecret(text: string, deep = false): Promise<boolean> {
   }
   return false
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Bash command validator (from bash-command-validator.sh)
-// ─────────────────────────────────────────────────────────────────────────────
 
 const BASH_VALIDATOR_RULES: Array<[RegExp, string]> = [
   [
@@ -368,10 +695,6 @@ const BASH_VALIDATOR_RULES: Array<[RegExp, string]> = [
   ],
 ]
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: check if a tool exists in PATH
-// ─────────────────────────────────────────────────────────────────────────────
-
 function toolExists(name: string): boolean {
   try {
     execFileSync("which", [name], { stdio: "pipe" })
@@ -380,10 +703,6 @@ function toolExists(name: string): boolean {
     return false
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pre-commit over the changed set (from stop-precommit.sh)
-// ─────────────────────────────────────────────────────────────────────────────
 
 const PRECOMMIT_TIMEOUT_MS = 300_000
 
@@ -418,9 +737,8 @@ function changedFiles(root: string): string[] {
   return [...new Set([...tracked, ...gitLines(root, ["ls-files", "--others", "--exclude-standard"])])]
 }
 
-// Resolves to the runner's output when it fails, or null when it passes or could
-// not be started. `run --files` does no stashing; a bare `run` stashes the work
-// tree and leaves it reverted if the cycle fails partway.
+// null means the runner passed or could not be started. `run --files` must stay:
+// a bare `run` stashes the work tree and leaves it reverted if the cycle fails partway.
 async function runPrecommit(runner: string, root: string, files: string[]): Promise<string | null> {
   return new Promise((res) => {
     execFileCb(
@@ -438,13 +756,18 @@ async function runPrecommit(runner: string, root: string, files: string[]): Prom
   })
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Extension entry point
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function (pi: ExtensionAPI) {
-  // ── Session startup: tool checks ─────────────────────────────────────────
   pi.on("session_start", async (_event, ctx) => {
+    // A failed manifest load leaves every declaration empty, so tamper protection and
+    // credential-path detection have nothing to check against. Proceeding anyway matches
+    // the Python hooks; doing so silently does not, hence this one-time notice.
+    if (GUARDED_MANIFEST_ERROR) {
+      ctx.ui.notify(
+        `⛔ guarded-paths.toml could not be loaded: ${GUARDED_MANIFEST_ERROR}\n  Tamper protection and credential-path detection are unchecked this session.`,
+        "error",
+      )
+    }
+
     const required = [
       { name: "uv", hint: "brew install uv / curl -LsSf https://astral.sh/uv/install.sh | sh" },
       { name: "jq", hint: "brew install jq" },
@@ -471,26 +794,51 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
-  // ── Tool interception ─────────────────────────────────────────────────────
   pi.on("tool_call", async (event, ctx) => {
     const tool = event.toolName.toLowerCase()
     const inp = event.input as Record<string, unknown>
 
     const isRW = ["read", "write", "edit"].includes(tool)
+    const isMutation = ["write", "edit"].includes(tool)
     const isBash = tool === "bash"
 
-    // ── Hook/settings tampering protection ─────────────────────────────
-    if (isBash || isRW) {
-      const suspect = isBash ? String(inp.command ?? "") : String(inp.file_path ?? inp.path ?? "")
-      if (isProtectedPath(suspect)) {
+    // Reads pass; writes are gated by protected class (credential=refuse, gated=ask).
+    const tamperTarget = (() => {
+      if (isBash) {
+        const command = String(inp.command ?? "")
+        if (!command || !commandMentionsProtectedPath(command)) return null
+        return onlyInstructionMarkdown(pathsIn(command)) ? null : command
+      }
+      if (!isMutation) return null
+      const path = String(inp.file_path ?? inp.path ?? "")
+      return isProtectedPath(path) ? path : null
+    })()
+    if (tamperTarget) {
+      const credential = isBash ? commandMentionsCredential(tamperTarget) : isCredentialPath(tamperTarget)
+      if (credential) {
         return {
           block: true,
-          reason: `Blocked: access to agent config/security path '${suspect}'.\nHook scripts and settings files enforce safety constraints. Reading enables crafting bypasses; writing disables enforcement.`,
+          reason: `Blocked: ${tool} targeting stored agent credentials '${tamperTarget}'.\nNo legitimate flow maintains agent authentication material in-session, so no approval can permit this write.`,
+        }
+      }
+      if (!ctx.hasUI) {
+        return {
+          block: true,
+          reason: `Blocked: ${tool} targeting agent enforcement path '${tamperTarget}'.\nHook scripts, rules, permissions, and settings constrain what an agent may do. Changing one requires the user's in-the-moment approval, and no interactive user is attached, so the mutation is refused.`,
+        }
+      }
+      const approved = await ctx.ui.confirm(
+        "Modify agent enforcement?",
+        `This ${tool} call would modify '${tamperTarget}', which is enforcement: hook scripts, permission rules, hook registrations, and agent settings constrain what an agent may do. Approving lets this one change land in a live guardrail, and the constraint it implements changes with it. Approve only if you are deliberately changing this guardrail now.`,
+      )
+      if (!approved) {
+        return {
+          block: true,
+          reason: `Blocked: the user declined the mutation of agent enforcement path '${tamperTarget}'.`,
         }
       }
     }
 
-    // ── Sensitive path protection (Read/Write/Edit) ───────────────────
     if (isRW) {
       const p = String(inp.file_path ?? inp.path ?? "")
       if (p && isSensitivePath(p)) {
@@ -501,19 +849,16 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // ── Bash-only rules ───────────────────────────────────────────────
     if (isBash) {
       const cmd = String(inp.command ?? "")
       if (!cmd) return
 
-      // Sensitive path writes from bash commands
       for (const target of bashWriteTargets(cmd)) {
         if (isSensitivePath(target)) {
           return { block: true, reason: `Blocked: bash command writing to sensitive path '${target}'.` }
         }
       }
 
-      // Reverse shells (with loopback exemptions)
       for (const { re, exemption, msg } of REVERSE_SHELL_RULES) {
         if (re.test(cmd)) {
           let exempt = false
@@ -524,12 +869,10 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      // Pipe-to-shell
       if (PIPE_TO_SHELL_RE.test(cmd)) {
         return { block: true, reason: "Blocked: download-and-execute pipeline detected (curl/wget | shell)." }
       }
 
-      // Obfuscated execution
       if (OBFUSCATED_RE.test(cmd)) {
         return {
           block: true,
@@ -537,59 +880,48 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      // Clipboard reads
       if (CLIPBOARD_RE.test(cmd)) {
         return { block: true, reason: "Blocked: clipboard read detected (pbpaste / xclip / wl-paste)." }
       }
 
-      // Fork bomb
       if (FORK_BOMB_RE.test(cmd)) {
         return { block: true, reason: "Blocked: fork bomb pattern detected." }
       }
 
-      // Cron injection
       if (CRON_RE.test(cmd)) {
         return { block: true, reason: "Blocked: cron injection detected." }
       }
 
-      // SSH key manipulation
       if (SSH_KEY_MANIP_RE.test(cmd)) {
         return { block: true, reason: "Blocked: SSH authorized_keys manipulation detected." }
       }
 
-      // Privilege escalation
       if (SUDO_RE.test(cmd) || SU_RE.test(cmd)) {
         return { block: true, reason: "Blocked: privilege escalation (sudo/su). Delegate to user." }
       }
 
-      // macOS system interaction
       if (MACOS_SYS_RE.test(cmd)) {
         return { block: true, reason: "Blocked: macOS system interaction (osascript / defaults write)." }
       }
 
-      // DNS exfiltration
       if (DNS_EXFIL_RE.test(cmd)) {
         return { block: true, reason: "Blocked: DNS exfiltration pattern detected." }
       }
 
       const networkCtx = hasNetworkContext(cmd)
 
-      // Credential file piped to network
       if (CRED_FILE_PIPE_RE.test(cmd) && networkCtx) {
         return { block: true, reason: "Blocked: credential file piped to a network command." }
       }
 
-      // Environment dump to network
       if (ENV_DUMP_RE.test(cmd) && networkCtx) {
         return { block: true, reason: "Blocked: environment variable dump to network detected." }
       }
 
-      // Credential store read + network
       if (CRED_STORE_RE.test(cmd) && networkCtx) {
         return { block: true, reason: "Blocked: credential store read piped to a remote network destination." }
       }
 
-      // Credential store read (local) → confirm
       if (CRED_STORE_RE.test(cmd)) {
         if (!ctx.hasUI) {
           return {
@@ -605,12 +937,10 @@ export default function (pi: ExtensionAPI) {
         return
       }
 
-      // Secret in command with network destination → block
       if (networkCtx && (await hasSecret(cmd, true))) {
         return { block: true, reason: "Blocked: credential detected in command with a network destination." }
       }
 
-      // Secret in command without network → ask
       if (!networkCtx && builtinHasSecret(cmd)) {
         if (!ctx.hasUI) {
           return {
@@ -626,7 +956,6 @@ export default function (pi: ExtensionAPI) {
         return
       }
 
-      // Destructive ops (TOML-driven)
       for (const { re, rule } of DESTRUCTIVE_RULES) {
         if (re.test(cmd)) {
           const explanation = rule.reason ? `${rule.description}\n\n${rule.reason}` : rule.description
@@ -642,13 +971,12 @@ export default function (pi: ExtensionAPI) {
           if (rule.mode === "ask") {
             const ok = await ctx.ui.confirm(rule.description, `${explanation}\n\nCommand:\n${cmd}\n\nProceed?`)
             if (!ok) return { block: true, reason: `${rule.description} — denied by user.` }
-            return // approved, allow
+            return
           }
           return
         }
       }
 
-      // Bash validator (tooling enforcement — runs last)
       const issues: string[] = []
       for (const [re, msg] of BASH_VALIDATOR_RULES) {
         if (re.test(cmd)) issues.push(msg)
@@ -658,16 +986,14 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // ── Secret scan for Read/Write/Edit file paths ────────────────────
     if (isRW) {
       const p = String(inp.file_path ?? inp.path ?? "")
       if (!p) return
 
-      // Credential directory prefixes → confirm
       const normP = expandPath(p)
       for (const dir of CRED_DIR_PREFIXES) {
         const prefix = expandPath(dir)
-        if (normP.startsWith(prefix + "/") || normP === prefix) {
+        if (normP.startsWith(`${prefix}/`) || normP === prefix) {
           if (!ctx.hasUI) {
             return {
               block: true,
@@ -683,8 +1009,7 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      // Credential file name patterns → confirm
-      if (CRED_FILE_RE.test(p) && !EXEMPT_DIR_RE.test(p)) {
+      if (CREDENTIAL_FILE_RE.test(p) && !NAME_HEURISTIC_EXEMPT_RE.test(p)) {
         if (!ctx.hasUI) {
           return {
             block: true,
@@ -700,12 +1025,10 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
-  // ── End-of-turn: run pre-commit ───────────────────────────────────────────
-  // `agent_settled` is the Stop-hook analogue: it fires only once Pi will not
-  // continue on its own. `turn_end` is the wrong event — it fires per LLM
-  // response, which reintroduces the mid-sequence autofix race (a fixer strips a
-  // just-added import before its first use lands) and misses files written by
-  // bash rather than by the write/edit tools.
+  // `agent_settled` is the Stop-hook analogue: it fires only once Pi will not continue
+  // on its own. `turn_end` fires per LLM response, which reintroduces the mid-sequence
+  // autofix race (a fixer strips a just-added import before its first use lands) and
+  // misses files written by bash rather than by the write/edit tools.
   let reportedThisStreak = false
 
   pi.on("message_start", async (event) => {
@@ -714,8 +1037,8 @@ export default function (pi: ExtensionAPI) {
   })
 
   pi.on("agent_settled", async (_event, ctx) => {
-    // Injecting below settles Pi again; this caps the agent at one round, the way
-    // `stop_hook_active` does for the other agents.
+    // Injecting below settles Pi again; this caps it at one round, as `stop_hook_active`
+    // does for the other agents.
     if (reportedThisStreak) return
 
     const runner = toolExists("prek") ? "prek" : toolExists("pre-commit") ? "pre-commit" : null

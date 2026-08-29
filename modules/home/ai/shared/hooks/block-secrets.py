@@ -3,59 +3,27 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""
-Claude Code / Codex Hook: Block secret exfiltration and flag sensitive access.
-
-Shared (symlinked) between Claude Code and Codex.
-
-PreToolUse hook — runs for Bash, Read, Write, Edit, and apply_patch tool calls.
-
-Block mode (exit 2):
-  - Secret detected in Bash command + network destination (exfiltration)
-  - Credential file content piped to network (.env, .npmrc, .ssh, .aws, etc.)
-  - Environment variable dump sent to network
-  - DNS exfiltration patterns
-
-Ask mode (exit 0 + JSON) — under Claude, which supports PreToolUse prompts:
-  - Secret detected in tool_input (universal scan — debugging context)
-  - Credential store read (keychain, vault, secretsmanager, etc.)
-  - Read/Write/Edit/apply_patch targeting a file whose name suggests secrets
-
-Codex cannot honour PreToolUse confirmation prompts, so every ask-mode case is
-blocked instead (fail closed). The agent is detected from the payload: Claude
-sends `transcript_path`; when it is absent (Codex, or unknown) ask() blocks.
-
-Performance: built-in regex patterns run first (~microseconds). gitleaks is only
-invoked when built-in patterns find a match (for confirmation + broader coverage)
-or when a Bash command has network context (where missing a secret is catastrophic).
-
-Error handling (per hook-interface ErrorHandlingByDamagePotential):
-  - Bash/Write/Edit/apply_patch: exit 2 on internal error (fail-closed)
-  - All other tools: exit 1 on internal error (fail-open with error logged)
-"""
+"""Block secret exfiltration and flag sensitive access (PreToolUse hook)."""
 
 import io
 import json
-import os
 import re
 import subprocess
 import sys
+from typing import NoReturn
+
+from guarded_paths import NAME_HEURISTIC_EXEMPT_RE, GuardedLocations
+from hook_response import UNKNOWN, Decision, invoking_agent, respond, supports_ask
 
 SENSITIVE_TOOLS = {"Bash", "Write", "Edit", "apply_patch"}
 
-# Whether the running agent can honour a PreToolUse confirmation prompt. Claude
-# Code sends `transcript_path` in the payload; Codex does not. Set in __main__;
-# fail safe — when unset/unknown, ask() blocks instead of prompting.
-_SUPPORTS_ASK = False
+_AGENT = UNKNOWN
 
-# ── Shared risk explanation ───────────────────────────────────────────────────
-# Appended to all block/ask messages to give consistent downstream-risk context.
 _EXPOSURE_RISK = (
     "Exposed credentials risk unauthorised access, account takeover, and data "
     "exfiltration across every service they protect."
 )
 
-# ── Network tool detection ─────────────────────────────────────────────────────
 NETWORK_CMD_RE = re.compile(
     r"\b(?:curl|curlie|wget|aria2c|xh|httpie|nc|ncat|netcat|ftp|sftp|scp|rsync|socat|ssh(?!-\w)|telnet)\b"
     r"|\bhttps?\b(?!://)"  # httpie `http`/`https` command (not a URL scheme)
@@ -63,24 +31,17 @@ NETWORK_CMD_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Loopback exemption: checks URL hosts and nc host arguments in context.
 LOCAL_URL_RE = re.compile(
     r"https?://(?:localhost|127\.0\.0\.1|::1|0\.0\.0\.0)[:/\s\"']",
     re.IGNORECASE,
 )
-# Any non-loopback URL. A loopback token must NOT exempt a command that also
-# targets a real remote host (localhost-decoy downgrade), so the presence of a
-# remote URL cancels the loopback exemption below.
+# A remote URL cancels the loopback exemption (localhost-decoy bypass).
 REMOTE_URL_RE = re.compile(
     r"https?://(?!localhost|127\.0\.0\.1|::1|0\.0\.0\.0)[^\s\"']",
     re.IGNORECASE,
 )
 
-# File-transfer / egress tools, as command words. Used only to gate the
-# credential-path exfil block below. Deliberately excludes bare `ssh`: the broad
-# NETWORK_CMD_RE `ssh` alternative also matches the `.ssh` in a path like
-# `~/.ssh/id_rsa`, which would misclassify local key ops (`ssh-keygen -f
-# ~/.ssh/id_ed25519`) as egress. scp/rsync/sftp already cover SSH file transfer.
+# Excludes bare `ssh` — `.ssh` in paths would false-positive as egress.
 EGRESS_CMD_RE = re.compile(
     r"\b(?:curl|curlie|wget|aria2c|xh|httpie|scp|sftp|rsync|nc|ncat|netcat|socat|ftp|telnet)\b"
     r"|\bhttps?\b(?!://)",
@@ -90,25 +51,19 @@ LOCAL_NC_RE = re.compile(
     r"\bnc\b[^|;&\n]*(?:localhost|127\.0\.0\.1|::1|0\.0\.0\.0)\s+[0-9]",
     re.IGNORECASE,
 )
-# Loopback exemption for connection-based tools: scp, rsync, ssh
-# Matches loopback address in the host/destination position.
 LOCAL_HOST_ARG_RE = re.compile(
     r"\b(?:scp|rsync)\b[^|;&\n]*\s(?:localhost|127\.0\.0\.1|::1|0\.0\.0\.0):"
     r"|\bssh\b[^|;&\n]*\s(?:localhost|127\.0\.0\.1|::1|0\.0\.0\.0)\b",
     re.IGNORECASE,
 )
 
-# ── Environment dump patterns ─────────────────────────────────────────────────
 ENV_DUMP_RE = re.compile(r"\b(?:env\b|printenv\b|export\s+-p\b)", re.IGNORECASE)
 
-# ── DNS exfiltration patterns ─────────────────────────────────────────────────
 DNS_EXFIL_RE = re.compile(
     r"\$\([^)]+\)\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}"  # $(cmd).attacker.com
-    r"|\b(?:nslookup|dig|host)\s+.*\$\("  # dig $(...)
+    r"|\b(?:nslookup|dig|host)\s+.*\$\("
 )
 
-# ── Credential file pipes (block: file content → network) ────────────────────
-# Catches `cat .env | curl`, `cat ~/.npmrc | nc`, etc.
 CREDENTIAL_FILE_PIPE_RE = re.compile(
     r"\b(?:cat|less|head|tail|bat)\s+[^\s|;&#]*"
     r"(?:\.env\b|\.envrc\b|\.npmrc\b|\.netrc\b|\.git-credentials\b"
@@ -118,13 +73,6 @@ CREDENTIAL_FILE_PIPE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ── Credential file referenced in a network command (block mode) ─────────────
-# Fail-safe for exfil via tools/readers the pipe-specific regex misses: a
-# network tool that opens the file itself (`scp id_rsa host:`, `curl -T
-# .aws/credentials`, `curl --upload-file`), or any reader outside cat/less/head/
-# tail/bat (`base64 .env | curl`, `od id_rsa | curl`, `tar czf - ~/.ssh | curl`).
-# Combined with remote network context (has_network and not is_local) this
-# blocks; matching a credential-path token anywhere in the command is enough.
 CRED_PATH_IN_CMD_RE = re.compile(
     r"(?:^|[\s=@\"'/])(?:"
     r"\.env(?:\.[^\s\"']*)?|\.envrc|\.npmrc|\.netrc|\.pypirc|\.git-credentials"
@@ -136,7 +84,6 @@ CRED_PATH_IN_CMD_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ── Credential store reads (ask mode) ─────────────────────────────────────────
 CREDENTIAL_STORE_RE = re.compile(
     r"\bsecurity\s+find-(?:generic|internet)-password\b"
     r"|\bvault\s+(?:read|kv\s+get)\b"
@@ -146,76 +93,53 @@ CREDENTIAL_STORE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ── Built-in secret patterns ─────────────────────────────────────────────────
-# Used as fast pre-scan AND as gitleaks fallback.
-# High-precision patterns to minimise false positives.
 BUILTIN_SECRET_RES = [
-    # Cloud provider keys
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # AWS access key ID
-    re.compile(r"(?i)aws_secret_access_key\s*=\s*\S{20,}"),  # AWS secret key assignment
-    # Platform tokens
-    re.compile(r"\b(?:ghp|gho|ghs|ghr)_[a-zA-Z0-9]{36}\b"),  # GitHub tokens
-    re.compile(r"\bgithub_pat_[a-zA-Z0-9_]{22,}\b"),  # GitHub fine-grained PAT
-    re.compile(r"\bsk-ant-api[0-9]+-[a-zA-Z0-9]{70,}\b"),  # Anthropic
-    re.compile(r"\bsk-(?:proj-)?[a-zA-Z0-9T]{48,}\b"),  # OpenAI-style
-    re.compile(r"\bxox[bpra]-[0-9]{9,}-[a-zA-Z0-9-]+\b"),  # Slack
-    re.compile(r"[MN][A-Za-z\d]{23,}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}"),  # Discord
-    # Cryptographic material
-    re.compile(r"-----BEGIN\s+(?:\w+\s+)?PRIVATE\s+KEY-----"),  # PEM private key
-    re.compile(r"-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----"),  # GPG private key
-    # Auth headers & generic assignments
-    re.compile(
-        r"(?i)(?:bearer|authorization)\s+[A-Za-z0-9\-_.~+/]{20,}"
-    ),  # Bearer/auth tokens
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"(?i)aws_secret_access_key\s*=\s*\S{20,}"),
+    re.compile(r"\b(?:ghp|gho|ghs|ghr)_[a-zA-Z0-9]{36}\b"),
+    re.compile(r"\bgithub_pat_[a-zA-Z0-9_]{22,}\b"),
+    re.compile(r"\bsk-ant-api[0-9]+-[a-zA-Z0-9]{70,}\b"),
+    re.compile(r"\bsk-(?:proj-)?[a-zA-Z0-9T]{48,}\b"),
+    re.compile(r"\bxox[bpra]-[0-9]{9,}-[a-zA-Z0-9-]+\b"),
+    re.compile(r"[MN][A-Za-z\d]{23,}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}"),
+    re.compile(r"-----BEGIN\s+(?:\w+\s+)?PRIVATE\s+KEY-----"),
+    re.compile(r"-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----"),
+    re.compile(r"(?i)(?:bearer|authorization)\s+[A-Za-z0-9\-_.~+/]{20,}"),
     re.compile(
         r"(?i)(?:api[_-]?key|api[_-]?secret|secret[_-]?key|access[_-]?token)"
         r"\s*[=:]\s*[A-Za-z0-9+/\-_.]{16,}"
-    ),  # Generic secret assignment
+    ),
 ]
 
-# ── File path heuristics for Read/Write/Edit (ask mode) ───────────────────────
 CREDENTIAL_FILE_RE = re.compile(
     r"(?:^|[/\\])(?:"
-    r"id_rsa|id_ed25519|id_ecdsa|id_dsa"  # SSH keys
-    r"|[^/\\]*\.(?:key|pem|keystore|jks|p12|pfx)"  # key/cert/keystore ext
-    r"|[^/\\]*(?:token|password|passwd|api[_-]?key|auth_key|secret|credential)[^/\\]*"  # named patterns
-    r"|\.env(?:\.[^/\\]*)?|\.envrc"  # dot-env files
-    r"|\.npmrc|\.netrc|\.pypirc|\.git-credentials"  # credential config files
+    r"id_rsa|id_ed25519|id_ecdsa|id_dsa"
+    r"|[^/\\]*\.(?:key|pem|keystore|jks|p12|pfx)"
+    r"|[^/\\]*(?:token|password|passwd|api[_-]?key|auth_key|secret|credential)[^/\\]*"
+    r"|\.env(?:\.[^/\\]*)?|\.envrc"
+    r"|\.npmrc|\.netrc|\.pypirc|\.git-credentials"
     r")$",
     re.IGNORECASE,
 )
 
-# High-value credential store files, matched unconditionally (no package-dir
-# exemption): Claude Code's own OAuth store (~/.claude/.credentials.json) and
-# cloud service-account keys, which EXEMPT_DIR_RE would otherwise shadow.
+# Unconditional — not subject to the package-dir exemption.
 STRONG_CRED_FILE_RE = re.compile(
     r"(?:^|[/\\])(?:\.?credentials\.json|service-account[^/\\]*\.json)$",
     re.IGNORECASE,
 )
 
-# ── Directory exemption for name-based patterns ──────────────────────────────
-# Name-based patterns don't apply inside these directories, where words like
-# 'secret' or 'credentials' are valid file/module names.
-EXEMPT_DIR_RE = re.compile(
-    r"(?:^|[/\\])(?:\.venv|venv|site-packages|node_modules|\.claude|(?:claude|codex)[/\\](?:hooks|tests))(?:[/\\]|$)",
-    re.IGNORECASE,
-)
+CREDENTIAL_DIRS = {
+    prefix: GuardedLocations([prefix])
+    for prefix in ("~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/")
+}
 
-# ── Credential directory prefixes (ask mode) ────────────────────────────────
-# Files within well-known credential directories trigger ask regardless of name.
-CREDENTIAL_DIR_PREFIXES = ["~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/"]
-
-# ── apply_patch path extraction ───────────────────────────────────────────────
 PATCH_PATH_RE = re.compile(
     r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$", re.MULTILINE
 )
 
 
-# ── Gitleaks integration ───────────────────────────────────────────────────────
-
-
 def scan_with_gitleaks(text: str) -> bool | None:
-    """Scan text with gitleaks. Returns True/False/None (unavailable)."""
+    """Returns True (leak found), False (clean), or None (unavailable)."""
     try:
         result = subprocess.run(
             ["gitleaks", "detect", "--pipe", "--no-banner", "-l", "warn", "--redact"],
@@ -233,17 +157,11 @@ def scan_with_gitleaks(text: str) -> bool | None:
 
 
 def builtin_has_secret(text: str) -> bool:
-    """Fast built-in pattern scan (~microseconds)."""
     return any(p.search(text) for p in BUILTIN_SECRET_RES)
 
 
 def has_credential(text: str, *, deep: bool = False) -> bool:
-    """
-    Detect secrets in text.
-
-    Fast path (deep=False): built-in patterns only.
-    Deep path (deep=True): built-in first, then gitleaks for broader coverage.
-    """
+    """Detect secrets; deep=True adds gitleaks scan."""
     if builtin_has_secret(text):
         return True
     if deep:
@@ -253,43 +171,14 @@ def has_credential(text: str, *, deep: bool = False) -> bool:
     return False
 
 
-# ── Hook output helpers ────────────────────────────────────────────────────────
-
-_AI_INSTRUCTIONS = """
----
-AI INSTRUCTIONS:
-You have been blocked from performing this operation. Do NOT attempt to find alternative commands, equivalent steps, or workarounds that achieve the same result through a different path.
-
-Stop and report the following to the user immediately:
-1. Your current task — what you were working on
-2. Your intended step — what you were trying to do and why
-3. What was blocked — the specific action blocked and the reason given above
-4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed"""
+def block(message: str) -> NoReturn:
+    respond(Decision.BLOCK, message, agent=_AGENT)
 
 
-def block(message: str) -> None:
-    sys.stderr.write(message + "\n" + _AI_INSTRUCTIONS + "\n")
-    sys.exit(2)
+def ask(reason: str) -> NoReturn:
+    if supports_ask(_AGENT):
+        respond(Decision.ASK, reason, agent=_AGENT)
 
-
-def ask(reason: str) -> None:
-    if _SUPPORTS_ASK:
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": "ask",
-                        "permissionDecisionReason": reason,
-                    }
-                }
-            )
-        )
-        sys.exit(0)
-
-    # The agent cannot honour a PreToolUse confirmation prompt (e.g. Codex):
-    # fail closed and block instead of prompting. Reword the ask phrasing into a
-    # manual-action instruction; the sensitivity description is preserved.
     reason = reason.replace("Claude", "the agent")
     reason = reason.replace(
         "Approve only if this access is intentional and the credentials will "
@@ -314,7 +203,7 @@ def ask(reason: str) -> None:
 
 
 def extract_apply_patch_paths(tool_input: dict) -> list[str]:
-    """Target file paths named in a Codex apply_patch command body."""
+    """Extract target file paths from a Codex apply_patch command body."""
     command = tool_input.get("command", "")
     if not isinstance(command, str):
         return []
@@ -326,8 +215,6 @@ def ask_if_sensitive_path(path: str) -> None:
     if not path:
         return
 
-    # Check 0: high-value credential store files (unconditional; not subject to
-    # the package-dir exemption, so ~/.claude/.credentials.json is caught).
     if STRONG_CRED_FILE_RE.search(path):
         ask(
             f"This operation targets '{path}', a credential store file "
@@ -337,11 +224,8 @@ def ask_if_sensitive_path(path: str) -> None:
             "intentionally want Claude to access this material."
         )
 
-    # Check 2: credential directory prefixes (unconditional)
-    norm_path = os.path.normpath(os.path.expanduser(path))
-    for dir_prefix in CREDENTIAL_DIR_PREFIXES:
-        expanded = os.path.normpath(os.path.expanduser(dir_prefix))
-        if norm_path.startswith(expanded + os.sep) or norm_path == expanded:
+    for dir_prefix, credential_dir in CREDENTIAL_DIRS.items():
+        if credential_dir.contains(path):
             ask(
                 f"This operation targets '{path}', which is inside a "
                 f"credential directory ({dir_prefix}). Files here typically "
@@ -352,8 +236,7 @@ def ask_if_sensitive_path(path: str) -> None:
                 "Claude to access this material."
             )
 
-    # Check 1: credential file name patterns (with package-dir exemption)
-    if CREDENTIAL_FILE_RE.search(path) and not EXEMPT_DIR_RE.search(path):
+    if CREDENTIAL_FILE_RE.search(path) and not NAME_HEURISTIC_EXEMPT_RE.search(path):
         ask(
             f"This operation targets '{path}', whose name suggests it may "
             "contain credentials, tokens, or key material. Exposing this to "
@@ -363,23 +246,25 @@ def ask_if_sensitive_path(path: str) -> None:
         )
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
-
-
 def main() -> None:
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
         raw = sys.stdin.getvalue() if hasattr(sys.stdin, "getvalue") else ""
-        # Fail closed on non-empty unparsable input (a corrupted payload could
-        # be a sensitive Bash/Write/Edit/apply_patch call); allow only genuinely
-        # empty stdin, which is never a real tool call.
-        sys.exit(2 if raw.strip() else 0)
+        # A corrupted payload could be a sensitive call, so it fails closed.
+        # Empty stdin is never a real tool call, so it alone is allowed.
+        if not raw.strip():
+            respond(Decision.ALLOW, agent=_AGENT)
+        respond(
+            Decision.BLOCK,
+            "block-secrets could not parse the hook payload. A payload this hook "
+            "cannot read may be a sensitive call it cannot check, so it is refused.",
+            agent=_AGENT,
+        )
 
     tool_name: str = data.get("tool_name", "")
     tool_input: dict = data.get("tool_input", {})
 
-    # ── Pre-compute network context for Bash (used by both specific and universal checks)
     command = tool_input.get("command", "") if tool_name == "Bash" else ""
     has_network = bool(NETWORK_CMD_RE.search(command)) if command else False
     has_loopback = (
@@ -391,18 +276,14 @@ def main() -> None:
         if command
         else False
     )
-    # Only treat the command as local when a loopback destination is present AND
-    # no non-loopback URL appears anywhere. A decoy `http://localhost/` alongside
-    # a real remote host must not downgrade a block (localhost-decoy bypass).
+    # A decoy `http://localhost/` alongside a real remote host must not
+    # downgrade a block, so any remote URL cancels the loopback exemption.
     has_remote_url = bool(REMOTE_URL_RE.search(command)) if command else False
     is_local = has_loopback and not has_remote_url
     is_bash_with_network = has_network and not is_local
 
-    # ── Bash-specific pattern checks ─────────────────────────────────────
-    # These run before the universal scan — they detect exfiltration patterns
-    # that don't require gitleaks (structural patterns, not secret content).
     if command:
-        # DNS exfiltration (block unconditionally — no localhost exemption)
+        # No loopback exemption: a hostname query leaves the machine either way.
         if DNS_EXFIL_RE.search(command):
             block(
                 "Blocked: DNS exfiltration pattern detected.\n"
@@ -411,7 +292,6 @@ def main() -> None:
                 f"detection. {_EXPOSURE_RISK}"
             )
 
-        # Credential file content piped to network (block unless localhost)
         if CREDENTIAL_FILE_PIPE_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: credential file piped to a network command.\n"
@@ -420,12 +300,9 @@ def main() -> None:
                 f"to a remote host, directly exposing those credentials. {_EXPOSURE_RISK}"
             )
 
-        # Credential file referenced in a command with a remote destination.
-        # Fail-safe for readers/tools the pipe regex misses: `scp id_rsa host:`,
-        # `curl -T .aws/credentials`, `base64 .env | curl`, `tar czf - ~/.ssh |
-        # curl`, etc. Gated on an explicit egress tool (not the broad network
-        # regex, which the `.ssh` path component would falsely trip) plus a
-        # non-loopback destination.
+        # Fail-safe for readers the pipe regex misses (`scp id_rsa host:`,
+        # `tar czf - ~/.ssh | curl`). Gated on an explicit egress tool, not the
+        # broad network regex, which a `.ssh` path component would falsely trip.
         is_egress_exfil = bool(EGRESS_CMD_RE.search(command)) and not is_local
         if is_egress_exfil and CRED_PATH_IN_CMD_RE.search(command):
             block(
@@ -436,7 +313,6 @@ def main() -> None:
                 f"which would expose that material off-machine. {_EXPOSURE_RISK}"
             )
 
-        # Environment dump to network (block unless localhost)
         if ENV_DUMP_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: environment variable dump to network detected.\n"
@@ -445,7 +321,6 @@ def main() -> None:
                 f"to a remote host, exposing all of them at once. {_EXPOSURE_RISK}"
             )
 
-        # Credential store read + network → block
         if CREDENTIAL_STORE_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: credential store read piped to a remote network destination.\n"
@@ -454,7 +329,6 @@ def main() -> None:
                 f"exposing those credentials. {_EXPOSURE_RISK}"
             )
 
-        # Credential store read (local) → ask
         if CREDENTIAL_STORE_RE.search(command):
             ask(
                 "This command reads credentials from a system credential store "
@@ -465,7 +339,6 @@ def main() -> None:
                 "the credentials will not leave this session."
             )
 
-    # ── File path heuristics for Read/Write/Edit and apply_patch ─────────
     if tool_name in ("Read", "Write", "Edit"):
         path = tool_input.get("file_path") or tool_input.get("path", "")
         if path:
@@ -475,11 +348,8 @@ def main() -> None:
         for path in extract_apply_patch_paths(tool_input):
             ask_if_sensitive_path(path)
 
-    # ── Universal secret scan ────────────────────────────────────────────
-    # Serialize tool_input and scan for secret patterns.
-    # Fast path: built-in patterns only (~microseconds).
-    # Deep path (gitleaks): only for Bash commands with network context,
-    # where missing a secret would enable exfiltration.
+    # gitleaks costs a subprocess, so it runs only where a missed secret could
+    # leave the machine; everything else gets the built-in patterns alone.
     serialized = json.dumps(tool_input)
 
     if has_credential(serialized, deep=is_bash_with_network):
@@ -509,7 +379,7 @@ if __name__ == "__main__":
         try:
             _parsed = json.loads(raw)
             _current_tool_name = _parsed.get("tool_name", "")
-            _SUPPORTS_ASK = "transcript_path" in _parsed
+            _AGENT = invoking_agent(payload=_parsed)
         except Exception:  # noqa: BLE001, S110
             pass
         sys.stdin = io.StringIO(raw)
@@ -518,5 +388,15 @@ if __name__ == "__main__":
         raise
     except Exception:  # noqa: BLE001
         if _current_tool_name in SENSITIVE_TOOLS:
-            sys.exit(2)
-        sys.exit(1)
+            respond(
+                Decision.BLOCK,
+                "block-secrets failed while checking a call that can leak a "
+                "credential, so the call is refused rather than let through "
+                "unchecked.",
+                agent=_AGENT,
+            )
+        respond(
+            Decision.WARN,
+            "block-secrets failed; this tool call was not checked.",
+            agent=_AGENT,
+        )

@@ -3,14 +3,10 @@
 # requires-python = ">=3.11"
 # dependencies = ["pyyaml"]
 # ///
-"""Hook: Re-inject skills catalog after context compaction.
+"""Re-inject the skills catalog as SessionStart `additionalContext` after compaction.
 
-Enumerates available SKILL.md files from known locations, extracts
-name + description from YAML frontmatter, and outputs a compact
-catalog as additionalContext.
-
-Intended for SessionStart with matcher:compact — the platform injects
-the catalog at initial startup but compaction compresses it away.
+For SessionStart with matcher:compact — the platform injects the catalog at
+initial startup, but compaction compresses it away.
 """
 
 import json
@@ -18,7 +14,6 @@ import os
 import sys
 from pathlib import Path
 
-# PyYAML may not be installed; fall back to a minimal extractor.
 try:
     import yaml
 except ImportError:
@@ -46,7 +41,6 @@ def parse_frontmatter(text: str) -> dict:
             return data if isinstance(data, dict) else {}
         except yaml.YAMLError:
             return {}
-    # Minimal fallback: handle simple key: value pairs only.
     result = {}
     for line in raw.splitlines():
         if ":" in line and not line.startswith(" "):
@@ -74,8 +68,8 @@ def _plugin_cache_dir() -> Path:
     return Path.home() / ".claude" / "plugins" / "cache"
 
 
-# Top-level dirs under plugins/cache to skip entirely.
-# Official plugin skills are managed via user symlinks; temp dirs are stale.
+# Official plugin skills reach the catalog through user symlinks already, and
+# temp checkouts under plugins/cache are stale.
 _SKIP_PLUGIN_PREFIXES = ("claude-plugins-official", "temp_git_")
 
 
@@ -99,9 +93,8 @@ def _read_skill(skill_file: Path) -> tuple[str, str] | None:
 def _collect_user_skills() -> list[tuple[str, str]]:
     """Collect skills from user-level skill directories.
 
-    Each child directory (or symlink-to-directory) is checked for a
-    SKILL.md file.  This avoids reliance on ``rglob`` following symlinks,
-    which changed in Python 3.13.
+    Each child directory is checked for SKILL.md directly, rather than relying
+    on `rglob` following symlinks, whose behaviour changed in Python 3.13.
     """
     seen: set[str] = set()
     skills: list[tuple[str, str]] = []
@@ -109,7 +102,6 @@ def _collect_user_skills() -> list[tuple[str, str]]:
         if not d.is_dir():
             continue
         for child in sorted(d.iterdir()):
-            # Resolve symlinks so we can check is_dir on the target.
             if not child.is_dir() and not (
                 child.is_symlink() and child.resolve().is_dir()
             ):
@@ -129,10 +121,7 @@ def _collect_user_skills() -> list[tuple[str, str]]:
 
 
 def _collect_plugin_skills(exclude: set[str]) -> list[tuple[str, str]]:
-    """Collect skills from the plugin cache, namespaced as ``plugin:skill``.
-
-    Skips official/temp directories and any skill name already in *exclude*.
-    """
+    """Collect skills from the plugin cache, namespaced as `plugin:skill`, skipping names in `exclude`."""
     cache = _plugin_cache_dir()
     if not cache.is_dir():
         return []
@@ -146,7 +135,6 @@ def _collect_plugin_skills(exclude: set[str]) -> list[tuple[str, str]]:
         if any(plugin_dir.name.startswith(p) for p in _SKIP_PLUGIN_PREFIXES):
             continue
         namespace = plugin_dir.name
-        # Walk the plugin tree to find all SKILL.md files.
         for root, _dirs, files in os.walk(plugin_dir, followlinks=True):
             if "SKILL.md" not in files:
                 continue

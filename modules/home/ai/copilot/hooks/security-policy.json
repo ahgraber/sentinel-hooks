@@ -32,7 +32,7 @@
       },
       {
         "type": "command",
-        "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py copilot-block-hook-tampering.py",
+        "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py block-hook-tampering.py",
         "timeout": 30
       },
       {

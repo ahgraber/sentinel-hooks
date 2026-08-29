@@ -1,19 +1,16 @@
 """Tests for Claude hook and settings tamper protection.
 
-Kept in the same shape as the Codex and Copilot tamper suites, because the
-three hooks enforce one policy over different path sets: reads are allowed,
-mutations are blocked, and `instructions/*.md` is the only carve-out. A policy
-change that reaches one hook and not the others should show up as a diff
-between these three files.
+Claude can put a per-call decision to the user, so a gated mutation asks here
+where the Codex and Copilot suites, testing the same policy, see a refusal.
+Agent credentials refuse everywhere.
 """
 
 from pathlib import Path
 
-from conftest import assert_allowed, assert_block_contract, run_hook
+from conftest import assert_allowed, assert_ask, assert_block_contract, run_hook
 
 HOOK = "block-hook-tampering.py"
 HOOKS_DIR = Path(__file__).parents[2] / "shared" / "hooks"
-# tests/ -> claude/ -> ai/ -> home/ -> modules/ -> repo root (5 levels up).
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
@@ -67,47 +64,60 @@ class TestReadAccess:
         assert_allowed(read(str(alias)))
 
 
-class TestMutationProtection:
-    def test_deployed_settings_write_blocks(self):
-        assert_block_contract(write("~/.claude/settings.json"), "settings.json")
+class TestMutationGate:
+    """A gated mutation asks under Claude; only a credential refuses."""
 
-    def test_deployed_project_state_write_blocks(self):
-        assert_block_contract(write("~/.claude.json"), ".claude.json")
+    def test_deployed_settings_write_asks(self):
+        assert_ask(write("~/.claude/settings.json"), "settings.json")
 
-    def test_repo_hook_edit_blocks(self):
-        assert_block_contract(edit(repo_path("hooks", "block-secrets.py")), "hooks")
+    def test_deployed_project_state_write_asks(self):
+        assert_ask(write("~/.claude.json"), ".claude.json")
 
-    def test_user_settings_write_blocks(self):
-        assert_block_contract(
+    def test_repo_hook_edit_asks(self):
+        assert_ask(edit(repo_path("hooks", "block-secrets.py")), "hooks")
+
+    def test_user_settings_write_asks(self):
+        assert_ask(
             write(user_path("claude", "settings.linux.json")),
             "settings.linux.json",
         )
+
+    def test_credential_write_blocks(self):
+        for path in (
+            "~/.claude/.credentials.json",
+            "~/.codex/auth.json",
+            "~/.pi/agent/auth.json",
+        ):
+            assert_block_contract(write(path), Path(path).name)
 
     def test_unrelated_write_allowed(self):
         assert_allowed(write("/tmp/notes.txt"))
 
 
 class TestBashCommandProtection:
-    def test_bash_touching_repo_hook_blocks(self):
-        # The Bash branch matches on mention, not on intent: the effect of a
-        # shell command cannot be read off its text, so any reference blocks.
-        assert_block_contract(
+    def test_bash_touching_repo_hook_asks(self):
+        # The Bash branch matches on mention, not intent: a command's effect
+        # cannot be read off its text, so any reference is gated.
+        assert_ask(
             bash(f"cat {repo_path('hooks', 'block-secrets.py')}"),
             "hooks",
         )
 
-    def test_bash_touching_deployed_settings_blocks(self):
-        assert_block_contract(bash("cat ~/.claude/settings.json"), "settings.json")
+    def test_bash_touching_deployed_settings_asks(self):
+        assert_ask(bash("cat ~/.claude/settings.json"), "settings.json")
+
+    def test_bash_naming_a_credential_blocks(self):
+        assert_block_contract(bash("cat ~/.codex/auth.json"), "auth.json")
 
     def test_bash_referencing_only_instruction_markdown_allowed(self):
         instruction = repo_path("hooks", "instructions", "00-response-style.md")
 
         assert_allowed(bash(f"cat {instruction}"))
 
-    def test_bash_mixing_instruction_markdown_and_protected_path_blocks(self):
+    def test_bash_mixing_instruction_markdown_and_protected_path_asks(self):
         instruction = repo_path("hooks", "instructions", "00-response-style.md")
 
-        assert_block_contract(
+        assert_ask(
             bash(f"cat {instruction} ~/.claude/settings.json"),
             "settings.json",
         )
@@ -128,32 +138,32 @@ class TestInstructionMarkdownAllowlist:
     def test_deployed_instruction_markdown_write_allowed(self):
         assert_allowed(write("~/.claude/hooks/instructions/00-response-style.md"))
 
-    def test_nested_instruction_path_blocks(self):
-        assert_block_contract(
+    def test_nested_instruction_path_asks(self):
+        assert_ask(
             write(repo_path("hooks", "instructions", "nested", "note.md")),
             "hooks",
         )
 
-    def test_non_markdown_in_instructions_blocks(self):
-        assert_block_contract(
+    def test_non_markdown_in_instructions_asks(self):
+        assert_ask(
             write(repo_path("hooks", "instructions", "helper.py")),
             "hooks",
         )
 
 
 class TestPathResolution:
-    def test_write_through_symlink_to_repo_hook_blocks(self, tmp_path: Path):
+    def test_write_through_symlink_to_repo_hook_asks(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
         alias.symlink_to(HOOKS_DIR / "block-secrets.py")
 
-        assert_block_contract(write(str(alias)), "Hook scripts")
+        assert_ask(write(str(alias)), "notes.py")
 
-    def test_traversal_normalized_repo_hook_write_blocks(self):
+    def test_traversal_normalized_repo_hook_write_asks(self):
         claude_dir = REPO_ROOT / "modules" / "home" / "ai" / "claude"
         obfuscated = f"{claude_dir}/../claude/hooks/block-secrets.py"
         assert "modules/home/ai/claude/hooks/" not in obfuscated
 
-        assert_block_contract(write(obfuscated), "claude")
+        assert_ask(write(obfuscated), "claude")
 
 
 class TestPayloadHandling:
@@ -161,4 +171,6 @@ class TestPayloadHandling:
         assert_allowed(run_hook(HOOK, "Grep", {"path": repo_path("hooks")}))
 
     def test_unparsable_payload_defers(self):
+        # An unparsable payload carries no transcript path, so the agent is
+        # unidentifiable and the warn degrades to a silent allow.
         assert_allowed(run_hook(HOOK, stdin_text="not json"))

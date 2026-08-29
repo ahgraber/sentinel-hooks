@@ -1,23 +1,18 @@
 """Tests for the Copilot tamper-protection hook.
 
-Kept in the same shape as the Claude and Codex tamper suites, because the three
-hooks enforce one policy over different path sets: reads are allowed, mutations
-are blocked, and `instructions/*.md` is the only carve-out. A policy change that
-reaches one hook and not the others should show up as a diff between these three
-files.
-
-Copilot's path set is the union of all three agents plus VS Code, because
-Copilot runs without the per-agent split the other two hooks rely on.
+Deliberately parallel to the Claude and Codex tamper suites: one policy over
+three path sets, so a change reaching one hook and not the others shows up as a
+diff between the files. Copilot's set is the union of all three agents plus VS
+Code, because it runs without the per-agent split the other two rely on.
 """
 
 from pathlib import Path
 
-from conftest import assert_allowed, assert_block_contract, run_hook
+from conftest import assert_allowed, assert_ask, assert_block_contract, run_hook
 
-HOOK = "copilot-block-hook-tampering.py"
+HOOK = "block-hook-tampering.py"
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
-# tests/ -> copilot/ -> ai/ -> home/ -> modules/ -> repo root (5 levels up),
-# matching REPO_ROOT in the hook under test.
+# Matches REPO_ROOT in the hook under test.
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
@@ -67,9 +62,8 @@ def apply_patch(path: str):
 
 
 class TestReadAccess:
-    """Reads stay unblocked: a read-deny on these paths cannot be enforced by
-    the OS sandbox, because they are symlinks into the Nix store and bubblewrap
-    aborts every sandboxed command when it cannot mount over one."""
+    """Reads stay unblocked: these paths are Nix store symlinks, and bubblewrap
+    aborts a sandboxed command when it cannot mount over one."""
 
     def test_each_agents_deployed_config_is_readable(self):
         for path in (
@@ -90,39 +84,56 @@ class TestReadAccess:
 
     def test_read_through_symlink_to_repo_hook_is_allowed(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
-        alias.symlink_to(HOOKS_DIR / "copilot-block-hook-tampering.py")
+        alias.symlink_to(HOOKS_DIR / "copilot-vscode-hook-adapter.py")
 
         assert_allowed(read(str(alias)))
 
 
-class TestMutationProtection:
-    def test_each_agents_deployed_config_write_blocks(self):
+class TestMutationGate:
+    """A gated file-tool mutation asks; a credential refuses on every tool."""
+
+    def test_each_agents_deployed_config_write_asks(self):
         for path, needle in (
             ("~/.claude/settings.json", "settings.json"),
             ("~/.codex/config.toml", "config.toml"),
             ("~/.copilot/hooks/security-policy.json", "security-policy.json"),
         ):
-            assert_block_contract(write(path), needle)
+            assert_ask(write(path), needle)
 
-    def test_deployed_vscode_settings_write_blocks(self):
+    def test_deployed_vscode_settings_write_asks(self):
         for path in (
             "~/Library/Application Support/Code/User/settings.json",
             "~/.config/Code/User/settings.json",
         ):
-            assert_block_contract(write(path), "settings.json")
+            assert_ask(write(path), "settings.json")
 
-    def test_each_agents_repository_config_write_blocks(self):
+    def test_each_agents_repository_config_write_asks(self):
         for path in (
             repo_path("claude", "hooks", "block-secrets.py"),
             repo_path("codex", "rules", "default.rules"),
             repo_path("copilot", "hooks", "security-policy.json"),
             user_path("codex", "config.linux.toml"),
-            user_path("vscode", "settings.json"),
+        ):
+            assert_ask(write(path), Path(path).name)
+
+    def test_credential_write_blocks(self):
+        for path in (
+            "~/.claude/.credentials.json",
+            "~/.codex/auth.json",
+            "~/.pi/agent/auth.json",
         ):
             assert_block_contract(write(path), Path(path).name)
 
-    def test_repo_hook_edit_blocks(self):
-        assert_block_contract(
+    def test_vscode_settings_write_is_not_gated_here(self):
+        """A preference file rather than enforcement, so the permission layer prompts.
+
+        Copilot has no permission surface, so nothing prompts there: the accepted
+        cost of not refusing it outright.
+        """
+        assert_allowed(write(user_path("vscode", "settings.json")))
+
+    def test_repo_hook_edit_asks(self):
+        assert_ask(
             edit(repo_path("claude", "hooks", "block-secrets.py")),
             "hooks",
         )
@@ -132,9 +143,12 @@ class TestMutationProtection:
 
 
 class TestBashCommandProtection:
+    """The shell tool proceeds past the prompt JSON on this surface, so a gated
+    Bash command refuses instead of asking: prompting would be fail-open."""
+
     def test_bash_touching_repo_hook_blocks(self):
-        # The Bash branch matches on mention, not on intent: the effect of a
-        # shell command cannot be read off its text, so any reference blocks.
+        # The Bash branch matches on mention, not intent: a command's effect is
+        # not readable from its text, so any reference is gated.
         assert_block_contract(
             bash(f"cat {repo_path('claude', 'hooks', 'block-secrets.py')}"),
             "hooks",
@@ -147,6 +161,9 @@ class TestBashCommandProtection:
             ("cat ~/.copilot/hooks/security-policy.json", "security-policy.json"),
         ):
             assert_block_contract(bash(command), needle)
+
+    def test_bash_naming_a_credential_blocks(self):
+        assert_block_contract(bash("cat ~/.codex/auth.json"), "auth.json")
 
     def test_bash_referencing_only_instruction_markdown_allowed(self):
         instruction = repo_path("copilot", "instructions", "shell.instructions.md")
@@ -166,6 +183,8 @@ class TestBashCommandProtection:
 
 
 class TestApplyPatchProtection:
+    """Only the probed file-mutation tools ask; a gated patch refuses."""
+
     def test_apply_patch_repo_hook_blocks(self):
         assert_block_contract(
             apply_patch(repo_path("copilot", "hooks", "security-policy.json")),
@@ -188,8 +207,7 @@ class TestApplyPatchProtection:
 
 
 class TestInstructionMarkdownAllowlist:
-    """`instructions/*.md` is prompt text rather than enforcement, so it stays
-    writable; anything else under the same directory does not."""
+    """`instructions/*.md` is prompt text rather than enforcement, so it stays writable."""
 
     def test_each_agents_instruction_markdown_write_allowed(self):
         for path in (
@@ -202,34 +220,34 @@ class TestInstructionMarkdownAllowlist:
         ):
             assert_allowed(write(path))
 
-    def test_nested_instruction_path_blocks(self):
-        assert_block_contract(
+    def test_nested_instruction_path_asks(self):
+        assert_ask(
             write(repo_path("copilot", "instructions", "nested", "note.md")),
             "instructions",
         )
 
-    def test_non_markdown_in_instructions_blocks(self):
-        assert_block_contract(
+    def test_non_markdown_in_instructions_asks(self):
+        assert_ask(
             write(repo_path("copilot", "instructions", "helper.py")),
             "instructions",
         )
 
 
 class TestPathResolution:
-    """Exercise the realpath-resolved PROTECTED_PATHS layer."""
+    """Exercise the realpath-resolved layer."""
 
-    def test_write_through_symlink_to_repo_hook_blocks(self, tmp_path: Path):
+    def test_write_through_symlink_to_repo_hook_asks(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
-        alias.symlink_to(HOOKS_DIR / "copilot-block-hook-tampering.py")
+        alias.symlink_to(HOOKS_DIR / "copilot-vscode-hook-adapter.py")
 
-        assert_block_contract(write(str(alias)), "Copilot")
+        assert_ask(write(str(alias)), "notes.py")
 
-    def test_traversal_normalized_repo_rules_write_blocks(self):
+    def test_traversal_normalized_repo_rules_write_asks(self):
         copilot_dir = REPO_ROOT / "modules" / "home" / "ai" / "copilot"
         obfuscated = f"{copilot_dir}/../codex/rules/default.rules"
         assert "modules/home/ai/codex/rules/" not in obfuscated
 
-        assert_block_contract(write(obfuscated), "rules")
+        assert_ask(write(obfuscated), "rules")
 
 
 class TestPayloadHandling:

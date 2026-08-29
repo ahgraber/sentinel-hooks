@@ -1,0 +1,85 @@
+# The guarded surface, declared once. Every enforcement implementation parses
+# this file at invocation, and the conformance tests over the Claude settings,
+# Codex TOMLs, and VS Code edit approvals treat it as their oracle.
+#
+# Notation: `~/` is the user's home; `<repo>/` this repository, matched against
+# whichever checkout or worktree contains the path being judged; `*` a wildcard
+# path segment. A trailing `/` guards the directory and everything under it.
+
+[gated] # ask where the agent's tool surface can prompt; refuse elsewhere
+deployed = [
+  "~/.claude.json",
+  "~/.claude/settings.json",
+  "~/.claude/settings.local.json",
+  "~/.codex/AGENTS.md",
+  "~/.codex/config.toml",
+  "~/.codex/hooks.json",
+  "~/.codex/rules/",
+  "~/.codex/skills/",
+  # `-p <name>` layers $CODEX_HOME/<name>.config.toml over the base config, so
+  # a layer widens anything the base narrows. It need not exist yet, so only
+  # the fragment can carry it.
+  "~/.codex/*.config.toml",
+  "~/.copilot/hooks/",
+  "~/Library/Application Support/Code/User/prompts/global.instructions.md",
+  "~/Library/Application Support/Code/User/prompts/shell.instructions.md",
+  "~/Library/Application Support/Code/User/settings.json",
+  "~/.config/Code/User/prompts/global.instructions.md",
+  "~/.config/Code/User/prompts/shell.instructions.md",
+  "~/.config/Code/User/settings.json",
+  # These two paths only, not the whole of ~/.pi, which also holds the npm
+  # prefix this module installs into.
+  "~/.pi/agent/settings.json",
+  "~/.pi/agent/extensions/",
+]
+sources = [
+  "<repo>/users/*/home-manager/claude/settings.json",
+  "<repo>/users/*/home-manager/claude/settings.darwin.json",
+  "<repo>/users/*/home-manager/claude/settings.linux.json",
+  "<repo>/users/*/home-manager/claude/settings.user.json",
+  "<repo>/modules/home/ai/codex/rules/",
+  "<repo>/users/*/home-manager/codex/hooks.json",
+  "<repo>/users/*/home-manager/codex/config.toml",
+  "<repo>/users/*/home-manager/codex/config.darwin.toml",
+  "<repo>/users/*/home-manager/codex/config.linux.toml",
+  "<repo>/modules/home/ai/copilot/hooks/",
+  "<repo>/modules/home/ai/pi/security/",
+  "<repo>/users/*/home-manager/pi/",
+  # The deployed source of the VS Code edit-approval enforcement block.
+  "<repo>/modules/home/apps/vscode/settings.json",
+]
+
+[credentials] # block on every agent; zero-access reads; never asked
+paths = ["~/.claude/.credentials.json", "~/.codex/auth.json", "~/.pi/agent/auth.json"]
+
+[instruction-layers] # markdown carve-out: [location, layer] pairs
+layers = [
+  ["~/.claude/hooks/", "instructions/"],
+  ["~/.codex/hooks/", "instructions/"],
+  ["~/.copilot/instructions/", ""],
+  ["<repo>/modules/home/ai/claude/hooks/", "instructions/"],
+  ["<repo>/modules/home/ai/codex/hooks/", "instructions/"],
+  ["<repo>/modules/home/ai/copilot/instructions/", ""],
+  ["<repo>/modules/home/ai/shared/hooks/", "instructions/"],
+]
+
+[location-only] # judged by resolution alone, no text fragment
+paths = ["~/.claude/", "~/.codex/", "~/.copilot/"]
+
+[secret-floor] # read-gating floor tests, beyond the credential paths above
+paths = ["~/.config/sops-nix/secrets/example", "~/.local/state/sops-nix/secrets.d/1/example"]
+
+[[exceptions]] # deliberate loosenings, one table per exception
+surface = "vscode-edit-approvals"
+pattern = "**/Code/User/workspaceStorage/**"
+why = "VS Code's own per-workspace state churn; gating it prompts on every chat session"
+
+[[exceptions]]
+surface = "codex-guarded-workspace"
+pattern = "~/.codex/*.config.toml"
+# Codex rejects read access on a glob path outright, accepting only an exact
+# path or a trailing /** subtree. A profile layer need not exist yet, so no
+# exact path reaches it, and deny would hide a file this class declares
+# readable. The layers stay gated by the tamper hook, by the Claude
+# Edit(~/.codex/*.config.toml) rule, and by the VS Code **/.codex/** glob.
+why = "Codex accepts no read-access glob, and a profile layer has no exact path until it exists"

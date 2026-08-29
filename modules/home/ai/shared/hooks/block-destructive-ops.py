@@ -3,27 +3,20 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""
-Claude Code / Codex Hook: Block destructive operations.
-
-Shared (symlinked) between Claude Code and Codex.
-
-PreToolUse hook for the Bash tool.
-Loads rules from block-destructive-ops-patterns.toml and matches each command
-against them, producing a hard block (exit 2) or — for `ask` rules — a
-confirmation prompt (exit 0 + JSON).
+"""PreToolUse hook blocking destructive Bash commands, per block-destructive-ops-patterns.toml.
 
 Each rule is matched against the command as written and against a normalized
-spelling of it (see `normalize`), so a rule written for `rm -rf /` still fires
-on `r'm' -rf /`. Matching both can only add matches, never drop one.
+spelling of it, so a rule written for `rm -rf /` still fires on `r'm' -rf /`;
+matching both can only add matches, never drop one.
 
-Confirmation prompts only work under Claude, which supports PreToolUse prompts.
-Codex does not, so `ask` rules are blocked instead (fail closed). The agent is
-detected from the payload: Claude sends `transcript_path`; when it is absent
-(Codex, or an unknown agent) the hook blocks rather than prompt.
+An `ask` rule needs an agent that honours PreToolUse prompts, so where that
+cannot be confirmed the rule blocks instead — fail closed. A missing or
+unreadable pattern file fails open, rather than refusing every Bash command over
+this hook's own configuration error.
 
-If the pattern file is missing or unreadable, the hook exits 0 (fail-open on
-own configuration errors rather than blocking all Bash commands).
+Rules are read from this file's own directory, so a caller substituting rules
+runs a copy of this script elsewhere, and every sibling module imported here has
+to travel with that copy; `SIBLING_MODULES` in the tests is the list.
 """
 
 import json
@@ -32,14 +25,11 @@ import sys
 from pathlib import Path
 
 import tomllib
+from hook_response import Decision, invoking_agent, respond, supports_ask
 
 
 def load_rules() -> list[dict]:
-    """Load rules from the co-located TOML file. Return [] on any error.
-
-    Supports both flat (``[[rules]]``) and nested (``[[category.rules]]``)
-    TOML structures. Nested categories are flattened into a single list.
-    """
+    """Load rules from the co-located TOML file, flat or nested, flattened into one list. Return [] on any error."""
     patterns_file = Path(__file__).parent / "block-destructive-ops-patterns.toml"
     try:
         with open(patterns_file, "rb") as f:
@@ -47,11 +37,9 @@ def load_rules() -> list[dict]:
     except Exception:  # noqa: BLE001
         return []
 
-    # Flat structure: [[rules]]
     if "rules" in data and isinstance(data["rules"], list):
         return data["rules"]
 
-    # Nested structure: [[category.rules]]
     all_rules: list[dict] = []
     for section in data.values():
         if isinstance(section, dict) and "rules" in section:
@@ -59,44 +47,9 @@ def load_rules() -> list[dict]:
     return all_rules
 
 
-_AI_INSTRUCTIONS = """
----
-AI INSTRUCTIONS:
-You have been blocked from performing this operation. Do NOT attempt to find alternative commands, equivalent steps, or workarounds that achieve the same result through a different path.
-
-Stop and report the following to the user immediately:
-1. Your current task — what you were working on
-2. Your intended step — what you were trying to do and why
-3. What was blocked — the specific action blocked and the reason given above
-4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed"""
-
-
-def supports_ask(data: dict) -> bool:
-    """Whether the running agent can honour a PreToolUse confirmation prompt.
-
-    Claude Code sends `transcript_path` in the hook payload; Codex does not
-    (it sends `turn_id`). Fail safe: when we cannot confirm Claude, treat the
-    agent as unable to prompt and block instead of asking.
-    """
-    return "transcript_path" in data
-
-
-def make_ask_json(reason: str) -> str:
-    return json.dumps(
-        {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "ask",
-                "permissionDecisionReason": reason,
-            }
-        }
-    )
-
-
 _LINE_CONTINUATION = re.compile(r"\\\n")
 _QUOTED_SPAN = re.compile(r"""(['"])(.*?)\1""", re.DOTALL)
-# Characters that end a shell word. A quote touching anything else is spliced
-# into the neighbouring word rather than delimiting an argument of its own.
+# Characters that end a shell word; a quote touching anything else splices.
 _WORD_SEPARATORS = frozenset(" \t\n|&;()<>")
 
 
@@ -108,20 +61,13 @@ def _splices_word(char: str) -> bool:
 def normalize(command: str) -> str:
     """Rewrite shell spellings that hide a command word from the rule patterns.
 
-    Bash accepts many spellings of one word. A line continuation splits it
-    across lines, and quote pairs splice into the middle of it, so `r'm' -rf /`
-    and a backslash-newline inside `rm -rf /` both reach the shell as the same
-    three words. Patterns are written against the plain spelling, so they need
-    to see the plain spelling.
-
-    Quotes are dropped only where they cannot be delimiting an argument: an
-    empty pair, a span with no internal whitespace, or a span glued to an
-    adjacent word character. A standalone quoted argument such as
-    `grep 'rm -rf /'` keeps its quotes, so searching for a string is never
-    rewritten into running it.
-
-    Backslash-escaped word characters are left as written. Undoing those
-    needs quote-context tracking, which this does not do.
+    A line continuation splits a word across lines and a quote pair splices into
+    the middle of one, so `r'm' -rf /` reaches the shell as `rm -rf /` while the
+    patterns are written against the plain spelling. Quotes are dropped only
+    where they cannot be delimiting an argument, so `grep 'rm -rf /'` keeps its
+    quotes and searching for a string is never rewritten into running it.
+    Backslash-escaped word characters are left as written; undoing those needs
+    quote-context tracking, which this does not do.
     """
     text = _LINE_CONTINUATION.sub("", command)
 
@@ -141,7 +87,13 @@ def main() -> None:
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
-        sys.exit(2)  # fail-closed: this hook only handles Bash (sensitive tool)
+        respond(
+            Decision.BLOCK,
+            "block-destructive-ops could not parse the hook payload, so the "
+            "command in it was never checked. This hook covers Bash alone, "
+            "where an unchecked command can delete work, rewrite history, or "
+            "reach past this machine, so it is refused rather than let through.",
+        )
 
     if data.get("tool_name") != "Bash":
         sys.exit(0)
@@ -153,17 +105,15 @@ def main() -> None:
     normalized = normalize(command)
     candidates = (command,) if normalized == command else (command, normalized)
 
-    can_ask = supports_ask(data)
+    agent = invoking_agent(payload=data)
 
     rules = load_rules()
     if not rules:
         sys.exit(0)
 
-    # Two-pass: collect the first `block` and first `ask` match separately. A
-    # `block` rule must win over an `ask` rule regardless of file order —
-    # otherwise an earlier ask rule (e.g. `git add -A`) masks a later
-    # catastrophic block (`rm -rf /`) in a chained command, downgrading it to a
-    # mere prompt. First-match-within-a-mode preserves the existing message.
+    # A `block` must win over an `ask` regardless of file order, or an earlier
+    # ask rule (`git add -A`) masks a later block (`rm -rf /`) in a chained
+    # command and downgrades it to a prompt. Hence one first match per mode.
     first_block: str | None = None
     first_ask: str | None = None
 
@@ -195,21 +145,16 @@ def main() -> None:
             first_ask = explanation
 
     if first_block is not None:
-        sys.stderr.write(f"Blocked: {first_block}\n{_AI_INSTRUCTIONS}\n")
-        sys.exit(2)
+        respond(Decision.BLOCK, f"Blocked: {first_block}", agent=agent)
 
     if first_ask is not None:
-        if can_ask:
-            sys.stdout.write(make_ask_json(first_ask))
-            sys.exit(0)
-        # The agent cannot require confirmation from a PreToolUse hook
-        # (e.g. Codex): fail closed and block instead of prompting.
+        if supports_ask(agent):
+            respond(Decision.ASK, first_ask, agent=agent)
         first_ask += (
             "\n\nThis agent cannot require confirmation from a PreToolUse "
             "hook, so this command is blocked instead of prompted."
         )
-        sys.stderr.write(f"Blocked: {first_ask}\n{_AI_INSTRUCTIONS}\n")
-        sys.exit(2)
+        respond(Decision.BLOCK, f"Blocked: {first_ask}", agent=agent)
 
     sys.exit(0)
 
@@ -220,6 +165,11 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001
-        # ErrorHandlingByDamagePotential: this hook only handles Bash
-        # (a sensitive tool), so always fail-closed on internal error.
-        sys.exit(2)
+        # Bash is the only tool here, and it is sensitive: fail closed.
+        respond(
+            Decision.BLOCK,
+            "block-destructive-ops failed while checking this command, so the "
+            "command was never checked. This hook covers Bash alone, where an "
+            "unchecked command can delete work, rewrite history, or reach past "
+            "this machine, so it is refused rather than let through.",
+        )

@@ -10,10 +10,12 @@ from pathlib import Path
 
 import pytest
 
-HOOK_SOURCE = (
-    Path(__file__).resolve().parents[2] / "shared/hooks/block-destructive-ops.py"
-)
+HOOKS_DIR = Path(__file__).resolve().parents[2] / "shared" / "hooks"
+HOOK_SOURCE = HOOKS_DIR / "block-destructive-ops.py"
 RULES_NAME = "block-destructive-ops-patterns.toml"
+# The hook reads its rules from its own directory, so these tests run a copy of
+# it beside synthetic ones. Its sibling imports have to travel with the copy.
+SIBLING_MODULES = ("hook_response.py",)
 RULES = r"""
 [[rules]]
 pattern = "synthetic-block"
@@ -29,10 +31,18 @@ mode = "ask"
 """
 
 
+def install_hook(directory: Path) -> Path:
+    """Place a runnable copy of the hook in `directory`, siblings included."""
+    path = directory / HOOK_SOURCE.name
+    shutil.copyfile(HOOK_SOURCE, path)
+    for name in SIBLING_MODULES:
+        shutil.copyfile(HOOKS_DIR / name, directory / name)
+    return path
+
+
 @pytest.fixture
 def hook_path(tmp_path: Path) -> Path:
-    path = tmp_path / HOOK_SOURCE.name
-    shutil.copyfile(HOOK_SOURCE, path)
+    path = install_hook(tmp_path)
     (tmp_path / RULES_NAME).write_text(RULES)
     return path
 

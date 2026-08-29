@@ -24,7 +24,7 @@ session_id="$(jq -r '.session_id // empty' 2> /dev/null <<< "${input_json}")" ||
 cwd="$(jq -r '.cwd // empty' 2> /dev/null <<< "${input_json}")"
 cwd="${cwd:-"$(pwd)"}"
 
-# Replace characters outside [a-zA-Z0-9-] with dashes for safe filename use.
+# The session id becomes part of a filename.
 safe_id="$(printf '%s' "${session_id}" | tr -c 'a-zA-Z0-9-' '-')"
 
 # Resolve the per-worktree git directory; in a worktree this differs from .git/

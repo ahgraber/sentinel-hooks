@@ -6,12 +6,6 @@ sensitivity rules. There is no option/operand modelling — a secret filename th
 appears anywhere blocks, and a secret-looking search pattern over-denies. That
 over-deny is accepted on purpose (missing a real secret read is worse than
 blocking a benign command); see the `TODO(over-deny carve-out)` in the hook.
-
-These tests cover: recognised readers and redirection, obfuscation handling,
-expanded credential paths, the accepted over-denies, the genuinely-safe commands
-that still pass, and the classes deliberately left out of scope.
-
-Place this file in `tests/` alongside `test_block_sensitive_paths.py`.
 """
 
 from conftest import assert_allowed, assert_blocked, run_hook
@@ -21,9 +15,6 @@ HOOK = "block-sensitive-paths.py"
 
 def bash(command: str):
     return run_hook(HOOK, "Bash", {"command": command})
-
-
-# ── Reads that must block ─────────────────────────────────────────────────────
 
 
 class TestBashReadBlocked:
@@ -61,9 +52,6 @@ class TestBashReadBlocked:
 
     def test_read_after_operator(self):
         assert_blocked(bash("cd repo && cat .env"), "zero-access")
-
-
-# ── Recognised readers and redirection (fail-safe coverage) ───────────────────
 
 
 class TestReaderCoverage:
@@ -116,9 +104,6 @@ class TestReaderCoverage:
         assert_blocked(bash("truncate -s0 .env"), "zero-access")
 
 
-# ── Obfuscation handled by shlex tokenisation ─────────────────────────────────
-
-
 class TestObfuscationClosed:
     def test_backslash_command(self):
         assert_blocked(bash("\\cat .env"), "zero-access")
@@ -146,9 +131,6 @@ class TestObfuscationClosed:
         assert_blocked(bash("echo $(cat .env)"), "zero-access")
 
 
-# ── Bare credential filenames and wrappers (fail-safe: scan all tokens) ───────
-
-
 class TestBareCredentialsAndWrappers:
     def test_bare_ssh_key(self):
         assert_blocked(bash("cat id_rsa"), "zero-access")
@@ -170,11 +152,6 @@ class TestBareCredentialsAndWrappers:
         assert_allowed(bash("cat .venv/lib/python3.11/site-packages/pkg/credentials"))
 
 
-# ── Accepted over-denies (fail-safe bias — intentional false positives) ───────
-# A secret-looking search pattern is blocked even though it names no file. This
-# is deliberate; see the TODO(over-deny carve-out) in the hook.
-
-
 class TestAcceptedOverDeny:
     def test_grep_secret_pattern(self):
         assert_blocked(bash("grep -r secret ."), "zero-access")
@@ -187,9 +164,6 @@ class TestAcceptedOverDeny:
 
     def test_sed_script_touching_aws(self):
         assert_blocked(bash("sed 's/.aws/X/g' file"), "zero-access")
-
-
-# ── Genuinely-safe commands that must still pass ──────────────────────────────
 
 
 class TestSafeCommandsAllowed:
@@ -221,8 +195,8 @@ class TestSafeCommandsAllowed:
         assert_allowed(bash("cat ./users/nrl/home-manager/claude/settings.json"))
 
 
-# ── Out-of-scope gaps: need real shell evaluation (boundary is the sandbox) ────
-# Assert CURRENT behavior (allowed) so a future change that closes one is noticed.
+# Gaps needing real shell evaluation; the sandbox is the boundary. The current
+# allow is asserted so a change that closes one is noticed.
 
 
 class TestKnownGaps:
@@ -239,10 +213,8 @@ class TestKnownGaps:
         assert_allowed(bash("echo .env | xargs cat"))
 
 
-# ── Glob expansion: a wildcard must not hide a sensitive filename ─────────────
-# The token is expanded against the filesystem exactly as the shell would, so a
-# `*`/`?`/`[..]` that resolves to a real secret file blocks. These chdir into a
-# tmp dir holding decoy files; the hook inherits that cwd for the expansion.
+# Globs are expanded against the filesystem as the shell would, from the cwd the
+# hook inherits — hence the chdir into a tmp dir of decoys.
 
 
 class TestGlobExpansion:
@@ -273,9 +245,6 @@ class TestGlobExpansion:
         assert_allowed(bash("cat *.md"))
 
 
-# ── ANSI-C quoting: `$'\\056env'` decodes to `.env` before matching ──────────
-
-
 class TestAnsiCQuoting:
     def test_octal_escaped_dotenv(self):
         assert_blocked(bash(r"cat $'\056env'"), "zero-access")
@@ -284,9 +253,7 @@ class TestAnsiCQuoting:
         assert_blocked(bash(r"cat $'\x2eenv'"), "zero-access")
 
 
-# ── Transfer/copy source: a secret used as a source operand blocks ───────────
-# cp/mv/scp/rsync are scanned like readers, so a secret *source* (not just a
-# secret destination) is caught.
+# cp/mv/scp/rsync are scanned like readers, so a secret *source* blocks too.
 
 
 class TestTransferSource:
@@ -304,9 +271,6 @@ class TestTransferSource:
 
     def test_cp_benign_allowed(self):
         assert_allowed(bash("cp README.md docs/README.md"))
-
-
-# ── Write-clobber operators: >| and &> / &>> truncate their target ───────────
 
 
 class TestWriteClobber:

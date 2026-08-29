@@ -1,11 +1,22 @@
 """Shared fixtures and helpers for Copilot hook tests."""
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-HOOKS_DIR = Path(__file__).parent.parent / "hooks"
+AGENT_HOOKS_DIR = Path(__file__).parent.parent / "hooks"
+SHARED_HOOKS_DIR = Path(__file__).parents[2] / "shared" / "hooks"
+
+# The adapter declares the agent this way, so the suite exercises Copilot's encodings.
+HOOK_ENV = {**os.environ, "AI_HOOK_AGENT": "copilot"}
+
+
+def resolve_hook(name: str) -> Path:
+    """Resolve a hook filename, preferring this agent's own copy over the shared one."""
+    own = AGENT_HOOKS_DIR / name
+    return own if own.is_file() else SHARED_HOOKS_DIR / name
 
 
 @dataclass
@@ -25,7 +36,7 @@ def run_hook(
     timeout: int = 10,
 ) -> HookResult:
     """Run a hook as a subprocess with the given tool_name and tool_input."""
-    hook_path = HOOKS_DIR / hook_filename
+    hook_path = resolve_hook(hook_filename)
 
     if hook_path.suffix == ".sh":
         cmd = ["bash", str(hook_path)]
@@ -47,7 +58,7 @@ def run_hook(
         text=True,
         check=False,
         timeout=timeout,
-        env=env,
+        env=HOOK_ENV if env is None else env,
     )
     return HookResult(
         exit_code=result.returncode,
@@ -93,4 +104,19 @@ def assert_block_contract(result: HookResult, message_substring: str = "") -> No
     for label, needle in _AI_BLOCK_CHECKS:
         assert needle.lower() in stderr_lower, (
             f"Block contract violation — missing {label}.\nstderr: {result.stderr}"
+        )
+
+
+def assert_ask(result: HookResult, reason_substring: str = "") -> None:
+    """Assert exit 0 and the wrapped ask JSON the VS Code surface honours."""
+    assert result.exit_code == 0, (
+        f"Expected ask (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
+    )
+    data = json.loads(result.stdout)
+    decision = data["hookSpecificOutput"]["permissionDecision"]
+    assert decision == "ask", f"Expected permissionDecision 'ask', got '{decision}'"
+    if reason_substring:
+        reason = data["hookSpecificOutput"]["permissionDecisionReason"]
+        assert reason_substring.lower() in reason.lower(), (
+            f"Expected '{reason_substring}' in reason, got: {reason}"
         )

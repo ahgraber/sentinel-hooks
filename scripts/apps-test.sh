@@ -6,12 +6,13 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
 usage() {
   cat << 'USAGE'
-Usage: apps-test.sh <claude|codex|copilot|pi>
+Usage: apps-test.sh <shared|claude|codex|copilot|pi>
 
 Run one agent app configuration test suite. `just apps test` composes every
 suite (and `just apps test all` is its default).
 
 Targets:
+  shared   Run the tests for the hook modules every agent shares
   claude   Run the Claude hook tests
   codex    Run the Codex hook tests
   copilot  Run the Copilot hook-adapter tests
@@ -40,7 +41,7 @@ main() {
   fi
 
   case "${1}" in
-    claude | codex | copilot)
+    shared | claude | codex | copilot)
       require_cmd uv
       run_python_suite "${1}"
       ;;

@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Benchmark note: keep the Python adapter as the default. In local measurements
-# it was faster than this bash adapter because this path adds shell orchestration
-# overhead on top of repeated jq/perl-heavy downstream hook invocations.
+# Keep the Python adapter as the default: this path measured slower, paying shell
+# orchestration on top of jq/perl-heavy downstream hook invocations.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd -P)"
 SHARED_HOOKS_DIR="${REPO_ROOT}/modules/home/ai/shared/hooks"
-COPILOT_HOOKS_DIR="${REPO_ROOT}/modules/home/ai/copilot/hooks"
 TEMP_DIR=''
 
-MULTI_PATH_TARGETS='^(block-sensitive-paths\.py|block-secrets\.py|copilot-block-hook-tampering\.py)$'
+# Hooks that judge one path per call, so a multi-path edit must be fanned out.
+# block-hook-tampering.py is absent deliberately: it judges the whole set and
+# answers with the most restrictive class in it, which fanning out would defeat.
+MULTI_PATH_TARGETS='^(block-sensitive-paths\.py|block-secrets\.py)$'
+
+# The shared hooks infer the agent from their invocation path, which this adapter bypasses.
+export AI_HOOK_AGENT=copilot
 
 usage() {
   printf '%s\n' 'Usage: copilot-vscode-hook-adapter.sh <script> [args...]' >&2
@@ -39,11 +43,8 @@ emit_result() {
 
 resolve_hook_path() {
   case "${1}" in
-    session-tool-checks.sh | session-instructions.sh | git-baseline.sh | block-dangerous-bash.sh | block-sensitive-paths.py | block-destructive-ops.py | block-secrets.py | bash-command-validator.sh | stop-precommit.sh)
+    session-tool-checks.sh | session-instructions.sh | git-baseline.sh | block-dangerous-bash.sh | block-hook-tampering.py | block-sensitive-paths.py | block-destructive-ops.py | block-secrets.py | bash-command-validator.sh | stop-precommit.sh)
       printf '%s\n' "${SHARED_HOOKS_DIR}/${1}"
-      ;;
-    copilot-block-hook-tampering.py)
-      printf '%s\n' "${COPILOT_HOOKS_DIR}/${1}"
       ;;
     *)
       return 1
@@ -196,7 +197,8 @@ main() {
     local path
     for path in "${file_paths[@]}"; do
       local per_path_json
-      per_path_json="$(jq -c --arg path "${path}" '.tool_input.file_path = $path | .tool_input.path = $path' <<< "${normalized_json}")"
+      # Leaving the list behind would make every fanned-out call judge the whole set.
+      per_path_json="$(jq -c --arg path "${path}" '.tool_input.file_path = $path | .tool_input.path = $path | del(.tool_input.file_paths)' <<< "${normalized_json}")"
       execute_hook "${script_name}" "${per_path_json}" "${script_args[@]}"
       if ((HOOK_EXIT_CODE != 0)) || [[ -s "${HOOK_STDOUT_FILE}" ]]; then
         emit_result "${HOOK_STDOUT_FILE}" "${HOOK_STDERR_FILE}"

@@ -1,8 +1,4 @@
-"""Tests for session-tool-checks.sh hook.
-
-Validates that the SessionStart hook checks for required tools (uv, jq, perl)
-and recommended tools (gitleaks), with correct exit codes and messages.
-"""
+"""Tests for the tool-availability gate in the session-tool-checks.sh hook."""
 
 import os
 import shutil
@@ -29,11 +25,7 @@ def _make_stub_bin(bin_dir: str, name: str) -> None:
 def run_session_hook(
     available_tools: list[str], extra_path: str = ""
 ) -> subprocess.CompletedProcess:
-    """Run the session-tool-checks hook with only the specified tools on PATH.
-
-    Creates a temp bin dir with stub executables for the listed tools,
-    then runs the hook with PATH set to only that directory.
-    """
+    """Run the hook with only the named tools resolvable on PATH, as stubs."""
     import tempfile
 
     with tempfile.TemporaryDirectory() as bin_dir:
@@ -44,7 +36,7 @@ def run_session_hook(
         if extra_path:
             path = f"{bin_dir}:{extra_path}"
 
-        # bash itself needs to be accessible — use the real bash path
+        # PATH holds only the stubs, so bash must be invoked by absolute path.
         bash_path = shutil.which("bash")
         env = {
             "PATH": path,
