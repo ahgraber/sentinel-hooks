@@ -84,7 +84,7 @@
       "why": "repository source of Copilot enforcement"
     },
     {
-      "path": "modules/home/ai/pi/security/security-extension-index.ts",
+      "path": "modules/home/ai/pi/security/index.ts",
       "blocked": true,
       "why": "repository source of the pi extension"
     },

@@ -1,7 +1,7 @@
 """The zero-access verdicts every implementation of the policy must agree on.
 
 pi's security extension is a TypeScript port that cannot import
-`block-sensitive-paths.py`; `security-extension-index.test.mjs` asserts this
+`block-sensitive-paths.py`; `index.test.mjs` asserts this
 same table, which is what keeps the two honest.
 """
 

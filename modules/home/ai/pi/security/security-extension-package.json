@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "Pi security extension — full port of Claude Code security hooks",
   "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "dependencies": {
     "smol-toml": "^1.6.1"
   }

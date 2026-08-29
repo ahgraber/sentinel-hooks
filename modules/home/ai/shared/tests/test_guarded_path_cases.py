@@ -1,7 +1,7 @@
 """The tamper-protection verdicts every implementation of the policy must agree on.
 
 pi's security extension is a TypeScript port that cannot import
-`block-hook-tampering.py`; `security-extension-index.test.mjs` asserts this same
+`block-hook-tampering.py`; `index.test.mjs` asserts this same
 table, which is what keeps the two honest.
 """
 

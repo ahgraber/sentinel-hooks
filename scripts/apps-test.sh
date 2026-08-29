@@ -29,7 +29,7 @@ run_python_suite() {
 
 run_pi_suite() {
   echo "==> Testing pi"
-  node --test "${REPO_ROOT}/modules/home/ai/pi/security/security-extension-index.test.mjs"
+  node --test "${REPO_ROOT}/modules/home/ai/pi/security/index.test.mjs"
 }
 
 main() {

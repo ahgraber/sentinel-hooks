@@ -12,9 +12,7 @@ import re
 from pathlib import Path
 
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
-EXTENSION = (
-    Path(__file__).parents[2] / "pi" / "security" / "security-extension-index.ts"
-)
+EXTENSION = Path(__file__).parents[2] / "pi" / "security" / "index.ts"
 CASES = json.loads((Path(__file__).parent / "guarded-path-cases.json").read_text())[
     "cases"
 ]

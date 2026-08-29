@@ -88,33 +88,65 @@ export function parse(text) {
 }
 `
 
-before(async () => {
-  temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-security-extension-"))
-  const packageDirectory = join(temporaryDirectory, "node_modules", "smol-toml")
+const MANIFEST_SOURCE = join(SOURCE_DIR, "..", "..", "shared", "hooks", "guarded-paths.toml")
+
+// The extension's own modules. A fixture root is loadable only with all of them,
+// because the relative imports between them resolve inside the copy.
+const EXTENSION_MODULES = [
+  "index.ts",
+  "bash-validator.ts",
+  "dangerous-bash.ts",
+  "destructive-ops.ts",
+  "guarded-paths.ts",
+  "manifest.ts",
+  "paths.ts",
+  "precommit.ts",
+  "secrets.ts",
+  "sensitive-paths.ts",
+  "shell-words.ts",
+]
+
+// A fixture root is a whole extension directory: the modules, the two TOML inputs
+// read at load, and a smol-toml stand-in. Pass `manifest` to substitute the
+// guarded-paths text; omit it to copy the real one. `resolveSymlinks` matters only
+// where a test compares against paths the extension stored resolved, since the
+// macOS temp root is itself a link.
+async function createExtensionRoot(prefix, { manifest, resolveSymlinks = false } = {}) {
+  const created = await mkdtemp(join(tmpdir(), prefix))
+  const root = resolveSymlinks ? await realpath(created) : created
+  const packageDirectory = join(root, "node_modules", "smol-toml")
 
   await mkdir(packageDirectory, { recursive: true })
   await writeFile(
     join(packageDirectory, "package.json"),
-    JSON.stringify({
-      name: "smol-toml",
-      type: "module",
-      exports: "./index.js",
-    }),
+    JSON.stringify({ name: "smol-toml", type: "module", exports: "./index.js" }),
   )
   await writeFile(join(packageDirectory, "index.js"), SMOL_TOML_STUB)
-  await writeFile(join(temporaryDirectory, "block-destructive-ops-patterns.toml"), "")
-  await cp(
-    join(SOURCE_DIR, "..", "..", "shared", "hooks", "guarded-paths.toml"),
-    join(temporaryDirectory, "guarded-paths.toml"),
-  )
-  await cp(
-    join(SOURCE_DIR, "security-extension-index.ts"),
-    join(temporaryDirectory, "security-extension-index.ts"),
-  )
+  await writeFile(join(root, "block-destructive-ops-patterns.toml"), "")
 
-  const extension = await import(
-    `${pathToFileURL(join(temporaryDirectory, "security-extension-index.ts")).href}?test=${Date.now()}`
-  )
+  if (manifest === undefined) {
+    await cp(MANIFEST_SOURCE, join(root, "guarded-paths.toml"))
+  } else {
+    await writeFile(join(root, "guarded-paths.toml"), manifest)
+  }
+
+  for (const module of EXTENSION_MODULES) {
+    await cp(join(SOURCE_DIR, module), join(root, module))
+  }
+
+  return root
+}
+
+// Each root is a distinct path, so its module graph is already distinct; the query
+// only separates repeated imports of the same root.
+function loadExtension(root, tag) {
+  return import(`${pathToFileURL(join(root, "index.ts")).href}?test=${tag}`)
+}
+
+before(async () => {
+  temporaryDirectory = await createExtensionRoot("pi-security-extension-")
+
+  const extension = await loadExtension(temporaryDirectory, Date.now())
   const registerSecurityExtension = extension.default
   isSensitivePath = extension.isSensitivePath
   isProtectedPath = extension.isProtectedPath
@@ -296,32 +328,19 @@ test("Pi judges an instruction-named link by where it leads", async (t) => {
 // A class addition in a substituted manifest must reach this extension with no code
 // edit; the Python suite pins the same property in test_guarded_paths_manifest.py.
 test("Pi guards a path added to a manifest class in a substituted copy", async () => {
-  const substitutedDirectory = await mkdtemp(join(tmpdir(), "pi-security-extension-manifest-"))
-  const packageDirectory = join(substitutedDirectory, "node_modules", "smol-toml")
-
-  await mkdir(packageDirectory, { recursive: true })
-  await writeFile(
-    join(packageDirectory, "package.json"),
-    JSON.stringify({ name: "smol-toml", type: "module", exports: "./index.js" }),
-  )
-  await writeFile(join(packageDirectory, "index.js"), SMOL_TOML_STUB)
-  await writeFile(join(substitutedDirectory, "block-destructive-ops-patterns.toml"), "")
-
   // The added store is named so no shape heuristic can reach it; only the manifest
   // declaration can, which is what makes the assertions below evidence of the wiring.
-  const manifestText = await readFile(join(SOURCE_DIR, "..", "..", "shared", "hooks", "guarded-paths.toml"), "utf8")
+  const manifestText = await readFile(MANIFEST_SOURCE, "utf8")
   const substitutedManifest = manifestText.replace(
     '"~/.pi/agent/auth.json"]',
     '"~/.pi/agent/auth.json", "~/.example/session.dat"]',
   )
   assert.notEqual(substitutedManifest, manifestText, "the manifest text did not change")
-  await writeFile(join(substitutedDirectory, "guarded-paths.toml"), substitutedManifest)
 
-  await cp(join(SOURCE_DIR, "security-extension-index.ts"), join(substitutedDirectory, "security-extension-index.ts"))
-
-  const extension = await import(
-    `${pathToFileURL(join(substitutedDirectory, "security-extension-index.ts")).href}?test=${Date.now()}`
-  )
+  const substitutedDirectory = await createExtensionRoot("pi-security-extension-manifest-", {
+    manifest: substitutedManifest,
+  })
+  const extension = await loadExtension(substitutedDirectory, Date.now())
 
   const added = join(homedir(), ".example", "session.dat")
   try {
@@ -337,7 +356,7 @@ test("Pi guards a path added to a manifest class in a substituted copy", async (
 // A store added to the manifest must not land with only half its protection. The
 // Python suite pins the same property in test_guarded_paths_manifest.py.
 test("Pi refuses every declared credential store at both gates", async () => {
-  const manifestText = await readFile(join(SOURCE_DIR, "..", "..", "shared", "hooks", "guarded-paths.toml"), "utf8")
+  const manifestText = await readFile(MANIFEST_SOURCE, "utf8")
   const declared = [...manifestText.matchAll(/"(~\/[^"]*)"/g)]
     .map((m) => m[1])
     .filter((p) => p.endsWith("auth.json") || p.endsWith(".credentials.json"))
@@ -360,20 +379,9 @@ test("Pi guards a file that leads out of a guarded directory", async () => {
   // homedir() at load, and this must not write into the operator's real guarded dirs.
   // Resolved up front because on macOS the temp root is itself a symlink and the
   // extension stores locations resolved, so an unresolved path would miss spuriously.
-  const sandbox = await realpath(await mkdtemp(join(tmpdir(), "pi-security-extension-containment-")))
+  const sandbox = await createExtensionRoot("pi-security-extension-containment-", { resolveSymlinks: true })
   const fakeHome = join(sandbox, "home")
   const store = join(sandbox, "store")
-  const packageDirectory = join(sandbox, "node_modules", "smol-toml")
-
-  await mkdir(packageDirectory, { recursive: true })
-  await writeFile(
-    join(packageDirectory, "package.json"),
-    JSON.stringify({ name: "smol-toml", type: "module", exports: "./index.js" }),
-  )
-  await writeFile(join(packageDirectory, "index.js"), SMOL_TOML_STUB)
-  await writeFile(join(sandbox, "block-destructive-ops-patterns.toml"), "")
-  await cp(join(SOURCE_DIR, "..", "..", "shared", "hooks", "guarded-paths.toml"), join(sandbox, "guarded-paths.toml"))
-  await cp(join(SOURCE_DIR, "security-extension-index.ts"), join(sandbox, "security-extension-index.ts"))
 
   // Named to match no declared fragment, so containment is the only thing that can
   // catch it; the fragment check would otherwise mask the behaviour under test.
@@ -386,9 +394,7 @@ test("Pi guards a file that leads out of a guarded directory", async () => {
   const realHome = process.env.HOME
   process.env.HOME = fakeHome
   try {
-    const extension = await import(
-      `${pathToFileURL(join(sandbox, "security-extension-index.ts")).href}?test=containment-${Date.now()}`
-    )
+    const extension = await loadExtension(sandbox, `containment-${Date.now()}`)
     assert.equal(extension.isProtectedPath(deployed), true)
   } finally {
     process.env.HOME = realHome
@@ -401,21 +407,10 @@ test("Pi guards a file that leads out of a guarded directory", async () => {
 // run against whatever home the suite has — so it is pinned here and by
 // `_home_prefixes` in guarded_paths.py.
 test("Pi guards a path written through a symlinked home directory", async () => {
-  const sandbox = await realpath(await mkdtemp(join(tmpdir(), "pi-security-extension-homelink-")))
+  const sandbox = await createExtensionRoot("pi-security-extension-homelink-", { resolveSymlinks: true })
   const realHome = join(sandbox, "real-home")
   const homeLink = join(sandbox, "home")
   const store = join(sandbox, "store")
-  const packageDirectory = join(sandbox, "node_modules", "smol-toml")
-
-  await mkdir(packageDirectory, { recursive: true })
-  await writeFile(
-    join(packageDirectory, "package.json"),
-    JSON.stringify({ name: "smol-toml", type: "module", exports: "./index.js" }),
-  )
-  await writeFile(join(packageDirectory, "index.js"), SMOL_TOML_STUB)
-  await writeFile(join(sandbox, "block-destructive-ops-patterns.toml"), "")
-  await cp(join(SOURCE_DIR, "..", "..", "shared", "hooks", "guarded-paths.toml"), join(sandbox, "guarded-paths.toml"))
-  await cp(join(SOURCE_DIR, "security-extension-index.ts"), join(sandbox, "security-extension-index.ts"))
 
   await mkdir(join(realHome, ".claude", "projects"), { recursive: true })
   await mkdir(store, { recursive: true })
@@ -427,9 +422,7 @@ test("Pi guards a path written through a symlinked home directory", async () => 
   const realEnvHome = process.env.HOME
   process.env.HOME = homeLink
   try {
-    const extension = await import(
-      `${pathToFileURL(join(sandbox, "security-extension-index.ts")).href}?test=homelink-${Date.now()}`
-    )
+    const extension = await loadExtension(sandbox, `homelink-${Date.now()}`)
     assert.equal(extension.isProtectedPath(join(homeLink, ".claude", "projects", "session.jsonl")), true)
   } finally {
     process.env.HOME = realEnvHome

@@ -124,7 +124,7 @@ class TestSpellingIndependence:
         """Both spellings of home must be judged, since a path written through a
         symlinked home resolves somewhere the declarations do not name.
 
-        `security-extension-index.test.mjs` pins the same case for the
+        `index.test.mjs` pins the same case for the
         TypeScript port, which cannot import this.
         """
         root = Path(os.path.realpath(tmp_path))
