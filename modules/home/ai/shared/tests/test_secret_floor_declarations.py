@@ -1,10 +1,17 @@
-"""Secret material must be refused by every read-gating layer, for every user.
+"""Secret material must be denied at every read-gating layer, for every user.
 
-The permission rules and the OS sandbox are the boundary and the hooks are
-defence in depth, so a floor entry missing from one layer is a real hole.
-Coverage is judged against concrete representative paths, so a glob that looks
-right but does not match — `**/secrets/**` against a store spelled `secrets.d` —
-fails here.
+Two layers deny reads. The permission rules stop the file tools; the OS sandbox
+stops Bash. Together they are the boundary, and the hooks are defence in depth,
+so a floor path missing from either layer is a real hole.
+
+The layers do not correspond one-to-one to the settings keys. Claude Code
+combines `sandbox.filesystem.denyRead` and the `Read(...)` rules in
+`permissions.deny` into a single sandbox deny list, so the sandbox layer is
+tested against both keys. Testing `denyRead` alone would measure how many times
+a path is denied rather than whether it is denied at all.
+
+Each rule is tested against a concrete path, so a pattern that looks correct but
+does not match — `**/secrets/**` against a store named `secrets.d` — fails here.
 """
 
 from __future__ import annotations
@@ -42,8 +49,16 @@ def claude_read_deny_patterns(settings_path: Path) -> list[str]:
 
 
 def claude_sandbox_deny(settings_path: Path) -> list[str]:
+    """Every pattern Claude Code puts in the sandbox read-deny list.
+
+    Two settings keys contribute to it: `sandbox.filesystem.denyRead` and the
+    `Read(...)` rules in `permissions.deny`. Read rules in `permissions.allow`
+    contribute nothing and are excluded.
+    """
     sandbox = json.loads(settings_path.read_text()).get("sandbox", {})
-    return sandbox.get("filesystem", {}).get("denyRead", [])
+    return sandbox.get("filesystem", {}).get("denyRead", []) + (
+        claude_read_deny_patterns(settings_path)
+    )
 
 
 def codex_deny_paths(config_path: Path) -> list[str]:
