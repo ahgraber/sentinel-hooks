@@ -42,6 +42,16 @@ A hook that emits one code for all agents is therefore limited to the codes on w
 Where an agent cannot express `Warn`, the system SHALL degrade it to `Allow`, never to `Block`.
 Degrading upward would convert a diagnostic into a refusal, and would refuse every tool call for as long as the condition persisted.
 
+Where an agent cannot express `Ask`, the system SHALL degrade it to `Block`, never to `Allow`.
+An ask records that the call must not proceed on the agent's judgement alone; refusing keeps that property where no prompt can be shown.
+
+An agent that accepts the prompt encoding without honouring it SHALL be treated as unable to express `Ask`.
+One agent parses the prompt JSON, marks the hook run failed, and lets the tool call proceed.
+Emitting the prompt encoding to such an agent converts a gate into an allow, which is the one degradation direction this requirement forbids.
+
+Honouring MAY differ by tool within one agent, so the judgement SHALL be made per tool surface, not per agent alone.
+One agent holds a file edit on the prompt and lets a shell command proceed past the same JSON; the encoding is emitted for the first and withheld for the second.
+
 Under Claude Code the encoding is:
 
 **Allow** — exit 0, no stdout output.
@@ -69,6 +79,11 @@ The `ask` JSON output format:
 }
 ```
 
+Under Copilot, `Ask` is honoured for file-mutation tools only, as exit 0 with the same `hookSpecificOutput` JSON Claude Code uses; the surface shows the reason and holds the call.
+For the shell tool the same output is ignored and the call proceeds, so `Ask` degrades to `Block` there.
+Where the surface has no interactive user, the platform itself treats the prompt as a denial, which is the degradation direction this requirement requires.
+Established empirically against the VS Code surface on 2026-08-27.
+
 #### Scenario: WarnOnAgentThatSupportsIt
 
 - **GIVEN** a hook reaches a `Warn` decision
@@ -80,6 +95,24 @@ The `ask` JSON output format:
 - **GIVEN** a hook reaches a `Warn` decision
 - **WHEN** the invoking agent has no encoding that both proceeds and reports
 - **THEN** the tool call proceeds and nothing is reported
+
+#### Scenario: AskOnAgentThatPrompts
+
+- **GIVEN** a hook reaches an `Ask` decision
+- **WHEN** the invoking agent can put a per-call decision to the user
+- **THEN** the prompt encoding is emitted, and the tool call proceeds only on the user's approval
+
+#### Scenario: AskOnAgentThatCannotPrompt
+
+- **GIVEN** a hook reaches an `Ask` decision
+- **WHEN** the invoking agent has no honoured prompt encoding
+- **THEN** the tool call is refused with an explanation, exactly as a `Block` would be
+
+#### Scenario: AskEncodingWithheldWhereUnhonoured
+
+- **GIVEN** a hook reaches an `Ask` decision
+- **WHEN** the invoking agent parses the prompt encoding but lets the tool call proceed on it
+- **THEN** the refusal encoding is emitted instead, and the prompt JSON is never written
 
 ### Requirement: AgentIdentification
 
@@ -237,7 +270,30 @@ The stated fail-open posture therefore does not hold uniformly for startup failu
 
 ### Requirement: NoSideEffects
 
-The system SHALL NOT write to disk, spawn background processes, or make network calls during hook execution.
+A hook SHALL NOT, while judging a tool call, modify the state it is judging,
+spawn background processes, or make network calls.
+
+Reading is unrestricted.
+A hook that cannot read its own declarations cannot judge anything, and concealment is not the boundary these hooks defend.
+
+Interpreter-managed derived data, such as a bytecode cache, is not a modification of that state and SHALL NOT be treated as one.
+Suppressing it does not defend the guarded surface: the interpreter loads an existing cache entry whether or not the current process is permitted to write one, so a planted entry executes either way, and what prevents that is the directory's write protection at the permission, sandbox, and tamper layers.
+
+This binds a hook at invocation.
+It does not bind test or tooling code that imports the same modules outside the tool-call path.
+Read as a blanket prohibition on writing to disk, the requirement is applied wherever the mechanism appears rather than where the boundary is at stake, and cost is spent where no protection is bought.
+
+#### Scenario: HookDoesNotAlterWhatItJudges
+
+- **GIVEN** a hook is judging a tool call
+- **WHEN** it reaches its decision
+- **THEN** the paths and payload it judged are unchanged, and no process or connection outlives it
+
+#### Scenario: InterpreterDerivedData
+
+- **GIVEN** a hook or a test imports a hook module
+- **WHEN** the interpreter caches bytecode beside that module
+- **THEN** this requirement is not violated
 
 ### Requirement: ToolNameFiltering
 

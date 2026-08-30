@@ -264,6 +264,25 @@ Mitigations: it is inside its own guarded set; load failure warns instead of pas
 
 ## Verification Waivers
 
+### Waiver: hook-interface NoSideEffects
+
+**Evidence:** two parts, both recorded here rather than in `.verify/`, which the repository's root `.gitignore` excludes along with every other dot-directory.
+
+The interpreter clause rests on a measurement taken 2026-08-29 on CPython 3.12.13.
+A module was compiled, its cache entry rewritten with the bytecode of different source while keeping the 16-byte header that validates the entry against the source's mtime and size, and the module then imported in two subprocesses — one with bytecode writing enabled, one under `-B`.
+Both printed the planted value, never the source value.
+To reproduce: build such a pair with `py_compile` and `importlib.util.cache_from_source`, splice the planted body onto the original header, and import under each setting.
+This is the claim the requirement's second paragraph makes, and it is why removing `sys.dont_write_bytecode` costs no protection.
+
+The behavioural clause rests on a static audit of the four shared hooks, the Copilot adapter, and both test conftest files: no hook writes any path it judges, none opens a socket, and the single subprocess on the judging path (`gitleaks`, `block-secrets.py`) is synchronous under an 8-second timeout, so nothing outlives the invocation.
+
+**Why manual:** the requirement is a negative universal over everything a hook does while judging.
+Demonstrating it would need process-table and filesystem diffing around every hook invocation — a harness larger than the hooks — and the interpreter clause is definitional, so no assertion can fail it.
+The mechanism this contract used to name is gone, and what replaced it is a property, not a code path a test can enter.
+
+**Recorded:** 2026-08-29, during this change's verification, after `sdd-verify` flagged the requirement at INSPECTED.
+The measurement above is independent of the implementation — it exercises CPython, not this repository — but the waiver's provenance is the weakest of the three here and should be read that way.
+
 ### Waiver: hook-interface AskOnAgentThatPrompts (Copilot arm)
 
 **Evidence:** the cross-validation probe recorded under this change's tasks — a gated write attempted through the VS Code Copilot surface, with the observed dialog (or its absence) and the dialog count noted in the change's `.verify/` directory.

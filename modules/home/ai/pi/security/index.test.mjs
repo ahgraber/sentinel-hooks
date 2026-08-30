@@ -111,7 +111,10 @@ const EXTENSION_MODULES = [
 // guarded-paths text; omit it to copy the real one. `resolveSymlinks` matters only
 // where a test compares against paths the extension stored resolved, since the
 // macOS temp root is itself a link.
-async function createExtensionRoot(prefix, { manifest, resolveSymlinks = false } = {}) {
+// `manifest: null` leaves the file out entirely, and `tomlStub` replaces the
+// parser, which is the only way to reach the extension's parse-failure arm: the
+// stub above is lenient by design and never throws on the shapes this repo uses.
+async function createExtensionRoot(prefix, { manifest, resolveSymlinks = false, tomlStub = SMOL_TOML_STUB } = {}) {
   const created = await mkdtemp(join(tmpdir(), prefix))
   const root = resolveSymlinks ? await realpath(created) : created
   const packageDirectory = join(root, "node_modules", "smol-toml")
@@ -121,12 +124,12 @@ async function createExtensionRoot(prefix, { manifest, resolveSymlinks = false }
     join(packageDirectory, "package.json"),
     JSON.stringify({ name: "smol-toml", type: "module", exports: "./index.js" }),
   )
-  await writeFile(join(packageDirectory, "index.js"), SMOL_TOML_STUB)
+  await writeFile(join(packageDirectory, "index.js"), tomlStub)
   await writeFile(join(root, "block-destructive-ops-patterns.toml"), "")
 
   if (manifest === undefined) {
     await cp(MANIFEST_SOURCE, join(root, "guarded-paths.toml"))
-  } else {
+  } else if (manifest !== null) {
     await writeFile(join(root, "guarded-paths.toml"), manifest)
   }
 
@@ -565,4 +568,102 @@ test("Pi withholds the markdown carve-out from a mixed command", async (t) => {
 
     assert.equal(result, undefined)
   })
+})
+
+// A root loaded on its own handlers, so a fixture can drive session_start as well
+// as tool_call. The shared `before` hook keeps only the tool_call handler.
+async function registerExtension(root, tag) {
+  const extension = await loadExtension(root, tag)
+  const handlers = new Map()
+
+  extension.default({
+    on(eventName, handler) {
+      const registered = handlers.get(eventName) ?? []
+      registered.push(handler)
+      handlers.set(eventName, registered)
+    },
+  })
+
+  return {
+    sessionStart: handlers.get("session_start")?.[0],
+    toolCall: handlers.get("tool_call")?.[0],
+  }
+}
+
+// Throws on the guarded-paths text only. The fixture's other TOML input is
+// empty, and failing that one too would raise an unrelated error from the
+// destructive-ops loader rather than the arm under test.
+const THROWING_TOML_STUB = `
+export function parse(text) {
+  if (text.trim() === "") return {}
+  throw new SyntaxError("Invalid TOML document: expected a table header")
+}
+`
+
+// A manifest that will not load leaves every guarded structure empty, so the
+// extension is judging nothing. The Python hooks answer that with a Warn; the
+// extension has no per-call reporting channel, so it notifies once instead. What
+// both must never do is check nothing quietly. The Python suite pins the same
+// property in test_guarded_paths_manifest.py.
+test("Pi reports a manifest it cannot load and lets the call through", async (t) => {
+  const arms = [
+    ["missing", { manifest: null }],
+    ["unparsable", { tomlStub: THROWING_TOML_STUB }],
+  ]
+
+  for (const [label, options] of arms) {
+    await t.test(`notifies and proceeds when the manifest is ${label}`, async () => {
+      const root = await createExtensionRoot(`pi-security-extension-${label}-`, options)
+
+      try {
+        const { sessionStart, toolCall } = await registerExtension(root, `${label}-${Date.now()}`)
+        assert.ok(sessionStart, "the extension registered no session_start handler")
+
+        const notices = []
+        await sessionStart(
+          {},
+          { hasUI: true, ui: { confirm: async () => false, notify: (message, level) => notices.push({ message, level }) } },
+        )
+
+        const reported = notices.filter((notice) => notice.message.includes("guarded-paths.toml"))
+        assert.equal(reported.length, 1, `expected one manifest notice, saw ${JSON.stringify(notices)}`)
+        assert.equal(reported[0].level, "error")
+
+        // Proceeding is the deliberate half of the contract: the OS sandbox and
+        // the permission layers never read the manifest and keep enforcing.
+        const result = await toolCall(
+          { toolName: "write", toolCallId: "manifest-failure", input: { file_path: join(homedir(), ".claude", "settings.json") } },
+          { hasUI: false, ui: { confirm: async () => false, notify() {} } },
+        )
+        assert.equal(result, undefined, "a hook that cannot judge must not refuse")
+      } finally {
+        await rm(root, { force: true, recursive: true })
+      }
+    })
+  }
+})
+
+// A refusal that only explains itself leaves the agent free to look for another
+// way, which is what GateResponse's second clause exists to stop.
+test("Pi's enforcement refusals close off the route around them", async (t) => {
+  const settings = join(homedir(), ".claude", "settings.json")
+  const declining = { hasUI: true, ui: { confirm: async () => false, notify() {} } }
+  const unattended = { hasUI: false, ui: { confirm: async () => true, notify() {} } }
+
+  const cases = [
+    ["a credential write", join(homedir(), ".codex", "auth.json"), declining],
+    ["an enforcement write with no user attached", settings, unattended],
+    ["an enforcement write the user declined", settings, declining],
+  ]
+
+  for (const [label, path, ctx] of cases) {
+    await t.test(label, async () => {
+      const result = await callToolWith("write", { file_path: path }, ctx)
+
+      assert.equal(result?.block, true)
+      assert.match(result.reason, /AI INSTRUCTIONS:/, "the refusal carries no agent instruction")
+      assert.match(result.reason, /Do NOT look for an alternative/, "the refusal does not close off other routes")
+      assert.match(result.reason, /report to the user/, "the refusal does not send the decision back to the user")
+    })
+  }
 })

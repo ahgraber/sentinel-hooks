@@ -2,15 +2,17 @@
 
 ## Requirement: Purpose
 
-The system SHALL prevent an agent from modifying the files that constrain that agent's own behaviour, or any other agent's.
+The system SHALL ensure that the files constraining an agent's behaviour — its own or any other agent's — change only with the user's approval.
 
 Every other guardrail in this repository depends on this one.
 A hook script, a permission rule, or a hook registration file is enforcement.
-An edit to enforcement is not a routine edit: it removes the constraint rather than changing a program.
-The system therefore SHALL block such an edit unconditionally, and SHALL NOT offer the user an approval dialog for it.
+An edit to enforcement is not a routine edit: it removes or reshapes a constraint, and whether that happens is the user's decision alone.
 
-Deliberate maintenance of a guardrail is a separate, out-of-band act.
-It is the user's to perform, not the agent's to request.
+The system SHALL put that decision to the user in the moment, where the invoking agent can prompt, and SHALL refuse the edit where it cannot.
+A guard that can only refuse is a guard that gets disabled instead of consulted; maintenance that can be approved in-session stays inside the guardrails while it happens.
+
+Agent credentials are the exception and SHALL be refused without a prompt.
+No legitimate flow maintains a credential in-session, so a prompt there gains nothing and trains approval of the one request that should never come.
 
 ### Requirement: ProtectedSurface
 
@@ -32,7 +34,7 @@ An agent that enforces only its own set leaves the others writable from a sessio
 
 - **GIVEN** any agent is running
 - **WHEN** a tool call would modify a different agent's protected path
-- **THEN** the hook exits 2
+- **THEN** the gate applies exactly as it would to the agent's own guardrail
 
 ### Requirement: ReadsAreAllowed
 
@@ -54,10 +56,17 @@ Write protection is the boundary; concealment is not.
 
 ### Requirement: MutationIsBlocked
 
-The system SHALL block any tool call that would create, modify, delete, or rename a protected path.
+The system SHALL intercept any tool call that would create, modify, delete, or rename a protected path, and SHALL NOT let it proceed on the agent's judgement alone.
+
+The outcome is decided by the protected class of the path:
+
+- **Deployed enforcement, repository sources, per-user agent configuration** — the decision is `Ask`.
+  The mutation proceeds only with the user's approval, and is refused where the invoking agent cannot prompt, per `hook-interface` `ExitCodes`.
+- **Agent credentials** — the decision is `Block`, on every agent.
 
 This covers direct file writes, patch application, and shell commands.
 A shell command SHALL be judged by the paths it names, because a command is capable of every mutation a file tool is.
+A command that names protected paths in more than one class SHALL receive the most restrictive outcome among them.
 
 A path a command supplies as the operand of shell syntax SHALL count as a path the command names, whether or not a space separates the two.
 Shell syntax written against its operand is the same instruction as the spaced form, so a difference in verdict between the two is a difference the writer chooses.
@@ -66,19 +75,43 @@ Shell syntax written against its operand is the same instruction as the spaced f
 
 - **GIVEN** a Bash tool call is intercepted
 - **WHEN** the command carries a protected path as an operand written against a redirection or an option
-- **THEN** the hook exits 2
+- **THEN** the gate applies
 
 #### Scenario: EditProtectedHookScript
 
 - **GIVEN** an Edit tool call is intercepted
-- **WHEN** the target is a protected path
-- **THEN** the hook exits 2
+- **WHEN** the target is deployed enforcement
+- **THEN** the decision is `Ask`, and the mutation proceeds only on the user's approval
 
 #### Scenario: ShellCommandNamingProtectedPath
 
 - **GIVEN** a Bash tool call is intercepted
-- **WHEN** the command names a protected path
-- **THEN** the hook exits 2
+- **WHEN** the command names a repository source of a guardrail
+- **THEN** the decision is `Ask`, and the mutation proceeds only on the user's approval
+
+#### Scenario: EditPerUserConfiguration
+
+- **GIVEN** a Write or Edit tool call is intercepted
+- **WHEN** the target is another user's agent configuration
+- **THEN** the decision is `Ask`, and the mutation proceeds only on the user's approval
+
+#### Scenario: WriteAgentCredential
+
+- **GIVEN** any mutating tool call is intercepted
+- **WHEN** the target is stored agent authentication material
+- **THEN** the decision is `Block`, whatever the invoking agent's prompting ability
+
+#### Scenario: GatedMutationOnAgentThatCannotPrompt
+
+- **GIVEN** a mutating tool call reaches an `Ask` decision
+- **WHEN** the invoking agent has no honoured prompt encoding
+- **THEN** the tool call is refused with an explanation
+
+#### Scenario: MixedClassCommand
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** the command names both a repository source and an agent credential
+- **THEN** the decision is `Block`
 
 ### Requirement: PathSpellingIndependence
 
@@ -95,14 +128,14 @@ The operating system sandbox and the agent permission layer are the boundary.
 
 - **GIVEN** a Write, Edit, or Bash tool call is intercepted on a case-insensitive filesystem
 - **WHEN** the target names a protected path under a differing letter case
-- **THEN** the hook exits 2
+- **THEN** the path is treated as protected and the gate applies
 
 ### Requirement: InstructionTextIsWritable
 
 The system SHALL permit writes to instruction markdown files held directly in an agent's instructions directory.
 
 These files are prompt text supplied to the agent, not enforcement.
-Blocking them would prevent ordinary authoring for no security gain.
+Gating them would prompt for ordinary authoring for no security gain.
 
 The exemption SHALL be narrow.
 It SHALL apply only to markdown files, and only to files directly in an instructions directory — not to a nested path, and not to any other file type held there.
@@ -115,7 +148,7 @@ A write to a link is a write to what the link leads to, so a name that qualifies
 
 - **GIVEN** a Write or Edit tool call is intercepted
 - **WHEN** the target is named as markdown directly in an instructions directory but leads to an enforcement file
-- **THEN** the hook exits 2
+- **THEN** the gate applies
 
 #### Scenario: InstructionMarkdown
 
@@ -127,13 +160,13 @@ A write to a link is a write to what the link leads to, so a name that qualifies
 
 - **GIVEN** a Write tool call is intercepted
 - **WHEN** the target is below a subdirectory of an instructions directory
-- **THEN** the hook exits 2
+- **THEN** the gate applies
 
 #### Scenario: NonMarkdownInInstructions
 
 - **GIVEN** a Write tool call is intercepted
 - **WHEN** the target is a non-markdown file in an instructions directory
-- **THEN** the hook exits 2
+- **THEN** the gate applies
 
 ### Requirement: ProfileLayerConfiguration
 
@@ -142,14 +175,24 @@ The system SHALL protect any file that can layer additional permissions over an 
 An agent that loads a named configuration layer can widen any permission the base configuration narrows.
 Such a layer is enforcement, and is protected as enforcement, wherever it is stored.
 
-### Requirement: BlockResponse
+### Requirement: GateResponse
 
-A block SHALL exit 2 and write an explanation to stderr that satisfies the `hook-interface` `ExplanationContract`.
+Every outcome the gate reaches SHALL carry an explanation that satisfies the `hook-interface` `ExplanationContract`.
 
-The explanation SHALL name the specific path or command that was refused, and SHALL state that enforcement is the reason.
+A refusal SHALL name the specific path or command that was refused, and SHALL state that enforcement is the reason.
 It SHALL instruct the agent not to look for another route to the same result, and to report the refusal to the user.
 
-It SHALL NOT be required to name which agent owns the refused path, because enforcement does not vary by agent.
+An ask SHALL address the user alone.
+It SHALL name the specific file, state that the file is enforcement, and state what approving the mutation would permit.
+It SHALL NOT present the mutation as routine: the user is deciding whether a guardrail changes, and the explanation is what makes that decision an informed one.
+
+Neither explanation is required to name which agent owns the path, because enforcement does not vary by agent.
+
+#### Scenario: AskNamesTheEnforcementFile
+
+- **GIVEN** the gate reaches an `Ask` decision
+- **WHEN** the user reads the prompt
+- **THEN** they see which file would change, that it is enforcement, and what approving the change would permit
 
 ### Requirement: FailureMode
 
@@ -179,4 +222,4 @@ Such a path is judged from the path as written, per `path-matching` `Unresolvabl
 
 - **GIVEN** a Write or Edit tool call is intercepted
 - **WHEN** the target cannot be resolved but as written denotes a protected path
-- **THEN** the hook exits 2
+- **THEN** the gate applies

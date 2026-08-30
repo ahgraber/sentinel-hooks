@@ -164,3 +164,22 @@ Record each outcome in this change's `.verify/` directory — the two waivers in
 - [x] `just apps test all` — shared 299 passed/1 skipped, claude 530 passed/2 xfailed, codex 47 passed, copilot 29 passed, pi 149 passed.
 - [x] `nix flake check --all-systems --impure` — all checks passed.
 - [x] `prek run --files` over every changed file — no failures.
+
+## 20. Verify findings (2026-08-29)
+
+- [x] Waive `NoSideEffects`.
+  The interpreter clause is definitional and the behavioural clause is a negative universal over everything a hook does, so neither is reachable by assertion.
+  The waiver in `design.md` carries the planted-bytecode measurement itself, because `.verify/` is excluded by the root `.gitignore` and would not survive a clone.
+- [x] Test the Pi port's manifest-load-failure path, the one enforcement implementation whose degradation had no coverage.
+  Both arms: a missing manifest, and a parse failure driven by substituting the TOML parser — the suite's own stub is lenient by design and never throws.
+- [x] Give the Pi tamper refusals the second half of the `GateResponse` contract.
+  They named the path and stated enforcement, but never closed off another route or sent the decision back to the user, and the extension emits no instruction block of its own.
+  The extension API has no channel for it, so it rides on the reason text.
+- [x] Test the fail-open paths.
+  The blind `except Exception` arms were unreachable from the suite, so a defect that made every check raise would have left the hooks exiting 0 with nothing turning red.
+  Each arm is confirmed load-bearing: with the handler deleted, all three cases exit 1 instead.
+  The suite now pins the asymmetry too — the two hooks covering read-only tools fail open, and the Bash-only hook fails closed.
+- [ ] Decide whether `block-secrets.py` should pass its tool name to `supports_ask`.
+  It does not, so a secret-access ask on a Copilot file edit refuses where the tamper hook would prompt; the adapter already normalises `create_file`/`editFiles` to `Write`/`Edit`, so the tool name is available.
+  Not a regression and safe in direction, but the two hooks now answer differently for the same (agent, tool) pairing.
+  Changing it loosens a hook this change's proposal put out of scope, so it is the user's call.

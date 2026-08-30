@@ -49,6 +49,23 @@ export { commandMentionsProtectedPath, isProtectedPath } from "./guarded-paths.t
 export { FOLDS_CASE } from "./paths.ts"
 export { isSensitivePath } from "./sensitive-paths.ts"
 
+// A refusal that only explains itself invites the agent to find another way, so
+// `GateResponse` requires it to close off the route and hand the decision back.
+// The shared Python hooks append this from `hook_response.AI_INSTRUCTIONS`; the
+// extension API has no equivalent channel, so it rides on the reason text.
+const AGENT_INSTRUCTIONS = [
+  "",
+  "---",
+  "AI INSTRUCTIONS:",
+  "Do NOT look for an alternative command, equivalent step, or workaround that reaches this result by another route.",
+  "Stop and report to the user: what you were working on, what you were about to do, what was refused and why, and what they could run themselves instead.",
+].join("\n")
+
+/** Refuse a tool call, naming the cause and closing off the routes around it. */
+function refuse(reason: string): { block: true; reason: string } {
+  return { block: true, reason: `${reason}\n${AGENT_INSTRUCTIONS}` }
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     // A failed manifest load leaves every declaration empty, so tamper protection and
@@ -109,26 +126,21 @@ export default function (pi: ExtensionAPI) {
     if (tamperTarget) {
       const credential = isBash ? commandMentionsCredential(tamperTarget) : isCredentialPath(tamperTarget)
       if (credential) {
-        return {
-          block: true,
-          reason: `Blocked: ${tool} targeting stored agent credentials '${tamperTarget}'.\nNo legitimate flow maintains agent authentication material in-session, so no approval can permit this write.`,
-        }
+        return refuse(
+          `Blocked: ${tool} targeting stored agent credentials '${tamperTarget}'.\nNo legitimate flow maintains agent authentication material in-session, so no approval can permit this write.`,
+        )
       }
       if (!ctx.hasUI) {
-        return {
-          block: true,
-          reason: `Blocked: ${tool} targeting agent enforcement path '${tamperTarget}'.\nHook scripts, rules, permissions, and settings constrain what an agent may do. Changing one requires the user's in-the-moment approval, and no interactive user is attached, so the mutation is refused.`,
-        }
+        return refuse(
+          `Blocked: ${tool} targeting agent enforcement path '${tamperTarget}'.\nHook scripts, rules, permissions, and settings constrain what an agent may do. Changing one requires the user's in-the-moment approval, and no interactive user is attached, so the mutation is refused.`,
+        )
       }
       const approved = await ctx.ui.confirm(
         "Modify agent enforcement?",
         `This ${tool} call would modify '${tamperTarget}', which is enforcement: hook scripts, permission rules, hook registrations, and agent settings constrain what an agent may do. Approving lets this one change land in a live guardrail, and the constraint it implements changes with it. Approve only if you are deliberately changing this guardrail now.`,
       )
       if (!approved) {
-        return {
-          block: true,
-          reason: `Blocked: the user declined the mutation of agent enforcement path '${tamperTarget}'.`,
-        }
+        return refuse(`Blocked: the user declined the mutation of agent enforcement path '${tamperTarget}'.`)
       }
     }
 
