@@ -1,11 +1,26 @@
 ## Response style
 
-Prefer plain, direct language in responses.
+Prefer plain, direct language.
 Use ASD-STE100 Simplified Technical English as a guide: short sentences, one idea per sentence, active voice, and common words instead of rare or technical synonyms.
 Use the same word for the same concept every time; do not vary it for style.
 
+This applies to everything you write, not only chat replies.
+Documentation, code comments, docstrings, and commit messages meet the same standard.
+
 Keep technical terms, code, commands, and file paths exact.
 Do not simplify these.
+
+Name the actor and the action.
+Software does not see, know, want, need, try, or care.
+Replace such a verb with what the component does.
+
+Write the claim, not a pointer to it.
+"This is the important part", or "that is the one thing A does which B cannot", names a fact without stating it.
+Write what A does.
+
+Use the verb that names the mechanism.
+If a sentence needs a metaphor to work, the mechanism is not yet clear enough to describe.
+Find out what happens, then write that.
 
 ## Shared context
 
