@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Hook: Inject skill-usage instructions at SessionStart.
 #
-# Reads instructions/*.md and outputs the combined content as
-# additionalContext so Claude always has startup guidance in context.
+# A missing or empty instructions directory is reported and then ignored: the
+# session starts without the guidance rather than not at all.
 
 set -euo pipefail
 
@@ -11,7 +11,7 @@ INSTRUCTIONS_DIR="${SCRIPT_DIR}/instructions"
 
 if [[ ! -d "$INSTRUCTIONS_DIR" ]]; then
   echo "session-instructions: instructions directory not found: ${INSTRUCTIONS_DIR}" >&2
-  exit 0 # non-fatal — don't block the session
+  exit 0
 fi
 
 shopt -s nullglob
@@ -20,7 +20,7 @@ shopt -u nullglob
 
 if [[ ${#content_files[@]} -eq 0 ]]; then
   echo "session-instructions: no instruction fragments found in: ${INSTRUCTIONS_DIR}" >&2
-  exit 0 # non-fatal — don't block the session
+  exit 0
 fi
 
 content=""

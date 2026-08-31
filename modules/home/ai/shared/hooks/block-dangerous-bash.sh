@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code Hook: Block dangerous bash patterns
+# Hook: Block dangerous bash patterns
 #
 # PreToolUse hook for the Bash tool.
 # Blocks reverse shells, pipe-to-shell, obfuscated exec, clipboard reads,
@@ -15,7 +15,6 @@
 
 set -uo pipefail
 
-# Returns 0 if stdin matches the given Perl-compatible regex.
 matches_pattern() {
   local pattern="${1}"
   VALIDATION_PATTERN="${pattern}" perl -0e '
@@ -199,7 +198,7 @@ for ((i = 0; i < ${#rules[@]}; i += 3)); do
       generic)
         matches_pattern "${LOCAL_GENERIC_RE}" <<< "${text}" && continue
         ;;
-      none) ;; # no exemption — fall through to block()
+      none) ;;
       *)
         printf 'block-dangerous-bash.sh: unknown exemption type "%s"\n' "${exemption}" >&2
         exit 2

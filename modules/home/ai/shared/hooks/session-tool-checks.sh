@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code Hook: Session tool checks
+# Hook: Session tool checks
 #
 # SessionStart hook that verifies the tools the security hooks depend on are on
 # PATH. A missing required tool ends the session; a recommended one only warns.

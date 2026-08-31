@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Claude Code Hook: Bash Command Validator
+# Hook: Bash Command Validator
 #
 # PreToolUse hook for the Bash tool. Rules catch zsh expansion hazards, invalid
 # ripgrep flags, and commands that bypass repository tooling.

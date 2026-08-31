@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Codex hook: detect unexpected HEAD drift during a turn.
+# Hook: detect unexpected HEAD drift during a turn.
 # Usage: git-baseline.sh <init|check|update>
 #   init   — UserPromptSubmit: records HEAD at turn start
 #   check  — PreToolUse: warns if HEAD moved since last checkpoint
