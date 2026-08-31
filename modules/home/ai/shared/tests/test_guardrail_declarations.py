@@ -33,6 +33,16 @@ DEPLOYED = [
     for declaration in load_manifest()["gated"]["deployed"]
 ]
 
+# An instruction layer is enforcement too: text placed in one steers whichever
+# agent loads it, so its location needs the same permission floor a gated file
+# has. The repository-side locations are already covered as sources, so only the
+# deployed `~/` half is added here.
+DEPLOYED_LAYERS = [
+    (location, representative(location))
+    for location, _fragment in load_manifest()["instruction-layers"]["layers"]
+    if location.startswith("~/")
+]
+
 
 def _matched(patterns: list[str]) -> set[str]:
     """Resolve repository-relative patterns to the paths they match now."""
@@ -268,13 +278,21 @@ def assert_covered(
 class TestDeployedDeclarationsAreCovered:
     """The deployed half of the manifest needs the same floor the sources have.
 
-    Every file is checked against every deployed declaration, including the
-    other platform's spelling: a rule naming a path absent on this platform is
-    inert, while inferring a file's platform from its name is wrong for the
-    settings files that carry no platform suffix.
+    Every file is checked against every deployed declaration and every deployed
+    instruction-layer location, including the other platform's spelling: a rule
+    naming a path absent on this platform is inert, while inferring a file's
+    platform from its name is wrong for the settings files that carry no
+    platform suffix.
     """
 
-    @pytest.mark.parametrize("declaration,path", DEPLOYED, ids=lambda v: v)
+    def test_both_declaration_sets_are_populated(self) -> None:
+        """Guards the parametrisation: an empty list makes every test below vacuous."""
+        assert DEPLOYED, "the manifest declares no deployed gated paths"
+        assert DEPLOYED_LAYERS, "the manifest declares no deployed instruction layers"
+
+    @pytest.mark.parametrize(
+        "declaration,path", DEPLOYED + DEPLOYED_LAYERS, ids=lambda v: v
+    )
     @pytest.mark.parametrize(
         "settings_path", CLAUDE_SETTINGS, ids=lambda p: f"{p.parents[2].name}/{p.name}"
     )
@@ -290,7 +308,9 @@ class TestDeployedDeclarationsAreCovered:
             f"'{declaration}', which the hook gates",
         )
 
-    @pytest.mark.parametrize("declaration,path", DEPLOYED, ids=lambda v: v)
+    @pytest.mark.parametrize(
+        "declaration,path", DEPLOYED + DEPLOYED_LAYERS, ids=lambda v: v
+    )
     @pytest.mark.parametrize(
         "config_path", CODEX_CONFIGS, ids=lambda p: f"{p.parents[2].name}/{p.name}"
     )
@@ -306,7 +326,9 @@ class TestDeployedDeclarationsAreCovered:
             "writable, which the hook gates",
         )
 
-    @pytest.mark.parametrize("declaration,path", DEPLOYED, ids=lambda v: v)
+    @pytest.mark.parametrize(
+        "declaration,path", DEPLOYED + DEPLOYED_LAYERS, ids=lambda v: v
+    )
     @pytest.mark.parametrize(
         "settings_path", VSCODE_SETTINGS, ids=lambda p: f"{p.parents[2].name}/{p.name}"
     )
