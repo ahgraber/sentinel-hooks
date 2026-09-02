@@ -54,4 +54,9 @@ export const BASH_VALIDATOR_RULES: Array<[RegExp, string]> = [
     /(?:^|[;\n|&()]{1,2})\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S+)\s+)*(?:command\s+)?git(?:\s+(?:(?:-[cC])\s+\S+|-[pP]|--\S+))*\s+commit\b/,
     "Use 'git agent-commit' alias instead of 'git commit' — the alias signs with the dedicated agent key",
   ],
+  [
+    // The separator class omits '|' on purpose; see bash-command-validator.sh.
+    /(?:^|[;\n&()]{1,2})\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S+)\s+)*(?:command\s+)?git(?:\s+(?:-[pP]|--\S+))*\s+-C\b/,
+    "Use 'cd <path>' in its own Bash call, then the plain subcommand ('git status --short', 'git --no-pager diff'), instead of 'git -C <path>' — the plain form runs without an approval prompt",
+  ],
 ]

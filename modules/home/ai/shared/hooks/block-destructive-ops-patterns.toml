@@ -113,6 +113,18 @@ reason = "May accidentally stage sensitive files (.env, credentials) or large bi
 mode = "ask"
 
 [[git.rules]]
+pattern = '\bgit\b[^|;&\n]*\s(?:-c\s+[A-Za-z][\w.-]*\.[\w.-]+=|--config-env=)'
+description = "Sets a git configuration value for one command, including keys that hold a program git then runs (core.pager, diff.external, core.fsmonitor, alias.*)"
+reason = "Runs an arbitrary command under cover of a routine git call; confirm the value is one you asked for and not one read out of a file or a repository"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\b[^|;&\n]*\s--(?:exec-path=|upload-pack=|receive-pack=)'
+description = "Points git at a different executable directory or transport helper (--exec-path, --upload-pack, --receive-pack)"
+reason = "Runs the named program in place of git's own; confirm the path is one you control"
+mode = "ask"
+
+[[git.rules]]
 pattern = '\bgh\s+repo\s+delete\b'
 description = "Deletes an entire GitHub repository"
 reason = "Repository deletion removes all code, issues, PRs, and history permanently"

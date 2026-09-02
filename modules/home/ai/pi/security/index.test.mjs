@@ -210,6 +210,8 @@ const BLOCKED_COMMANDS = [
   ["git long option then commit", "git --git-dir=/repo/.git commit -m 'unsigned'", "Use 'git agent-commit'"],
   ["git after separator", "echo ready && git commit --amend", "Use 'git agent-commit'"],
   ["command-wrapped git commit", "command git --no-pager commit --amend", "Use 'git agent-commit'"],
+  ["git working directory", "git -C /repo status", "cd <path>"],
+  ["git working directory after option", "git --no-pager -C /repo log", "cd <path>"],
 ]
 
 test("Pi blocks every active Claude validator rule", async (t) => {
@@ -243,12 +245,14 @@ const ALLOWED_COMMANDS = [
   ["prek", "prek run --all-files"],
   ["agent commit", "git agent-commit -m 'signed'"],
   ["commit config key", "git -c commit.gpgsign=true status"],
-  ["commit option value", "git -C commit status"],
+  ["commit option value", "git --work-tree=commit status"],
   ["non-commit long option", "git --git-dir=/repo/.git status"],
   ["commit search argument", "rg -n 'git commit' ."],
   ["commit echo argument", "echo 'git commit is prohibited'"],
   ["grep", "grep pattern file"],
   ["find", "find . -name '*.py'"],
+  ["plain git subcommand", "git status --short"],
+  ["working directory option in alternation", "rg -n 'commit|git -C' shlib/"],
 ]
 
 test("Pi allows every Claude validator alternative", async (t) => {

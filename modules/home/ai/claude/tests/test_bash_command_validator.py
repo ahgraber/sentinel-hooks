@@ -262,7 +262,7 @@ class TestGitCommitRedirect:
                 id="commit-config-key",
             ),
             pytest.param(
-                "git -C commit status",
+                "git --work-tree=commit status",
                 id="commit-as-option-value",
             ),
             pytest.param(
@@ -280,6 +280,38 @@ class TestGitCommitRedirect:
         ],
     )
     def test_commit_text_outside_subcommand_is_allowed(self, command):
+        assert_allowed(bash(command))
+
+
+class TestGitWorkingDirectoryRedirect:
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("git -C /repo status", id="direct"),
+            pytest.param("git -C /repo --no-pager diff", id="before-pager-option"),
+            pytest.param("git --no-pager -C /repo log --oneline", id="after-option"),
+            pytest.param("command git -C /repo rev-parse HEAD", id="command-wrapper"),
+            pytest.param("cd /tmp && git -C /repo ls-files", id="after-separator"),
+        ],
+    )
+    def test_working_directory_option_is_blocked(self, command):
+        assert_blocked(bash(command), "cd <path>")
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("git status --short", id="plain-subcommand"),
+            pytest.param("git --no-pager diff -- path", id="plain-with-pager-option"),
+            pytest.param("git branch -c old new", id="lowercase-copy-option"),
+            pytest.param("rg -n 'git -C' shlib/", id="option-as-search-argument"),
+            pytest.param(
+                "rg -n 'commit|git -C' shlib/",
+                id="option-in-quoted-alternation",
+            ),
+            pytest.param("scripts/gist-publish.sh", id="script-using-the-option"),
+        ],
+    )
+    def test_plain_form_and_quoted_text_are_allowed(self, command):
         assert_allowed(bash(command))
 
 

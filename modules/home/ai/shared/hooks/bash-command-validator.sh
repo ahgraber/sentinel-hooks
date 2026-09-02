@@ -103,6 +103,12 @@ rule '\bpre-commit\s+run\b' \
 rule '(?:^|[;\n|&()]{1,2})[[:space:]]*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\x27[^\x27]*\x27|\S+)[[:space:]]+)*(?:command[[:space:]]+)?git(?:[[:space:]]+(?:(?:-[cC])[[:space:]]+\S+|-[pP]|--\S+))*[[:space:]]+commit\b' \
   "Use 'git agent-commit' alias instead of 'git commit' — the alias signs with the dedicated agent key"
 
+# The separator class omits '|': a quoted alternation such as rg 'a|git -C b'
+# would otherwise read as a command start. A missed spelling costs one approval
+# prompt; a false positive blocks an unrelated command.
+rule '(?:^|[;\n&()]{1,2})[[:space:]]*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\x27[^\x27]*\x27|\S+)[[:space:]]+)*(?:command[[:space:]]+)?git(?:[[:space:]]+(?:-[pP]|--\S+))*[[:space:]]+-C\b' \
+  "Use 'cd <path>' in its own Bash call, then the plain subcommand ('git status --short', 'git --no-pager diff'), instead of 'git -C <path>' — the plain form runs without an approval prompt"
+
 issues=()
 
 for idx in "${!patterns[@]}"; do

@@ -287,6 +287,11 @@ NORMALIZATION_PAIRS = [
     pytest.param("git reset --hard", "git re's'et --hard", id="reset-hard-splice"),
     pytest.param("chmod -R 777 /etc", "ch''mod -R 777 /etc", id="chmod-empty-pair"),
     pytest.param("git clean -fd", "'git' clean -fd", id="clean-standalone-quote"),
+    pytest.param(
+        "git -c core.pager=sh log",
+        "git -c core.pa'g'er=sh log",
+        id="config-injection-splice",
+    ),
 ]
 
 
