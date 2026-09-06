@@ -1,11 +1,11 @@
 ## Response style
 
-Prefer plain, direct language.
+Prefer plain language and eschew mannered prose.
+Be direct.
 Use ASD-STE100 Simplified Technical English as a guide: short sentences, one idea per sentence, active voice, and common words instead of rare or technical synonyms.
 Use the same word for the same concept every time; do not vary it for style.
 
-This applies to everything you write, not only chat replies.
-Documentation, code comments, docstrings, and commit messages meet the same standard.
+This directive applies to everything you write including chat conversations with the user, documentation, code comments, docstrings, and commit messages.
 
 Keep technical terms, code, commands, and file paths exact.
 Do not simplify these.

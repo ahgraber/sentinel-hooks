@@ -45,6 +45,7 @@ def _all_path_entries(manifest: dict) -> list[str]:
         location for location, _layer in manifest["instruction-layers"]["layers"]
     ]
     entries += manifest["location-only"]["paths"]
+    entries += manifest["read-through"]["paths"]
     entries += manifest["secret-floor"]["paths"]
     return entries
 
@@ -63,6 +64,7 @@ class TestManifestShape:
             "credentials",
             "instruction-layers",
             "location-only",
+            "read-through",
             "secret-floor",
             "exceptions",
         ):

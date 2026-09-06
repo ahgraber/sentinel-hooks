@@ -191,6 +191,118 @@ class TestInstructionMarkdownCarveOut:
         assert ask_reason(write(str(alias), CLAUDE))
 
 
+SKILL_FILE = "~/.claude/skills/sdd-sync/references/sdd-spec-formats.md"
+SKILL_REAL = "~/.agents/skills/sdd-sync/references/sdd-spec-formats.md"
+
+READS = [
+    f"cat {SKILL_FILE}",
+    f"grep -n Baseline {SKILL_FILE} | head",
+    f"grep -n 'Baseline spec\\|## 2' {SKILL_FILE}",
+    f"grep -n 'formats$' {SKILL_FILE}",
+    f"head -64 {SKILL_FILE} | cut -c1-200",
+    f"cat {SKILL_FILE} | tr -s ' ' | sort | uniq -c | wc -l",
+    "ls ~/.claude/skills/sdd-sync",
+    "find ~/.claude/skills -name SKILL.md",
+    f"cat {SKILL_REAL}",
+    f"grep -c . {SKILL_REAL}",
+]
+
+# One per way a command can escape the classifier: a second command it never
+# reaches, a binary that is not the utility it is named after, and a utility
+# whose behaviour is set by an argument rather than by the command line.
+NOT_READS = [
+    f"cat {SKILL_FILE}\nrm -rf ~/.claude/skills",
+    f"cat {SKILL_FILE} |& rm -rf ~/.claude/skills",
+    f"cat {SKILL_FILE} ;& rm -rf ~/.claude/skills",
+    f"cat {SKILL_FILE}; rm -rf ~/.claude/skills",
+    f"/tmp/cat {SKILL_FILE}",
+    f"PATH=/tmp:$PATH cat {SKILL_FILE}",
+    f"cat $(echo {SKILL_FILE})",
+    f"cat `echo {SKILL_FILE}`",
+    f"grep -$flag pattern {SKILL_FILE}",
+    f"sed -n '50,64p' {SKILL_FILE}",
+    f"sed -i 's/a/b/' {SKILL_FILE}",
+    f"sed -n 'w ~/.claude/skills/sdd-sync/SKILL.md' {SKILL_FILE}",
+    f"gsed -n '1,5p' {SKILL_FILE}",
+    f"awk '/^## 2/,/^## 3/' {SKILL_FILE}",
+    "awk 'BEGIN{system(\"rm -rf ~/.claude/skills\")}' " + SKILL_FILE,
+    f"awk -f /tmp/program.awk {SKILL_FILE}",
+    f"yq -i '.a = 1' {SKILL_FILE}",
+    f"rg --pre /tmp/helper pattern {SKILL_FILE}",
+    f"less {SKILL_FILE}",
+    f"bat {SKILL_FILE}",
+    f"sort --compress-program=/tmp/helper {SKILL_FILE}",
+    f"sort -o ~/.claude/skills/sdd-sync/SKILL.md {SKILL_FILE}",
+    "find ~/.claude/skills -name SKILL.md -delete",
+    "find ~/.claude/skills -name SKILL.md -exec rm {} ;",
+    f"cp /tmp/replacement.md {SKILL_FILE}",
+    f"cat /tmp/replacement.md > {SKILL_FILE}",
+    f"cat {SKILL_FILE} >> ~/.claude/skills/sdd-sync/SKILL.md",
+    f"uv run {SKILL_FILE}",
+]
+
+
+class TestReadThroughCarveOut:
+    """Under a read-through location a recognised read proceeds; the rest gates."""
+
+    @pytest.mark.parametrize("command", READS, ids=lambda c: c[:40])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_a_recognised_read_proceeds_under_every_agent(
+        self, command: str, agent: str
+    ) -> None:
+        result = bash(command, agent)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+    @pytest.mark.parametrize("command", NOT_READS, ids=lambda c: c[:40])
+    def test_anything_else_asks_under_claude(self, command: str) -> None:
+        assert ask_reason(bash(command, CLAUDE))
+
+    @pytest.mark.parametrize("command", NOT_READS, ids=lambda c: c[:40])
+    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    def test_anything_else_refuses_where_no_prompt_is_honoured(
+        self, command: str, agent: str
+    ) -> None:
+        assert_refused(bash(command, agent), "not a recognised read")
+
+    def test_one_guarded_path_outside_the_carve_out_gates_the_whole_command(
+        self,
+    ) -> None:
+        assert ask_reason(bash(f"cat {SKILL_FILE} ~/.claude/settings.json", CLAUDE))
+
+    @pytest.mark.parametrize("path", [SKILL_FILE, SKILL_REAL])
+    def test_a_write_to_skill_content_still_gates_on_the_file_tools(
+        self, path: str
+    ) -> None:
+        assert ask_reason(write(path, CLAUDE))
+        assert ask_reason(edit(path, CLAUDE))
+
+
+class TestReaderHint:
+    """A command stopped by the classifier says so, and names what would pass."""
+
+    def test_the_prompt_names_the_accepted_readers(self) -> None:
+        reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
+        assert "not recognised as a read" in reason
+        for utility in ("cat", "grep", "head", "cut"):
+            assert utility in reason
+
+    def test_the_prompt_does_not_call_a_read_a_modification(self) -> None:
+        reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
+        assert "would modify" not in reason
+
+    def test_a_path_outside_the_carve_out_keeps_the_enforcement_wording(self) -> None:
+        reason = ask_reason(bash("cat ~/.claude/settings.json", CLAUDE))
+        assert "recognised as a read" not in reason
+        assert "enforcement" in reason
+
+    def test_the_guidance_reaches_an_agent_that_cannot_prompt(self) -> None:
+        assert_refused(
+            bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "not a recognised read"
+        )
+
+
 class TestAskReasonContract:
     def test_reason_names_the_file_and_states_the_enforcement_consequence(
         self,
