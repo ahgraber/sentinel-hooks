@@ -71,8 +71,7 @@ paths = ["~/.claude/", "~/.codex/", "~/.copilot/"]
 # The classifier accepts only utilities that cannot write or execute.
 # Adding a location here leaves the sandbox as the only layer that sees a Bash read of it.
 [read-through]
-paths = ["~/.claude/skills/", "~/.agents/skills/"]
-
+paths = ["~/.claude/skills/", "~/.codex/skills/", "~/.agents/skills/"]
 [secret-floor] # read-gating floor tests, beyond the credential paths above
 paths = ["~/.config/sops-nix/secrets/example", "~/.local/state/sops-nix/secrets.d/1/example"]
 

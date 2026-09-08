@@ -39,6 +39,16 @@ Skip skill invocation ONLY when:
    If the skill includes a checklist, create TodoWrite items for each step.
 5. Announce which skill you are using and why (e.g., "Using `python-testing` to write these test cases.").
 
+## Reading a skill without a `Skill` tool
+
+Some harnesses have no `Skill` tool and load a skill by reading its `SKILL.md` from disk.
+Use the harness's own file-read tool when it has one.
+When the only route is a shell command, read the file with `cat`, `nl`, `head`, or `tail`.
+
+Do not read a skill with `sed`.
+The exec policy allows no `sed` prefix, so every such read goes to the reviewer or is refused, and the skill never loads.
+The same applies to `awk`, `perl`, and any other command that can write as well as read.
+
 ## Instruction priority
 
 1. Highest priority: **User instructions** always take precedence, even over skill guidance.

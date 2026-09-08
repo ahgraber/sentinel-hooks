@@ -196,6 +196,7 @@ SKILL_REAL = "~/.agents/skills/sdd-sync/references/sdd-spec-formats.md"
 
 READS = [
     f"cat {SKILL_FILE}",
+    "cat ~/.codex/skills/.system/openai-docs/SKILL.md",
     f"grep -n Baseline {SKILL_FILE} | head",
     f"grep -n 'Baseline spec\\|## 2' {SKILL_FILE}",
     f"grep -n 'formats$' {SKILL_FILE}",
