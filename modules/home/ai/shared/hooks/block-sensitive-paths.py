@@ -11,7 +11,7 @@ tool a given agent never emits is simply a dead branch there.
 
 Bash handling is fail safe, not precise: the goal is to prevent operations over
 secrets, not to model shell grammar. Where a command segment invokes a
-recognised read or transfer command, every token of that segment is checked,
+recognized read or transfer command, every token of that segment is checked,
 with no option/operand modelling, so a secret filename blocks wherever it
 appears — operand, attached option value, copy source, or behind a wrapper. That
 over-denies (a search pattern such as `grep -r secret .` blocks), which is the
@@ -46,7 +46,7 @@ from guarded_paths import (
 from hook_response import Decision, invoking_agent, respond
 
 _EXPOSURE_RISK = (
-    "Exposed credentials risk unauthorised access, account takeover, and data "
+    "Exposed credentials risk unauthorized access, account takeover, and data "
     "exfiltration across every service they protect."
 )
 

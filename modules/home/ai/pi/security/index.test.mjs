@@ -391,7 +391,7 @@ test("Pi guards a file that leads out of a guarded directory", async () => {
   const store = join(sandbox, "store")
 
   // Named to match no declared fragment, so containment is the only thing that can
-  // catch it; the fragment check would otherwise mask the behaviour under test.
+  // catch it; the fragment check would otherwise mask the behavior under test.
   await mkdir(store, { recursive: true })
   await writeFile(join(store, "session-abc123.jsonl"), "{}\n")
   await mkdir(join(fakeHome, ".claude", "projects"), { recursive: true })

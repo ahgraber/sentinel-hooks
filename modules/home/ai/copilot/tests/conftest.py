@@ -108,7 +108,7 @@ def assert_block_contract(result: HookResult, message_substring: str = "") -> No
 
 
 def assert_ask(result: HookResult, reason_substring: str = "") -> None:
-    """Assert exit 0 and the wrapped ask JSON the VS Code surface honours."""
+    """Assert exit 0 and the wrapped ask JSON the VS Code surface honors."""
     assert result.exit_code == 0, (
         f"Expected ask (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
     )

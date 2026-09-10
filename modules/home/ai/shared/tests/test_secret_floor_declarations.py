@@ -1,7 +1,7 @@
 """Secret material must be denied at every read-gating layer, for every user.
 
 Two layers deny reads. The permission rules stop the file tools; the OS sandbox
-stops Bash. Together they are the boundary, and the hooks are defence in depth,
+stops Bash. Together they are the boundary, and the hooks are defense in depth,
 so a floor path missing from either layer is a real hole.
 
 The layers do not correspond one-to-one to the settings keys. Claude Code

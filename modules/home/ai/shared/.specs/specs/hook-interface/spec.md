@@ -43,13 +43,13 @@ Where an agent cannot express `Warn`, the system SHALL degrade it to `Allow`, ne
 Degrading upward would convert a diagnostic into a refusal, and would refuse every tool call for as long as the condition persisted.
 
 Where an agent cannot express `Ask`, the system SHALL degrade it to `Block`, never to `Allow`.
-An ask records that the call must not proceed on the agent's judgement alone; refusing keeps that property where no prompt can be shown.
+An ask records that the call must not proceed on the agent's judgment alone; refusing keeps that property where no prompt can be shown.
 
-An agent that accepts the prompt encoding without honouring it SHALL be treated as unable to express `Ask`.
+An agent that accepts the prompt encoding without honoring it SHALL be treated as unable to express `Ask`.
 One agent parses the prompt JSON, marks the hook run failed, and lets the tool call proceed.
 Emitting the prompt encoding to such an agent converts a gate into an allow, which is the one degradation direction this requirement forbids.
 
-Honouring MAY differ by tool within one agent, so the judgement SHALL be made per tool surface, not per agent alone.
+Honoring MAY differ by tool within one agent, so the judgment SHALL be made per tool surface, not per agent alone.
 One agent holds a file edit on the prompt and lets a shell command proceed past the same JSON; the encoding is emitted for the first and withheld for the second.
 
 Under Claude Code the encoding is:
@@ -79,7 +79,7 @@ The `ask` JSON output format:
 }
 ```
 
-Under Copilot, `Ask` is honoured for file-mutation tools only, as exit 0 with the same `hookSpecificOutput` JSON Claude Code uses; the surface shows the reason and holds the call.
+Under Copilot, `Ask` is honored for file-mutation tools only, as exit 0 with the same `hookSpecificOutput` JSON Claude Code uses; the surface shows the reason and holds the call.
 For the shell tool the same output is ignored and the call proceeds, so `Ask` degrades to `Block` there.
 Where the surface has no interactive user, the platform itself treats the prompt as a denial, which is the degradation direction this requirement requires.
 Established empirically against the VS Code surface on 2026-08-27.
@@ -105,7 +105,7 @@ Established empirically against the VS Code surface on 2026-08-27.
 #### Scenario: AskOnAgentThatCannotPrompt
 
 - **GIVEN** a hook reaches an `Ask` decision
-- **WHEN** the invoking agent has no honoured prompt encoding
+- **WHEN** the invoking agent has no honored prompt encoding
 - **THEN** the tool call is refused with an explanation, exactly as a `Block` would be
 
 #### Scenario: AskEncodingWithheldWhereUnhonoured

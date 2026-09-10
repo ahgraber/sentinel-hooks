@@ -23,7 +23,7 @@ the boundary here; concealment is not.
 
 A Bash call states no intent, so one naming a guarded path gates either way.
 Under a read-through location it is classified first, from the command line
-alone: a recognised read proceeds, everything else gates.
+alone: a recognized read proceeds, everything else gates.
 
 Markdown held directly in an instructions directory is prompt text rather than
 enforcement and stays writable. The carve-out is narrow: markdown only, one
@@ -140,17 +140,17 @@ def _accepted_readers() -> str:
     )
 
 
-def _unrecognised_read_reason(target: str, tool_name: str) -> str:
+def _unrecognized_read_reason(target: str, tool_name: str) -> str:
     return (
         f"This {tool_name} call names '{target}', where a read proceeds without "
-        "a prompt. This command was not recognised as a read, so it may write "
+        "a prompt. This command was not recognized as a read, so it may write "
         "there. Approve only if you meant to run it as written." + _accepted_readers()
     )
 
 
-def _unrecognised_read_refusal(target: str, tool_name: str) -> str:
+def _unrecognized_read_refusal(target: str, tool_name: str) -> str:
     return (
-        f"Blocked: {tool_name} on '{target}' is not a recognised read. A read "
+        f"Blocked: {tool_name} on '{target}' is not a recognized read. A read "
         "of this path proceeds, but a command that may write needs the user's "
         "approval, and this agent cannot put that decision to the user."
         + _accepted_readers()
@@ -317,7 +317,7 @@ def _read_only_segment(segment: list[str]) -> bool:
 
 
 def is_read_only_command(command: str) -> bool:
-    """True if `command` is recognisably a read. Anything unresolved is False."""
+    """True if `command` is recognizably a read. Anything unresolved is False."""
     if any(marker in command for marker in OPAQUE_TEXT):
         return False
     try:
@@ -353,7 +353,7 @@ def only_read_through(command: str) -> bool:
 
 
 def reads_through(command: str) -> bool:
-    """True if `command` is a recognised read of read-through locations alone."""
+    """True if `command` is a recognized read of read-through locations alone."""
     return only_read_through(command) and is_read_only_command(command)
 
 
@@ -413,7 +413,7 @@ def gate(
     """Decide the outcome of a protected mutation and exit.
 
     A credential refuses on every agent. A gated class asks; where no prompt is
-    honoured for this (agent, tool) pairing the ask degrades to a refusal worded
+    honored for this (agent, tool) pairing the ask degrades to a refusal worded
     for the agent rather than the user.
     """
     if cls == CREDENTIAL:
@@ -504,8 +504,8 @@ def main() -> None:
                 if is_read_only_command(command):
                     cls = None
                 else:
-                    ask = _unrecognised_read_reason
-                    refuse = _unrecognised_read_refusal
+                    ask = _unrecognized_read_reason
+                    refuse = _unrecognized_read_refusal
             if cls is not None:
                 gate(
                     _first_in_class(_paths_in(command), cls) or command,

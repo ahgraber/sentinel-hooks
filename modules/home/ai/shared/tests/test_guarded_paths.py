@@ -14,7 +14,7 @@ from guarded_paths import GuardedLocations, folds_case, repo_root_of, spellings
 
 
 def make_repo(root: Path) -> Path:
-    """A repository-shaped tree, recognised by its `.git` entry."""
+    """A repository-shaped tree, recognized by its `.git` entry."""
     (root / ".git").mkdir(parents=True)
     guarded = root / "modules" / "home" / "ai" / "shared" / "hooks"
     guarded.mkdir(parents=True)

@@ -27,7 +27,7 @@ Limits, all accepted: a relative path resolves against the working directory the
 hook runs in, so one named against a different directory is judged there; a
 working-directory change within one shell command; hard links; a tree that is
 not a repository, such as an unpacked archive; and any route that presents no
-path. This is defence in depth; the sandbox and the agent permission layer are
+path. This is defense in depth; the sandbox and the agent permission layer are
 the boundary.
 """
 

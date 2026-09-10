@@ -1,6 +1,6 @@
 """Every Codex reviewer policy must route a guardrail edit to the user, not refuse it.
 
-Codex cannot honour a PreToolUse `ask`, so the tamper hook degrades to a refusal
+Codex cannot honor a PreToolUse `ask`, so the tamper hook degrades to a refusal
 and the only user-approval route left is the escalation prompt the reviewer
 decides to raise. The policies are prose, so the assertions match on the phrases
 that carry that decision — coarse, but the alternative is no check at all.

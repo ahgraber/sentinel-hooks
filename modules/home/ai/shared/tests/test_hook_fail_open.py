@@ -27,7 +27,7 @@ SENSITIVE = "block-sensitive-paths.py"
 DESTRUCTIVE = "block-destructive-ops.py"
 
 # A string where the hook expects a mapping. Every hook reaches for `.get` on
-# `tool_input`, so this raises inside the judgement rather than at the boundary,
+# `tool_input`, so this raises inside the judgment rather than at the boundary,
 # which is the only route to the blind handlers.
 MALFORMED_TOOL_INPUT = "not-a-dict"
 
@@ -58,7 +58,7 @@ class TestUnexpectedErrorFailsOpen:
     """A hook covering read-only tools lets the call through when it breaks."""
 
     @pytest.mark.parametrize("hook", [TAMPERING, SENSITIVE])
-    def test_an_error_inside_the_judgement_allows_the_call(self, hook: str) -> None:
+    def test_an_error_inside_the_judgment_allows_the_call(self, hook: str) -> None:
         result = run_hook(
             hook, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT}
         )
@@ -82,7 +82,7 @@ class TestUnexpectedErrorFailsOpen:
 class TestUnexpectedErrorFailsClosed:
     """The Bash-only hook refuses instead, because every tool it covers is sensitive."""
 
-    def test_an_error_inside_the_judgement_refuses_the_command(self) -> None:
+    def test_an_error_inside_the_judgment_refuses_the_command(self) -> None:
         result = run_hook(
             DESTRUCTIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT}
         )

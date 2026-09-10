@@ -94,7 +94,7 @@ def _collect_user_skills() -> list[tuple[str, str]]:
     """Collect skills from user-level skill directories.
 
     Each child directory is checked for SKILL.md directly, rather than relying
-    on `rglob` following symlinks, whose behaviour changed in Python 3.13.
+    on `rglob` following symlinks, whose behavior changed in Python 3.13.
     """
     seen: set[str] = set()
     skills: list[tuple[str, str]] = []

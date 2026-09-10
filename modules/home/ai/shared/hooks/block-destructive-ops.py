@@ -9,7 +9,7 @@ Each rule is matched against the command as written and against a normalized
 spelling of it, so a rule written for `rm -rf /` still fires on `r'm' -rf /`;
 matching both can only add matches, never drop one.
 
-An `ask` rule needs an agent that honours PreToolUse prompts, so where that
+An `ask` rule needs an agent that honors PreToolUse prompts, so where that
 cannot be confirmed the rule blocks instead — fail closed. A missing or
 unreadable pattern file fails open, rather than refusing every Bash command over
 this hook's own configuration error.

@@ -97,7 +97,7 @@ class TestSshDirectory:
     def test_case_variant_directory_blocks_on_any_volume(self):
         """This set is matched by what a path looks like, not by which file it
         is, so a heuristic that stopped applying because a letter was
-        capitalised would be defeated by capitalising a letter."""
+        capitalized would be defeated by capitalizing a letter."""
         assert_blocked(write(f"{HOME}/.SSH/id_rsa"), "zero-access")
         assert_blocked(write(f"{HOME}/Certs/Server.PEM"), "zero-access")
 

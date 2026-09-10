@@ -2,7 +2,7 @@
 
 ## Requirement: Purpose
 
-The system SHALL ensure that the files constraining an agent's behaviour — its own or any other agent's — change only with the user's approval.
+The system SHALL ensure that the files constraining an agent's behavior — its own or any other agent's — change only with the user's approval.
 
 Every other guardrail in this repository depends on this one.
 A hook script, a permission rule, or a hook registration file is enforcement.
@@ -56,7 +56,7 @@ Write protection is the boundary; concealment is not.
 
 ### Requirement: MutationIsBlocked
 
-The system SHALL intercept any tool call that would create, modify, delete, or rename a protected path, and SHALL NOT let it proceed on the agent's judgement alone.
+The system SHALL intercept any tool call that would create, modify, delete, or rename a protected path, and SHALL NOT let it proceed on the agent's judgment alone.
 
 The outcome is decided by the protected class of the path:
 
@@ -104,7 +104,7 @@ Shell syntax written against its operand is the same instruction as the spaced f
 #### Scenario: GatedMutationOnAgentThatCannotPrompt
 
 - **GIVEN** a mutating tool call reaches an `Ask` decision
-- **WHEN** the invoking agent has no honoured prompt encoding
+- **WHEN** the invoking agent has no honored prompt encoding
 - **THEN** the tool call is refused with an explanation
 
 #### Scenario: MixedClassCommand
@@ -121,7 +121,7 @@ The limits recorded there apply here unchanged: a working-directory change withi
 
 A spelling that differs only in letter case is not a limit where the filesystem treats such spellings as the same file.
 
-These limits are why this requirement is defence in depth.
+These limits are why this requirement is defense in depth.
 The operating system sandbox and the agent permission layer are the boundary.
 
 #### Scenario: CaseVariantSpelling

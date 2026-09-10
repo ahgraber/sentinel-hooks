@@ -12,6 +12,8 @@ This directive applies to everything you write including chat conversations with
 Keep technical terms, code, commands, and file paths exact.
 Do not simplify these.
 
+Use American spellings.
+
 ### State the point
 
 Write the claim, not a pointer to it.

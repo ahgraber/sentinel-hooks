@@ -20,7 +20,7 @@ SENSITIVE_TOOLS = {"Bash", "Write", "Edit", "apply_patch"}
 _AGENT = UNKNOWN
 
 _EXPOSURE_RISK = (
-    "Exposed credentials risk unauthorised access, account takeover, and data "
+    "Exposed credentials risk unauthorized access, account takeover, and data "
     "exfiltration across every service they protect."
 )
 

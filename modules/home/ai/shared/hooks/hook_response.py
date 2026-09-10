@@ -9,11 +9,11 @@ therefore confined to 0 and 2.
 Where an agent cannot express a decision it degrades in one direction only.
 `warn` degrades to `allow`, never `block`, or a diagnostic becomes a refusal for
 as long as the condition lasts. `ask` degrades to `block`, never `allow`, since
-an ask records that the call must not proceed on the agent's judgement alone.
-Whether a prompt is honoured is a property of the (agent, tool) pairing, not of
+an ask records that the call must not proceed on the agent's judgment alone.
+Whether a prompt is honored is a property of the (agent, tool) pairing, not of
 the agent: one surface holds a file edit on the prompt JSON and lets a shell
 command proceed past the same output. An ignored prompt is fail-open, so the
-prompt encoding is emitted only where it is known to be honoured.
+prompt encoding is emitted only where it is known to be honored.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ _PATH_MARKERS = ((CLAUDE, "/.claude/"), (CODEX, "/.codex/"), (COPILOT, "/.copilo
 _KNOWN_AGENTS = frozenset(agent for agent, _ in _PATH_MARKERS)
 
 _WARN_CAPABLE = frozenset({CLAUDE})
-# Tools on which Copilot honours the prompt encoding. Its shell tool parses the
+# Tools on which Copilot honors the prompt encoding. Its shell tool parses the
 # same JSON and lets the command proceed past it (checked on the VS Code
 # surface, 2026-08-27), so every unlisted tool degrades to a refusal there.
 _COPILOT_ASK_TOOLS = frozenset({"Write", "Edit"})

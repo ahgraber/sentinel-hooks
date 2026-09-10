@@ -38,7 +38,7 @@ This requirement asks a different question from a guarded location.
 A guarded location asks whether a path _is_ a declared file, so two spellings are one file only where the volume says so, and `secret-access-blocking` `AskOnCredentialStoreRead` is decided that way.
 This requirement asks whether a path _looks like_ it holds a secret, from its extension, its basename, and the directories it passes through.
 On a volume that distinguishes case, `SECRET.PEM` is a different file from `secret.pem`, and it is equally a private key.
-A name heuristic that stopped applying because a letter was capitalised would be defeated by capitalising a letter.
+A name heuristic that stopped applying because a letter was capitalized would be defeated by capitalizing a letter.
 
 Every pattern in this requirement therefore matches without regard to case, on every volume.
 The error this admits is refusing a path that resembles a secret and is not one, which is the safe direction for a set whose members may never be read.
@@ -180,12 +180,12 @@ Write-to-path patterns in Bash include:
 
 The system SHALL block `Bash` commands that read a zero-access path, so its contents cannot enter Claude's context.
 
-This enforcement matters most on Linux, where the OS sandbox (bubblewrap) ignores glob deny rules such as `Read(**/.env)` and so does not stop a plain `cat ./project/.env`; on macOS the Seatbelt sandbox honours those globs.
+This enforcement matters most on Linux, where the OS sandbox (bubblewrap) ignores glob deny rules such as `Read(**/.env)` and so does not stop a plain `cat ./project/.env`; on macOS the Seatbelt sandbox honors those globs.
 The hook makes read blocking uniform across platforms.
 
 The check SHALL be fail-safe rather than precise: the goal is to prevent operations over secrets, not to model shell grammar.
 Commands SHALL be tokenised with `shlex` (quote- and operator-aware) so quoting and escapes resolve (`\cat`, `c""at`, `'cat'`) and quoted operators do not split the command.
-If a command segment invokes a recognised read command, EVERY token in that segment SHALL be checked against the zero-access rules and any match SHALL block.
+If a command segment invokes a recognized read command, EVERY token in that segment SHALL be checked against the zero-access rules and any match SHALL block.
 There SHALL be no option/operand modelling: a zero-access path that appears anywhere — as an operand, an attached option value (`-f.env`, `if=.env`), or behind a wrapper (`sudo -u root cat .env`) — SHALL block.
 Input redirection targets (`<`, `0<`) SHALL be checked regardless of the command word.
 
@@ -193,7 +193,7 @@ This bias SHALL prefer false positives over false negatives: a zero-access-looki
 
 Read-from-path forms in Bash include:
 
-- A recognised read command (`cat`, `head`, `grep`, `sed`, `awk`, `jq`, `sort`, `source`, `openssl`, `tar`, `unzip`, `install`, an editor, ...) in a segment that also contains a zero-access token
+- A recognized read command (`cat`, `head`, `grep`, `sed`, `awk`, `jq`, `sort`, `source`, `openssl`, `tar`, `unzip`, `install`, an editor, ...) in a segment that also contains a zero-access token
 - Input redirection (`<`, `0<`, `$(< file)`, `mapfile`/`read < file`) from a zero-access path
 - `dd if=` a zero-access path
 

@@ -215,7 +215,7 @@ class TestVscodeExceptions:
     @pytest.mark.parametrize(
         "settings_path", VSCODE_SETTINGS, ids=lambda p: f"{p.parents[2].name}/{p.name}"
     )
-    def test_the_declared_exception_is_honoured_while_globalstorage_stays_gated(
+    def test_the_declared_exception_is_honored_while_globalstorage_stays_gated(
         self, settings_path: Path, exceptions: set[str]
     ) -> None:
         approvals = vscode_autoapprove(settings_path)

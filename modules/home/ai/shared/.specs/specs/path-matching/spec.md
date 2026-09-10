@@ -147,4 +147,4 @@ The following defeat it and SHALL be recorded wherever the capability is describ
   This capability inspects paths supplied by tool calls, and nothing else.
 
 The operating system sandbox and the agent permission layer are the boundary.
-This capability is defence in depth: it catches the accidental and the casual, and raises the cost of the deliberate.
+This capability is defense in depth: it catches the accidental and the casual, and raises the cost of the deliberate.

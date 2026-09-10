@@ -1,7 +1,7 @@
 """Tests for Bash read-target blocking in block-sensitive-paths.py.
 
 The Bash read path is deliberately fail-safe: it tokenises with `shlex` and, if a
-segment invokes a recognised read command, checks every token against the
+segment invokes a recognized read command, checks every token against the
 sensitivity rules. There is no option/operand modelling — a secret filename that
 appears anywhere blocks, and a secret-looking search pattern over-denies. That
 over-deny is accepted on purpose (missing a real secret read is worse than

@@ -2,7 +2,7 @@
 
 Both sides read `guarded-paths.toml` at invocation, so the checks here are
 structural: neither carries a mirrored literal, both name the one manifest, and
-`guarded-path-cases.json` supplies the behavioural coverage for both languages.
+`guarded-path-cases.json` supplies the behavioral coverage for both languages.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def test_hook_and_extension_agree_on_the_manifest_filename() -> None:
     assert "guarded-paths.toml" in hook_source
 
 
-def test_instruction_layer_carve_out_has_behavioural_coverage() -> None:
+def test_instruction_layer_carve_out_has_behavioral_coverage() -> None:
     """Both language suites assert this table, so a case here covers both sides."""
     instruction_cases = [c for c in CASES if "instructions" in c["path"]]
     assert any(not c["blocked"] for c in instruction_cases), (
@@ -52,7 +52,7 @@ def test_instruction_layer_carve_out_has_behavioural_coverage() -> None:
     )
 
 
-def test_location_only_class_has_behavioural_coverage() -> None:
+def test_location_only_class_has_behavioral_coverage() -> None:
     """A location-only declaration contributes no text fragment, so only a path
     resolving inside the guarded root can cover it."""
     home_wide_cases = [

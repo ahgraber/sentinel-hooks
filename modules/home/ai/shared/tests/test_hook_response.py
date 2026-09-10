@@ -54,7 +54,7 @@ class TestAgentIdentification:
         monkeypatch.setenv("AI_HOOK_AGENT", "copilot")
         assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == COPILOT
 
-    def test_an_unrecognised_declaration_is_ignored(self, monkeypatch) -> None:
+    def test_an_unrecognized_declaration_is_ignored(self, monkeypatch) -> None:
         monkeypatch.setenv("AI_HOOK_AGENT", "something-else")
         assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == UNKNOWN
 
@@ -130,7 +130,7 @@ class TestAsk:
 
     @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     @pytest.mark.parametrize("tool_name", [None, "Bash", "Write", "Edit"])
-    def test_ask_refuses_where_no_prompt_is_honoured(
+    def test_ask_refuses_where_no_prompt_is_honored(
         self, capsys, agent: str, tool_name
     ) -> None:
         """Codex parses the prompt JSON and proceeds anyway, so stdout stays empty."""

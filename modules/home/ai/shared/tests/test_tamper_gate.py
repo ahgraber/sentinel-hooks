@@ -210,7 +210,7 @@ READS = [
 
 # One per way a command can escape the classifier: a second command it never
 # reaches, a binary that is not the utility it is named after, and a utility
-# whose behaviour is set by an argument rather than by the command line.
+# whose behavior is set by an argument rather than by the command line.
 NOT_READS = [
     f"cat {SKILL_FILE}\nrm -rf ~/.claude/skills",
     f"cat {SKILL_FILE} |& rm -rf ~/.claude/skills",
@@ -244,11 +244,11 @@ NOT_READS = [
 
 
 class TestReadThroughCarveOut:
-    """Under a read-through location a recognised read proceeds; the rest gates."""
+    """Under a read-through location a recognized read proceeds; the rest gates."""
 
     @pytest.mark.parametrize("command", READS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_a_recognised_read_proceeds_under_every_agent(
+    def test_a_recognized_read_proceeds_under_every_agent(
         self, command: str, agent: str
     ) -> None:
         result = bash(command, agent)
@@ -262,10 +262,10 @@ class TestReadThroughCarveOut:
 
     @pytest.mark.parametrize("command", NOT_READS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
-    def test_anything_else_refuses_where_no_prompt_is_honoured(
+    def test_anything_else_refuses_where_no_prompt_is_honored(
         self, command: str, agent: str
     ) -> None:
-        assert_refused(bash(command, agent), "not a recognised read")
+        assert_refused(bash(command, agent), "not a recognized read")
 
     def test_one_guarded_path_outside_the_carve_out_gates_the_whole_command(
         self,
@@ -285,7 +285,7 @@ class TestReaderHint:
 
     def test_the_prompt_names_the_accepted_readers(self) -> None:
         reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
-        assert "not recognised as a read" in reason
+        assert "not recognized as a read" in reason
         for utility in ("cat", "grep", "head", "cut"):
             assert utility in reason
 
@@ -295,12 +295,12 @@ class TestReaderHint:
 
     def test_a_path_outside_the_carve_out_keeps_the_enforcement_wording(self) -> None:
         reason = ask_reason(bash("cat ~/.claude/settings.json", CLAUDE))
-        assert "recognised as a read" not in reason
+        assert "recognized as a read" not in reason
         assert "enforcement" in reason
 
     def test_the_guidance_reaches_an_agent_that_cannot_prompt(self) -> None:
         assert_refused(
-            bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "not a recognised read"
+            bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "not a recognized read"
         )
 
 
