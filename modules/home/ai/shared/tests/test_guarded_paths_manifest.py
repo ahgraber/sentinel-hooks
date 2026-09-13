@@ -46,6 +46,7 @@ def _all_path_entries(manifest: dict) -> list[str]:
     ]
     entries += manifest["location-only"]["paths"]
     entries += manifest["read-through"]["paths"]
+    entries += manifest["exec-through"]["paths"]
     entries += manifest["secret-floor"]["paths"]
     return entries
 
@@ -65,6 +66,7 @@ class TestManifestShape:
             "instruction-layers",
             "location-only",
             "read-through",
+            "exec-through",
             "secret-floor",
             "exceptions",
         ):
@@ -155,6 +157,29 @@ class TestTemporaryManifestCopy:
         assert credentials.contains("~/.example/other-file.json") is False
 
 
+class TestReadAndExecAreSeparateClasses:
+    """A location declared read-through is not runnable unless it is also exec-through."""
+
+    @pytest.fixture
+    def readable_only(self, tmp_path: Path) -> Path:
+        original = tomllib.loads(MANIFEST.read_text())
+        original["read-through"]["paths"].append("~/.example/readable/")
+        copy = tmp_path / "guarded-paths.toml"
+        copy.write_text(_dump_minimal_toml(original))
+        tomllib.loads(copy.read_text())
+        return copy
+
+    def test_the_added_location_is_read_through(self, readable_only: Path) -> None:
+        hook = load_hook("block-hook-tampering")
+        *_rest, read_through, _exec_through = hook.build_guarded(readable_only)
+        assert read_through.contains("~/.example/readable/helper.sh") is True
+
+    def test_the_added_location_is_not_exec_through(self, readable_only: Path) -> None:
+        hook = load_hook("block-hook-tampering")
+        *_rest, _read_through, exec_through = hook.build_guarded(readable_only)
+        assert exec_through.contains("~/.example/readable/helper.sh") is False
+
+
 def _quote(value: str) -> str:
     """A TOML basic string. An exception's `why` is prose and carries quotes."""
     escaped = (
@@ -167,7 +192,7 @@ def _quote(value: str) -> str:
 
 
 def _dump_minimal_toml(data: dict) -> str:
-    """Serialise the subset of TOML this manifest uses. No stdlib TOML writer exists."""
+    """Serialize the subset of TOML this manifest uses. No stdlib TOML writer exists."""
     lines = []
     for section, value in data.items():
         if section == "exceptions":

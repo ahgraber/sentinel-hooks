@@ -146,21 +146,31 @@ class TestBashCommandProtection:
     """The shell tool proceeds past the prompt JSON on this surface, so a gated
     Bash command refuses instead of asking: prompting would be fail-open."""
 
+    def test_bash_reading_repo_hook_proceeds(self):
+        # The agent module tree is read-through, so a recognized read runs
+        # unprompted on the agent whose gate is a refusal rather than a prompt.
+        assert_allowed(bash(f"cat {repo_path('claude', 'hooks', 'block-secrets.py')}"))
+
     def test_bash_touching_repo_hook_blocks(self):
-        # The Bash branch matches on mention, not intent: a command's effect is
-        # not readable from its text, so any reference is gated.
+        # Outside a recognized read the Bash branch matches on mention, not
+        # intent: a command's effect is not readable from its text.
         assert_block_contract(
-            bash(f"cat {repo_path('claude', 'hooks', 'block-secrets.py')}"),
+            bash(f"sed -i 's/a/b/' {repo_path('claude', 'hooks', 'block-secrets.py')}"),
             "hooks",
         )
 
-    def test_bash_touching_each_agents_deployed_home_blocks(self):
+    def test_bash_touching_each_agents_deployed_configuration_blocks(self):
+        # These resolve into users/*/home-manager/, which no carve-out covers.
         for command, needle in (
             ("cat ~/.claude/settings.json", "settings.json"),
             ("cat ~/.codex/config.toml", "config.toml"),
-            ("cat ~/.copilot/hooks/security-policy.json", "security-policy.json"),
         ):
             assert_block_contract(bash(command), needle)
+
+    def test_bash_reading_a_deployed_module_file_proceeds(self):
+        # A deployed guardrail is a symlink into the agent module tree, so the
+        # read-through declaration reaches it through its resolved spelling.
+        assert_allowed(bash("cat ~/.copilot/hooks/security-policy.json"))
 
     def test_bash_naming_a_credential_blocks(self):
         assert_block_contract(bash("cat ~/.codex/auth.json"), "auth.json")

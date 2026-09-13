@@ -1,6 +1,8 @@
 # Spec: destructive-ops-blocking
 
-## Requirement: ToolScope
+## Requirements
+
+### Requirement: ToolScope
 
 The system SHALL only evaluate commands when `tool_name` is `Bash`.
 

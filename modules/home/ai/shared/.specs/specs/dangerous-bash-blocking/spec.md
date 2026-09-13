@@ -1,6 +1,8 @@
 # Spec: dangerous-bash-blocking
 
-## Requirement: ToolScope
+## Requirements
+
+### Requirement: ToolScope
 
 The system SHALL only evaluate commands when `tool_name` is `Bash`.
 
@@ -203,7 +205,7 @@ If `open` control is desired, it should be an `ask`-mode rule in `destructive-op
 - **WHEN** the command invokes `open`
 - **THEN** the hook exits 0 (not blocked by this hook)
 
-## Requirement: RuleRegistrationPattern
+### Requirement: RuleRegistrationPattern
 
 The system SHALL define all pattern-based blocking rules using a `rule` registration function
 that co-locates each rule's exemption type, pattern, and block message as a single declaration.

@@ -1,6 +1,8 @@
 # Spec: sensitive-path-blocking
 
-## Requirement: ToolScope
+## Requirements
+
+### Requirement: ToolScope
 
 The system SHALL evaluate tool calls when `tool_name` is `Bash`, `Read`, `Write`, `Edit`, or `apply_patch`.
 

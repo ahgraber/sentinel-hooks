@@ -1,10 +1,12 @@
 # git-baseline-drift
 
-## Requirement: BaselineCapture
+## Requirements
+
+### Requirement: BaselineCapture
 
 At the start of each agent turn, the hook SHALL record the current HEAD commit as the session baseline when the working directory is within a git repository.
 
-### Scenario: GitRepository
+#### Scenario: GitRepository
 
 - **GIVEN** a UserPromptSubmit event fires and the session working directory is within a git repository
 - **WHEN** the init stage runs

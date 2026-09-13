@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Hook: Bash Command Validator
-#
-# PreToolUse hook for the Bash tool. Rules catch zsh expansion hazards, invalid
-# ripgrep flags, and commands that bypass repository tooling.
+# PreToolUse hook: catch zsh expansion hazards, invalid ripgrep flags, and
+# commands that bypass repository tooling.
 
 if ! command -v jq > /dev/null 2>&1; then
-  echo "Error: jq is required for bash-command-validator.sh" >&2
+  echo "Error: bash-command-validator.sh requires jq" >&2
   exit 1
 fi
 
 if ! command -v perl > /dev/null 2>&1; then
-  echo "Error: perl is required for bash-command-validator.sh" >&2
+  echo "Error: bash-command-validator.sh requires perl" >&2
   exit 1
 fi
 
@@ -31,7 +29,7 @@ matches_pattern() {
 input_json="$(cat)"
 
 if ! jq -e . > /dev/null 2>&1 <<< "${input_json}"; then
-  echo "Error: Invalid JSON input" >&2
+  echo "Error: invalid JSON input" >&2
   exit 1
 fi
 
@@ -47,79 +45,94 @@ fi
 
 patterns=()
 messages=()
+subjects=()
 
+# Matched against the command as written.
 rule() {
   patterns+=("$1")
   messages+=("$2")
+  subjects+=("raw")
+}
+
+# Match program rules outside quoted arguments. Git rules use raw text so
+# `sh -c "git commit"` still matches.
+rule_command() {
+  patterns+=("$1")
+  messages+=("$2")
+  subjects+=("unquoted")
+}
+
+strip_quoted() {
+  perl -0pe 's/\x27[^\x27]*\x27/\x27\x27/g; s/"(?:[^"\\]|\\.)*"/""/g'
 }
 
 rule '(?<!<)<<[^<]' \
-  "Heredoc bodies are blocked because zsh BANG_HIST can silently mangle '!' (e.g. '!=', '!word', shebangs) before Bash receives the command. Rewrite the body without '!', or write it to \$TMPDIR/script.sh or \$TMPDIR/script.py and run that file."
+  "Heredocs are blocked because zsh BANG_HIST can change '!' before Bash runs. Remove '!', or write the body to \$TMPDIR/script.sh or \$TMPDIR/script.py and run the file."
 
 rule '"[^"]*![^" \t][^"]*"' \
-  "'!' inside a double-quoted string is expanded by zsh BANG_HIST (e.g. \"val!=x\" mangles silently). Use single quotes if no variable expansion is needed. If \$vars are required, write the content to \$TMPDIR and run from a file."
+  "'!' in a double-quoted string triggers zsh BANG_HIST expansion. Use single quotes when no variable expansion is required. Otherwise, write the content to \$TMPDIR and run the file."
 
 rule '(^|[[:space:];|&(])![^=[:space:]"]' \
-  "An unquoted '!word' is expanded by zsh BANG_HIST as a history reference. Single-quote the argument containing '!' to prevent expansion, or restructure to avoid '!'."
+  "Unquoted '!word' triggers zsh BANG_HIST. Single-quote the argument or remove '!'."
 
 rule '(^|[[:space:]])\.#[a-zA-Z0-9_-]' \
-  "'.#target' — '#' is a zsh EXTENDED_GLOB repetition operator, causing 'no matches found'. Quote nix flake refs: nix build '.#target' --impure"
+  "Unquoted '.#target' uses '#' as a zsh EXTENDED_GLOB operator. Quote the flake reference: nix build '.#target' --impure"
 
 rule '\b[0-9a-f]{6,40}\^' \
-  "'^' after a git commit hash is a zsh EXTENDED_GLOB negation operator. Quote it: 'abc123^' or 'abc123^..HEAD', or use '~1' instead of '^'"
+  "Unquoted '^' after a Git commit is a zsh EXTENDED_GLOB operator. Quote 'abc123^' or 'abc123^..HEAD', or use '~1'."
 
 rule '--[a-zA-Z_-]+=\*' \
-  "The '*' in '--flag=*.ext' is expanded by zsh glob before reaching the command. Quote the value: --include='*.py'"
+  "Unquoted '*' in '--flag=*.ext' expands before the command runs. Quote the value: --include='*.py'"
 
 rule '/nix/store/\*' \
-  "Globbing /nix/store/* is unreliable — store paths are non-deterministic hashes. Use 'rg --files /nix/store | rg pattern' or an explicit known path."
-
-# redirect tool calls
-
-# rule '(?:^|[;|&(])\s*grep\b' \
-#   "Use 'rg' (ripgrep) instead of 'grep' for better performance and features"
-
-# rule '^find\s+\S+\s+-name\b' \
-#   "Use 'rg --files | rg pattern' or 'rg --files -g pattern' instead of 'find -name' for better performance"
+  "Do not glob /nix/store/*; store paths contain hashes. Use an explicit path or 'rg --files /nix/store | rg pattern'."
 
 rule '\brg\b[^|]*[[:space:]]-[a-zA-Z]*r[a-zA-Z]*(?:=[^[:space:]]*)?(?:[[:space:]]|$)' \
-  "rg is recursive by default — '-r' means '--replace' (substitution), not '--recursive'. 'rg -rn' replaces matches with literal 'n' and silently corrupts output. Drop the '-r': use 'rg -n' for line numbers, 'rg -l' for filenames."
+  "rg is recursive by default. '-r' means '--replace', not '--recursive'. Use 'rg -n' for line numbers or 'rg -l' for file names."
 
-rule "(?:^|[;|&()]{1,2})\\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\\S+)\\s+)*(?:[./][\\w./]*/)?(?:python|python3)(?:[0-9.]+)?\\s" \
-  "Use 'uv run' instead of invoking python/python3 directly. For scripts with dependencies, use uv inline script metadata (# /// script) and run with 'uv run script.py'"
+# A program starts the command, follows a separator, or follows environment
+# assignments. Quoted spans are stripped, so `|` inside a search pattern is data.
+cmd_start='(?:^|[;|&()]{1,2})\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\x27[^\x27]*\x27|\S+)\s+)*(?:[./][\w./]*/)?'
 
-rule '(?<!\w)(?<!uv )pip\s+(install|uninstall|download)\b' \
-  "Use 'uv add' or 'uv run --with <pkg>' instead of pip. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
+rule_command "${cmd_start}(?:python|python3)(?:[0-9.]+)?\\s" \
+  "Use 'uv run script.py' instead of python or python3. Declare dependencies in '# /// script' metadata."
 
-rule '(?<!\w)pip3\s+(install|uninstall|download)\b' \
-  "Use 'uv add' or 'uv run --with <pkg>' instead of pip3. For one-off scripts, declare dependencies inline with uv script metadata (# /// script)"
+rule_command "${cmd_start}pip3?\\s+(?:install|uninstall|download)\\b" \
+  "Use 'uv add <pkg>' for project dependencies or 'uv run --with <pkg>' for one-off commands. For scripts, use '# /// script' metadata."
 
-rule '^(?!.*\buv\s+run\b).*\bpy(?:test|\.test)\b' \
-  "Use 'uv run pytest' instead of invoking pytest/py.test directly"
+# A program after `uv run` is not in command position, so it is already exempt.
+rule_command "${cmd_start}py(?:test|\\.test)\\b" \
+  "Use 'uv run pytest'."
 
-rule '\bpre-commit\s+run\b' \
-  "Use 'prek run' instead of 'pre-commit run' — prek is the sandbox-compatible wrapper available in PATH"
+rule_command "${cmd_start}pre-commit\\s+run\\b" \
+  "Use 'prek run'; it is the sandbox-compatible wrapper."
 
 rule '(?:^|[;\n|&()]{1,2})[[:space:]]*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\x27[^\x27]*\x27|\S+)[[:space:]]+)*(?:command[[:space:]]+)?git(?:[[:space:]]+(?:(?:-[cC])[[:space:]]+\S+|-[pP]|--\S+))*[[:space:]]+commit\b' \
-  "Use 'git agent-commit' alias instead of 'git commit' — the alias signs with the dedicated agent key"
+  "Use 'git agent-commit'; it signs with the agent key."
 
-# The separator class omits '|': a quoted alternation such as rg 'a|git -C b'
-# would otherwise read as a command start. A missed spelling costs one approval
-# prompt; a false positive blocks an unrelated command.
+# Omit `|` because quoted alternations can contain `git -C`; a false positive
+# blocks an unrelated command.
 rule '(?:^|[;\n&()]{1,2})[[:space:]]*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\x27[^\x27]*\x27|\S+)[[:space:]]+)*(?:command[[:space:]]+)?git(?:[[:space:]]+(?:-[pP]|--\S+))*[[:space:]]+-C\b' \
-  "Use 'cd <path>' in its own Bash call, then the plain subcommand ('git status --short', 'git --no-pager diff'), instead of 'git -C <path>' — the plain form runs without an approval prompt"
+  "Run 'cd <path>' in its own Bash call, then use a plain command such as 'git status --short' or 'git --no-pager diff'. The plain form avoids an approval prompt."
 
 issues=()
 
+command_unquoted="$(strip_quoted <<< "${command_text}")"
+
 for idx in "${!patterns[@]}"; do
-  if matches_pattern "${patterns[idx]}" <<< "${command_text}"; then
+  if [[ "${subjects[idx]}" == "unquoted" ]]; then
+    subject="${command_unquoted}"
+  else
+    subject="${command_text}"
+  fi
+  if matches_pattern "${patterns[idx]}" <<< "${subject}"; then
     issues+=("${messages[idx]}")
   fi
 done
 
 if ((${#issues[@]} > 0)); then
   for message in "${issues[@]}"; do
-    printf '• %s\n' "${message}" >&2
+    printf -- '- %s\n' "${message}" >&2
   done
   exit 2
 fi

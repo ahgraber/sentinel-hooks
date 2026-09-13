@@ -1,10 +1,12 @@
 # Spec: hook-interface
 
-## Requirement: StdinContract
+## Requirements
+
+### Requirement: StdinContract
 
 The system SHALL read a JSON object from stdin containing at minimum `tool_name` (string) and `tool_input` (object).
 
-### Scenario: WellFormedInput
+#### Scenario: WellFormedInput
 
 - **GIVEN** a hook is invoked by Claude Code
 - **WHEN** the hook reads stdin

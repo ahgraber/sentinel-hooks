@@ -24,7 +24,9 @@ run_python_suite() {
   local app="${1}"
 
   echo "==> Testing ${app}"
-  uv run --with pytest pytest -q "${REPO_ROOT}/modules/home/ai/${app}/tests"
+  # hypothesis carries the property suites over the read classifier, which takes
+  # arbitrary command text and cannot be covered by an example table.
+  uv run --with pytest --with hypothesis pytest -q "${REPO_ROOT}/modules/home/ai/${app}/tests"
 }
 
 run_pi_suite() {

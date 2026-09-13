@@ -4,7 +4,9 @@
 
 ---
 
-## MODIFIED Requirement: Purpose
+## MODIFIED Requirements
+
+### Requirement: Purpose
 
 Serves: in-session-maintenance
 
@@ -24,7 +26,7 @@ No legitimate flow maintains a credential in-session, so a prompt there gains no
 
 ---
 
-## MODIFIED Requirement: ProtectedSurface
+### Requirement: ProtectedSurface
 
 Serves: in-session-maintenance
 
@@ -42,7 +44,7 @@ The system SHALL protect the same surface regardless of which agent is running.
 Every agent SHALL enforce every agent's protected set.
 An agent that enforces only its own set leaves the others writable from a session it controls, and those others constrain it the moment they run.
 
-### Scenario: AgentEditsOtherAgentGuardrail
+#### Scenario: AgentEditsOtherAgentGuardrail
 
 - **GIVEN** any agent is running
 - **WHEN** a tool call would modify a different agent's protected path
@@ -50,7 +52,7 @@ An agent that enforces only its own set leaves the others writable from a sessio
 
 ---
 
-## MODIFIED Requirement: MutationIsBlocked
+### Requirement: MutationIsBlocked
 
 Serves: in-session-maintenance, safe-degradation
 
@@ -71,7 +73,7 @@ Shell syntax written against its operand is the same instruction as the spaced f
 
 > Previously: every mutation of a protected path was a `Block`, with no per-class distinction.
 
-### Scenario: OperandAttachedToShellSyntax
+#### Scenario: OperandAttachedToShellSyntax
 
 - **GIVEN** a Bash tool call is intercepted
 - **WHEN** the command carries a protected path as an operand written against a redirection or an option
@@ -115,7 +117,7 @@ Shell syntax written against its operand is the same instruction as the spaced f
 
 ---
 
-## MODIFIED Requirement: PathSpellingIndependence
+### Requirement: PathSpellingIndependence
 
 Serves: in-session-maintenance
 
@@ -128,7 +130,7 @@ A spelling that differs only in letter case is not a limit where the filesystem 
 These limits are why this requirement is defence in depth.
 The operating system sandbox and the agent permission layer are the boundary.
 
-### Scenario: CaseVariantSpelling
+#### Scenario: CaseVariantSpelling
 
 - **GIVEN** a Write, Edit, or Bash tool call is intercepted on a case-insensitive filesystem
 - **WHEN** the target names a protected path under a differing letter case
@@ -136,7 +138,7 @@ The operating system sandbox and the agent permission layer are the boundary.
 
 ---
 
-## MODIFIED Requirement: InstructionTextIsWritable
+### Requirement: InstructionTextIsWritable
 
 Serves: in-session-maintenance
 
@@ -152,7 +154,7 @@ A shell command SHALL qualify for the exemption only when every protected path i
 The exemption SHALL be decided by the location the write lands on, not by the name the target is given.
 A write to a link is a write to what the link leads to, so a name that qualifies for the exemption does not make the write qualify.
 
-### Scenario: ExemptNameLeadingToEnforcement
+#### Scenario: ExemptNameLeadingToEnforcement
 
 - **GIVEN** a Write or Edit tool call is intercepted
 - **WHEN** the target is named as markdown directly in an instructions directory but leads to an enforcement file
@@ -178,7 +180,7 @@ A write to a link is a write to what the link leads to, so a name that qualifies
 
 ---
 
-## MODIFIED Requirement: FailureMode
+### Requirement: FailureMode
 
 Serves: safe-degradation
 
@@ -198,7 +200,7 @@ Refusing would block ordinary read-only work whenever anything unexpected occurr
 Neither SHALL apply to a path that cannot be resolved.
 Such a path is judged from the path as written, per `path-matching` `UnresolvablePathIsGuarded`.
 
-### Scenario: UnparsablePayload
+#### Scenario: UnparsablePayload
 
 - **GIVEN** a tool call is intercepted
 - **WHEN** the payload cannot be parsed
@@ -212,13 +214,17 @@ Such a path is judged from the path as written, per `path-matching` `Unresolvabl
 
 ---
 
-## REMOVED Requirement: BlockResponse
+## REMOVED Requirements
+
+### Requirement: BlockResponse
 
 Replaced by `GateResponse`, which specifies the explanation for both outcomes the gate can reach.
 
 ---
 
-## ADDED Requirement: GateResponse
+## ADDED Requirements
+
+### Requirement: GateResponse
 
 Serves: in-session-maintenance
 
@@ -233,7 +239,7 @@ It SHALL NOT present the mutation as routine: the user is deciding whether a gua
 
 Neither explanation is required to name which agent owns the path, because enforcement does not vary by agent.
 
-### Scenario: AskNamesTheEnforcementFile
+#### Scenario: AskNamesTheEnforcementFile
 
 - **GIVEN** the gate reaches an `Ask` decision
 - **WHEN** the user reads the prompt

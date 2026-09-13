@@ -193,6 +193,26 @@
       "path": "~/.claude/hooks/block-secrets.py",
       "blocked": false,
       "why": "a deployed guardrail hook named for what it blocks stays readable"
+    },
+    {
+      "path": "~/.config/mcp-secrets.env",
+      "blocked": true,
+      "why": "the rendered MCP API keys, declared in [credentials]; a *.env suffix matches no other rule here"
+    },
+    {
+      "path": "~/.config/mcp-op-sync.env",
+      "blocked": false,
+      "why": "the same file under a name carrying no heuristic term, showing the declaration rather than the name is what blocks it"
+    },
+    {
+      "path": "scripts/mcp-secrets.sh",
+      "blocked": false,
+      "why": "declared in [[exceptions]]: a program named for the secret file it renders, holding none itself"
+    },
+    {
+      "path": "scripts/other-secrets.sh",
+      "blocked": true,
+      "why": "an undeclared neighbor of an excepted path earns nothing from it"
     }
   ]
 }

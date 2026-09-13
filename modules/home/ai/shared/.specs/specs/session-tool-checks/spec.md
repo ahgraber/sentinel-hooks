@@ -1,6 +1,8 @@
 # Spec: session-tool-checks
 
-## Requirement: SessionStartHook
+## Requirements
+
+### Requirement: SessionStartHook
 
 The system SHALL provide a SessionStart hook that verifies required security tools are available before a session proceeds.
 
@@ -77,7 +79,7 @@ Each tool check SHALL be evaluated independently.
 A missing optional tool SHALL NOT prevent the session from starting if no hook requires it.
 A missing required tool SHALL block the session with a clear message identifying the tool and install instructions.
 
-## Requirement: ToolRegistrationPattern
+### Requirement: ToolRegistrationPattern
 
 The system SHALL define tool checks using `require_tool` and `recommend_tool` registration
 functions that co-locate each tool's name and install hint as a single declaration.

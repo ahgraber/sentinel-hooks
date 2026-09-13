@@ -1,19 +1,7 @@
-"""Encode a hook's decision — allow, warn, block, or ask — for the invoking agent.
+"""Encode shared hook decisions for Claude, Codex, and Copilot.
 
-The vocabulary is shared; the encoding is not, because a non-zero, non-blocking
-exit means different things (checked against each agent's documentation on
-2026-08-25): Claude Code proceeds and shows the first stderr line, Codex leaves
-it unspecified, Copilot CLI denies the call. A code emitted everywhere is
-therefore confined to 0 and 2.
-
-Where an agent cannot express a decision it degrades in one direction only.
-`warn` degrades to `allow`, never `block`, or a diagnostic becomes a refusal for
-as long as the condition lasts. `ask` degrades to `block`, never `allow`, since
-an ask records that the call must not proceed on the agent's judgment alone.
-Whether a prompt is honored is a property of the (agent, tool) pairing, not of
-the agent: one surface holds a file edit on the prompt JSON and lets a shell
-command proceed past the same output. An ignored prompt is fail-open, so the
-prompt encoding is emitted only where it is known to be honored.
+Unsupported warnings allow. Unsupported asks block. Prompt JSON is emitted only
+for agent and tool pairs known to honor it.
 """
 
 from __future__ import annotations
@@ -33,9 +21,7 @@ _PATH_MARKERS = ((CLAUDE, "/.claude/"), (CODEX, "/.codex/"), (COPILOT, "/.copilo
 _KNOWN_AGENTS = frozenset(agent for agent, _ in _PATH_MARKERS)
 
 _WARN_CAPABLE = frozenset({CLAUDE})
-# Tools on which Copilot honors the prompt encoding. Its shell tool parses the
-# same JSON and lets the command proceed past it (checked on the VS Code
-# surface, 2026-08-27), so every unlisted tool degrades to a refusal there.
+# Copilot honors ask responses for file tools only; other asks block.
 _COPILOT_ASK_TOOLS = frozenset({"Write", "Edit"})
 
 AI_INSTRUCTIONS = """
@@ -76,11 +62,9 @@ def invoking_agent(
 
 
 def supports_ask(agent: str, tool_name: str | None = None) -> bool:
-    """True if `agent` can put a PreToolUse decision back to the user.
+    """Return whether `agent` honors an ask response for `tool_name`.
 
-    With no tool named the answer is conservative — true only where the agent
-    prompts on every tool — so an unnamed tool can never turn a gate into an
-    allow.
+    Without a tool, require support for every tool.
     """
     if agent == CLAUDE:
         return True

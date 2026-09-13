@@ -20,8 +20,8 @@ SENSITIVE_TOOLS = {"Bash", "Write", "Edit", "apply_patch"}
 _AGENT = UNKNOWN
 
 _EXPOSURE_RISK = (
-    "Exposed credentials risk unauthorized access, account takeover, and data "
-    "exfiltration across every service they protect."
+    "Exposed credentials can enable unauthorized access, account takeover, or "
+    "data exfiltration."
 )
 
 NETWORK_CMD_RE = re.compile(
@@ -35,13 +35,13 @@ LOCAL_URL_RE = re.compile(
     r"https?://(?:localhost|127\.0\.0\.1|::1|0\.0\.0\.0)[:/\s\"']",
     re.IGNORECASE,
 )
-# A remote URL cancels the loopback exemption (localhost-decoy bypass).
+# Any remote URL cancels the loopback exemption.
 REMOTE_URL_RE = re.compile(
     r"https?://(?!localhost|127\.0\.0\.1|::1|0\.0\.0\.0)[^\s\"']",
     re.IGNORECASE,
 )
 
-# Excludes bare `ssh` — `.ssh` in paths would false-positive as egress.
+# Exclude bare `ssh` because `.ssh` paths would match as egress.
 EGRESS_CMD_RE = re.compile(
     r"\b(?:curl|curlie|wget|aria2c|xh|httpie|scp|sftp|rsync|nc|ncat|netcat|socat|ftp|telnet)\b"
     r"|\bhttps?\b(?!://)",
@@ -122,7 +122,7 @@ CREDENTIAL_FILE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Unconditional — not subject to the package-dir exemption.
+# Always match, even inside an exempt package directory.
 STRONG_CRED_FILE_RE = re.compile(
     r"(?:^|[/\\])(?:\.?credentials\.json|service-account[^/\\]*\.json)$",
     re.IGNORECASE,
@@ -139,7 +139,7 @@ PATCH_PATH_RE = re.compile(
 
 
 def scan_with_gitleaks(text: str) -> bool | None:
-    """Returns True (leak found), False (clean), or None (unavailable)."""
+    """Return True for a leak, False for clean input, or None when unavailable."""
     try:
         result = subprocess.run(
             ["gitleaks", "detect", "--pipe", "--no-banner", "-l", "warn", "--redact"],
@@ -161,7 +161,7 @@ def builtin_has_secret(text: str) -> bool:
 
 
 def has_credential(text: str, *, deep: bool = False) -> bool:
-    """Detect secrets; deep=True adds gitleaks scan."""
+    """Return whether text contains a credential; use gitleaks for deep scans."""
     if builtin_has_secret(text):
         return True
     if deep:
@@ -179,7 +179,6 @@ def ask(reason: str) -> NoReturn:
     if supports_ask(_AGENT):
         respond(Decision.ASK, reason, agent=_AGENT)
 
-    reason = reason.replace("Claude", "the agent")
     reason = reason.replace(
         "Approve only if this access is intentional and the credentials will "
         "not leave this session.",
@@ -197,8 +196,8 @@ def ask(reason: str) -> NoReturn:
         "session. Otherwise remove the credential before re-running.",
     )
     block(
-        "Blocked: this agent cannot require confirmation from a PreToolUse hook "
-        "for this action.\n" + reason
+        "Blocked: this agent cannot show a confirmation prompt for this "
+        "action.\n" + reason
     )
 
 
@@ -211,38 +210,35 @@ def extract_apply_patch_paths(tool_input: dict) -> list[str]:
 
 
 def ask_if_sensitive_path(path: str) -> None:
-    """Ask (Claude) / block (Codex) if a target path looks sensitive."""
+    """Ask when supported; otherwise block access to a sensitive path."""
     if not path:
         return
 
     if STRONG_CRED_FILE_RE.search(path):
         ask(
-            f"This operation targets '{path}', a credential store file "
-            "(OAuth tokens or a cloud service-account key). Exposing this to "
-            "Claude's context risks prompt injection attacks that could forward "
-            f"secrets to an attacker. {_EXPOSURE_RISK} Approve only if you "
-            "intentionally want Claude to access this material."
+            f"This operation targets '{path}', a credential store file with "
+            "OAuth tokens or a cloud service-account key. Exposing it to the agent "
+            "could let prompt injection send credentials to an attacker. "
+            f"{_EXPOSURE_RISK} Approve only if you intentionally want the agent to "
+            "access this material."
         )
 
     for dir_prefix, credential_dir in CREDENTIAL_DIRS.items():
         if credential_dir.contains(path):
             ask(
-                f"This operation targets '{path}', which is inside a "
-                f"credential directory ({dir_prefix}). Files here typically "
-                "contain private keys, access tokens, or authentication "
-                "credentials. Exposing these to Claude's context risks prompt "
-                f"injection attacks that could forward secrets to an attacker. "
-                f"{_EXPOSURE_RISK} Approve only if you intentionally want "
-                "Claude to access this material."
+                f"This operation targets '{path}' inside credential directory "
+                f"({dir_prefix}), where files may contain private keys, tokens, or "
+                "credentials. Exposing them to the agent could let prompt injection "
+                f"send them to an attacker. {_EXPOSURE_RISK} Approve only if you "
+                "intentionally want the agent to access this material."
             )
 
     if CREDENTIAL_FILE_RE.search(path) and not NAME_HEURISTIC_EXEMPT_RE.search(path):
         ask(
-            f"This operation targets '{path}', whose name suggests it may "
-            "contain credentials, tokens, or key material. Exposing this to "
-            "Claude's context risks prompt injection attacks that could forward "
-            f"secrets to an attacker. {_EXPOSURE_RISK} Approve only if you "
-            "intentionally want Claude to access this material."
+            f"This operation targets '{path}', whose name suggests credentials, "
+            "tokens, or key material. Exposing it to the agent could let prompt "
+            f"injection send it to an attacker. {_EXPOSURE_RISK} Approve only if "
+            "you intentionally want the agent to access this material."
         )
 
 
@@ -251,14 +247,13 @@ def main() -> None:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
         raw = sys.stdin.getvalue() if hasattr(sys.stdin, "getvalue") else ""
-        # A corrupted payload could be a sensitive call, so it fails closed.
-        # Empty stdin is never a real tool call, so it alone is allowed.
+        # Fail closed for corrupted payloads; empty stdin is not a tool call.
         if not raw.strip():
             respond(Decision.ALLOW, agent=_AGENT)
         respond(
             Decision.BLOCK,
-            "block-secrets could not parse the hook payload. A payload this hook "
-            "cannot read may be a sensitive call it cannot check, so it is refused.",
+            "Blocked: block-secrets could not parse the hook payload, so it "
+            "could not check a potentially sensitive call.",
             agent=_AGENT,
         )
 
@@ -276,67 +271,57 @@ def main() -> None:
         if command
         else False
     )
-    # A decoy `http://localhost/` alongside a real remote host must not
-    # downgrade a block, so any remote URL cancels the loopback exemption.
     has_remote_url = bool(REMOTE_URL_RE.search(command)) if command else False
     is_local = has_loopback and not has_remote_url
     is_bash_with_network = has_network and not is_local
 
     if command:
-        # No loopback exemption: a hostname query leaves the machine either way.
+        # DNS queries always leave the machine.
         if DNS_EXFIL_RE.search(command):
             block(
                 "Blocked: DNS exfiltration pattern detected.\n"
-                "This command encodes credentials or sensitive information into DNS "
-                "hostnames, bypassing standard network egress controls while evading "
-                f"detection. {_EXPOSURE_RISK}"
+                "This command may put credentials in a DNS hostname to bypass network "
+                f"egress controls. {_EXPOSURE_RISK}"
             )
 
         if CREDENTIAL_FILE_PIPE_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: credential file piped to a network command.\n"
-                "This command reads a file likely to contain credentials or secrets "
-                "(.env, .npmrc, SSH keys, AWS credentials) and pipes its contents "
-                f"to a remote host, directly exposing those credentials. {_EXPOSURE_RISK}"
+                "This command sends a likely credential file (.env, .npmrc, SSH keys, "
+                f"or cloud credentials) to a remote host. {_EXPOSURE_RISK}"
             )
 
-        # Fail-safe for readers the pipe regex misses (`scp id_rsa host:`,
-        # `tar czf - ~/.ssh | curl`). Gated on an explicit egress tool, not the
-        # broad network regex, which a `.ssh` path component would falsely trip.
+        # Catch egress commands the pipe regex misses without matching `.ssh`
+        # as a network tool.
         is_egress_exfil = bool(EGRESS_CMD_RE.search(command)) and not is_local
         if is_egress_exfil and CRED_PATH_IN_CMD_RE.search(command):
             block(
                 "Blocked: credential file referenced in a command with network egress.\n"
-                "This command names a file or directory that typically holds "
-                "credentials, private keys, or tokens (.env, SSH keys, .aws, "
-                ".gnupg, *.pem, credentials.json) and also contacts a remote host, "
-                f"which would expose that material off-machine. {_EXPOSURE_RISK}"
+                "This command names likely credentials or keys (.env, SSH keys, .aws, "
+                ".gnupg, *.pem, or credentials.json) and contacts a remote host. "
+                f"{_EXPOSURE_RISK}"
             )
 
         if ENV_DUMP_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: environment variable dump to network detected.\n"
-                "This command exports all environment variables — including any "
-                "credentials, API keys, or tokens stored there — and sends them "
-                f"to a remote host, exposing all of them at once. {_EXPOSURE_RISK}"
+                "This command sends all environment variables, including credentials, "
+                f"API keys, and tokens, to a remote host. {_EXPOSURE_RISK}"
             )
 
         if CREDENTIAL_STORE_RE.search(command) and has_network and not is_local:
             block(
                 "Blocked: credential store read piped to a remote network destination.\n"
-                "This command reads a secret from a credential store (keychain, vault, "
-                "or secrets manager) and sends the result to a remote host, directly "
-                f"exposing those credentials. {_EXPOSURE_RISK}"
+                "This command sends a secret from a keychain, vault, or secrets manager "
+                f"to a remote host. {_EXPOSURE_RISK}"
             )
 
         if CREDENTIAL_STORE_RE.search(command):
             ask(
-                "This command reads credentials from a system credential store "
-                "(keychain, vault, or secrets manager). Exposing credentials to "
-                "Claude's context creates risk: a prompt injection attack could "
-                "trick Claude into forwarding the retrieved secret to an attacker. "
-                f"{_EXPOSURE_RISK} Approve only if this access is intentional and "
-                "the credentials will not leave this session."
+                "This command reads credentials from a keychain, vault, or secrets "
+                "manager. Exposing them to the agent could let prompt injection send "
+                f"them to an attacker. {_EXPOSURE_RISK} Approve only if this access "
+                "is intentional and the credentials will not leave this session."
             )
 
     if tool_name in ("Read", "Write", "Edit"):
@@ -348,24 +333,22 @@ def main() -> None:
         for path in extract_apply_patch_paths(tool_input):
             ask_if_sensitive_path(path)
 
-    # gitleaks costs a subprocess, so it runs only where a missed secret could
-    # leave the machine; everything else gets the built-in patterns alone.
+    # Run gitleaks only before egress; other checks use built-in patterns.
     serialized = json.dumps(tool_input)
 
     if has_credential(serialized, deep=is_bash_with_network):
         if is_bash_with_network:
             block(
                 "Blocked: credential detected in command with a network destination.\n"
-                "This command contains an API key or authentication credential and "
-                "sends data to a remote host, directly exposing those credentials. "
-                f"{_EXPOSURE_RISK}"
+                "This command sends an API key or authentication credential to a "
+                f"remote host. {_EXPOSURE_RISK}"
             )
         ask(
-            "A credential or API key pattern was detected in this tool call's "
-            "arguments. A prompt injection attack could trick Claude into forwarding "
-            f"these credentials to an attacker. {_EXPOSURE_RISK} If this is "
-            "intentional (e.g., testing authentication locally), approve below. "
-            "Otherwise deny and remove the credential before re-running."
+            "A credential or API key pattern was detected in this tool call. "
+            "Exposing it to the agent could let prompt injection send it to an attacker. "
+            f"{_EXPOSURE_RISK} If this is intentional (e.g., testing authentication "
+            "locally), approve below. Otherwise deny and remove the credential before "
+            "re-running."
         )
 
     sys.exit(0)
@@ -390,9 +373,8 @@ if __name__ == "__main__":
         if _current_tool_name in SENSITIVE_TOOLS:
             respond(
                 Decision.BLOCK,
-                "block-secrets failed while checking a call that can leak a "
-                "credential, so the call is refused rather than let through "
-                "unchecked.",
+                "Blocked: block-secrets failed while checking a call that could "
+                "expose credentials.",
                 agent=_AGENT,
             )
         respond(

@@ -55,12 +55,12 @@ class TestZshCommandHazards:
             ),
             pytest.param(
                 "nix build .#host",
-                "quote nix flake refs",
+                "quote the flake reference",
                 id="unquoted-flake-reference",
             ),
             pytest.param(
                 "git show abc123^",
-                "after a git commit hash",
+                "after a git commit",
                 id="unquoted-git-parent",
             ),
             pytest.param(
@@ -70,7 +70,7 @@ class TestZshCommandHazards:
             ),
             pytest.param(
                 "ls /nix/store/*",
-                "globbing /nix/store",
+                "do not glob /nix/store",
                 id="nix-store-glob",
             ),
         ],
@@ -144,10 +144,15 @@ class TestPythonRedirect:
         [
             pytest.param("uv run python script.py", id="uv-run-python"),
             pytest.param("echo python script.py", id="python-as-argument"),
+            pytest.param('rg -n "python|ruby" notes.md', id="search-pattern"),
+            pytest.param("cat docs/python-notes.md", id="filename"),
         ],
     )
     def test_non_direct_python_is_allowed(self, command):
         assert_allowed(bash(command))
+
+    def test_a_name_after_a_pipe_is_still_an_invocation(self):
+        assert_blocked(bash("cat input.txt | python -"), "uv run")
 
 
 class TestPipRedirect:
@@ -172,6 +177,8 @@ class TestPipRedirect:
             pytest.param("pip3 show package", id="pip3-show"),
             pytest.param("uv add package", id="uv-add"),
             pytest.param("uv run --with package script.py", id="uv-run-with"),
+            pytest.param('rg -n "pip install" notes.md', id="search-pattern"),
+            pytest.param("cat docs/pip-install-guide.md", id="filename"),
         ],
     )
     def test_supported_package_commands_are_allowed(self, command):
@@ -199,13 +206,49 @@ class TestPytestRedirect:
     def test_uv_test_runner_is_allowed(self, command):
         assert_allowed(bash(command))
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(
+                'rg -n -A20 -B5 "pytest|testpaths|addopts|pythonpath" pyproject.toml',
+                id="search-pattern",
+            ),
+            pytest.param("cat docs/pytest-notes.md", id="filename"),
+            pytest.param("echo 'run pytest through uv'", id="prose-argument"),
+            pytest.param("grep -n pytest tests/conftest.py", id="grep-argument"),
+            pytest.param('rg -n "a|pytest" notes.md', id="quoted-alternation"),
+            pytest.param(
+                r'grep -rn "hypothesis\|pytest" pyproject.toml',
+                id="quoted-basic-regex-alternation",
+            ),
+        ],
+    )
+    def test_the_name_outside_command_position_is_allowed(self, command):
+        assert_allowed(bash(command))
+
+    def test_a_name_after_a_separator_is_still_an_invocation(self):
+        assert_blocked(bash("echo ready && pytest tests"), "uv run pytest")
+
 
 class TestPreCommitRedirect:
     def test_pre_commit_run_is_blocked(self):
         assert_blocked(bash("pre-commit run --all-files"), "prek run")
 
+    def test_pre_commit_run_after_a_separator_is_blocked(self):
+        assert_blocked(bash("cd /repo && pre-commit run"), "prek run")
+
     def test_prek_run_is_allowed(self):
         assert_allowed(bash("prek run --all-files"))
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('rg -n "pre-commit run" README.md', id="search-pattern"),
+            pytest.param("cat docs/pre-commit-run.md", id="filename"),
+        ],
+    )
+    def test_the_name_outside_command_position_is_allowed(self, command):
+        assert_allowed(bash(command))
 
 
 class TestGitCommitRedirect:

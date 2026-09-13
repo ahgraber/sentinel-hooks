@@ -1,14 +1,15 @@
 """What each hook does when it cannot judge a call, pinned per hook.
 
-`hook-tampering-blocking` `FailureMode` and the `hook-interface`
-`ErrorHandlingByDamagePotential` contract both let a call proceed rather than
-refuse it, but they do not agree across hooks: the two that cover read-only
-tools alongside sensitive ones fail open, while the Bash-only hook fails closed.
-The asymmetry is the point, so each direction is asserted rather than assumed.
+`hook-interface` `ErrorHandlingByDamagePotential` picks the direction from the
+tool named in the payload, not from the hook, and the three hooks here land
+differently: the Bash-only hook refuses, the tamper hook gates the four tools it
+covers and lets a read through, and the sensitive-path hook lets the call
+proceed. The asymmetry is the point, so each direction is asserted rather than
+assumed.
 
 Without these, the blind `except Exception` handlers are unreachable from the
-suite: a defect that made every check raise would leave the hooks exiting 0 on
-every call, with nothing turning red.
+suite: a defect that made every check raise would leave each hook taking its
+failure path on every call, with nothing turning red.
 """
 
 from __future__ import annotations
@@ -57,26 +58,58 @@ def run_hook(
 class TestUnexpectedErrorFailsOpen:
     """A hook covering read-only tools lets the call through when it breaks."""
 
-    @pytest.mark.parametrize("hook", [TAMPERING, SENSITIVE])
-    def test_an_error_inside_the_judgment_allows_the_call(self, hook: str) -> None:
+    def test_an_error_inside_the_judgment_allows_the_call(self) -> None:
         result = run_hook(
-            hook, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT}
+            SENSITIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT}
         )
 
         assert result.exit_code == 0, (
-            f"{hook} refused a call it failed to judge; the tool mix here is "
-            f"read-only as well as sensitive.\nstderr: {result.stderr}"
+            f"{SENSITIVE} refused a call it failed to judge; the tool mix here "
+            f"is read-only as well as sensitive.\nstderr: {result.stderr}"
         )
         assert result.stdout == "", "an Allow writes nothing to stdout"
 
-    def test_the_tamper_hook_allows_a_malformed_write_payload(self) -> None:
-        """Write and Edit take a separate branch from Bash, so it is asserted separately."""
+
+class TestTamperHookGatesWhatItCannotJudge:
+    """Every tool the tamper hook gates can modify state, so a failure reaches the user.
+
+    The payload names the tool, so damage potential is known even when nothing
+    else about the call is. A read stays allowed, because the hook is registered
+    for `Read` as well and refusing one buys nothing.
+    """
+
+    @pytest.mark.parametrize("tool_name", ["Bash", "Write", "Edit", "apply_patch"])
+    def test_an_error_inside_the_judgment_refuses_the_call(
+        self, tool_name: str
+    ) -> None:
+        """No agent is named here, so the ask degrades to the refusal."""
         result = run_hook(
-            TAMPERING, {"tool_name": "Write", "tool_input": MALFORMED_TOOL_INPUT}
+            TAMPERING, {"tool_name": tool_name, "tool_input": MALFORMED_TOOL_INPUT}
+        )
+
+        assert result.exit_code == 2, (
+            f"{TAMPERING} allowed a {tool_name} call it failed to judge"
+            f"\nstdout: {result.stdout}"
+        )
+        assert result.stdout == "", "a refusal writes nothing to stdout"
+        assert "block-hook-tampering failed" in result.stderr
+
+    def test_a_read_is_allowed_whatever_its_payload_holds(self) -> None:
+        """A read is passed before anything in the payload is reached."""
+        result = run_hook(
+            TAMPERING, {"tool_name": "Read", "tool_input": MALFORMED_TOOL_INPUT}
         )
 
         assert result.exit_code == 0
         assert result.stdout == ""
+
+    def test_an_unparsable_payload_allows_the_call(self) -> None:
+        """The tool is unnamed, and an unnamed tool cannot be assumed a mutation."""
+        result = run_hook(TAMPERING, raw="{not json")
+
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        assert "not checked" in result.stderr
 
 
 class TestUnexpectedErrorFailsClosed:

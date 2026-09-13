@@ -1,6 +1,8 @@
 # Spec: secret-access-blocking
 
-## Requirement: ToolScope
+## Requirements
+
+### Requirement: ToolScope
 
 The system SHALL evaluate ALL tool calls, regardless of tool name.
 

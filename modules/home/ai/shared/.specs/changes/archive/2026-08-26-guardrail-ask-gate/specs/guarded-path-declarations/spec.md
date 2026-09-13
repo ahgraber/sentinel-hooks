@@ -4,7 +4,9 @@
 
 ---
 
-## ADDED Requirement: SingleDeclarationSource
+## ADDED Requirements
+
+### Requirement: SingleDeclarationSource
 
 Serves: one-authoring-surface
 
@@ -15,7 +17,7 @@ location-only roots, and the secret-floor representatives.
 Every enforcement implementation SHALL take these declarations from the manifest rather than carrying a copy.
 A copy is a second authoring surface, and a second authoring surface is where one platform or one implementation gets left behind.
 
-### Scenario: TwoImplementationsOneSource
+#### Scenario: TwoImplementationsOneSource
 
 - **GIVEN** two implementations of the tamper policy in different languages
 - **WHEN** each judges the same path
@@ -31,7 +33,7 @@ A copy is a second authoring surface, and a second authoring surface is where on
 
 ---
 
-## ADDED Requirement: ManifestIsEnforcement
+### Requirement: ManifestIsEnforcement
 
 Serves: one-authoring-surface
 
@@ -39,7 +41,7 @@ The manifest SHALL belong to the protected surface it declares.
 
 An edit to the manifest changes what every implementation guards, which is the definition of an enforcement change.
 
-### Scenario: MutateTheManifest
+#### Scenario: MutateTheManifest
 
 - **GIVEN** any mutating tool call is intercepted
 - **WHEN** the target is the manifest
@@ -47,7 +49,7 @@ An edit to the manifest changes what every implementation guards, which is the d
 
 ---
 
-## ADDED Requirement: LoadFailureIsReported
+### Requirement: LoadFailureIsReported
 
 Serves: one-authoring-surface
 
@@ -59,7 +61,7 @@ proceeds: the hook covers a mix of sensitive and read-only tools, and the
 operating system sandbox and permission layers do not read the manifest, so
 they keep enforcing regardless.
 
-### Scenario: MissingManifest
+#### Scenario: MissingManifest
 
 - **GIVEN** the manifest file is absent
 - **WHEN** a tool call is intercepted
@@ -75,7 +77,7 @@ they keep enforcing regardless.
 
 ---
 
-## ADDED Requirement: ConfigurationSurfacesCoverTheDeclarations
+### Requirement: ConfigurationSurfacesCoverTheDeclarations
 
 Serves: one-authoring-surface
 
@@ -89,7 +91,7 @@ What must not happen is the reverse, where the manifest names something no surfa
 Coverage SHALL be judged against concrete representative paths, not by comparing pattern text.
 A pattern that looks right and does not match is the failure this requirement exists to catch.
 
-### Scenario: AgentPermissionFloor
+#### Scenario: AgentPermissionFloor
 
 - **GIVEN** a per-user agent permission list
 - **WHEN** it is checked against the manifest's representatives
@@ -109,7 +111,7 @@ A pattern that looks right and does not match is the failure this requirement ex
 
 ---
 
-## ADDED Requirement: ExceptionsAreDeclared
+### Requirement: ExceptionsAreDeclared
 
 Serves: intent-vs-drift
 
@@ -120,7 +122,7 @@ applies to.
 Conformance SHALL accept a declared exception and SHALL treat an undeclared loosening as drift.
 The difference between the two is the difference between a decision and an accident, and only the manifest can carry the decision.
 
-### Scenario: DeclaredException
+#### Scenario: DeclaredException
 
 - **GIVEN** a surface entry loosens coverage for a location the manifest
   declares as an exception for that surface

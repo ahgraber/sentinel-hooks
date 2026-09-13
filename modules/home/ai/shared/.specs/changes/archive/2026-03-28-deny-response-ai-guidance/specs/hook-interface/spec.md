@@ -5,7 +5,9 @@
 
 ---
 
-## MODIFIED Requirement: ExplanationContract
+## MODIFIED Requirements
+
+### Requirement: ExplanationContract
 
 Every block or ask response SHALL include an explanation that contains:
 

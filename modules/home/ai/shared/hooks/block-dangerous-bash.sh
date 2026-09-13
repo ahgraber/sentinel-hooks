@@ -1,17 +1,8 @@
 #!/usr/bin/env bash
-# Hook: Block dangerous bash patterns
+# PreToolUse hook: block reverse shells, pipe-to-shell commands, obfuscated
+# execution, clipboard reads, and fork bombs before Bash runs.
 #
-# PreToolUse hook for the Bash tool.
-# Blocks reverse shells, pipe-to-shell, obfuscated exec, clipboard reads,
-# and fork bombs before they can be executed.
-#
-# Each rule is tested against the command as written and against a normalized
-# spelling of it (see normalize_text), so a rule written for `| bash` still
-# fires on `| b'a'sh`. Testing both can only add matches, never drop one.
-#
-# Exit codes:
-#   0 = allow
-#   2 = block (hard block, no recovery path in current invocation)
+# Match raw and normalized command spellings. Exit 0 to allow or 2 to block.
 
 set -uo pipefail
 
@@ -26,15 +17,9 @@ matches_pattern() {
   '
 }
 
-# Rewrites shell spellings that hide a command word from the rules.
-#
-# Quotes are dropped only where they cannot be delimiting an argument: an empty
-# pair, a span with no internal whitespace, or a span glued to an adjacent word
-# character. A standalone quoted argument such as `grep 'curl | bash'` keeps its
-# quotes, so searching for a string is never rewritten into running it.
-#
-# Backslash-escaped word characters are left as written; undoing those needs
-# quote-context tracking this does not do.
+# Remove empty or word-splicing quotes that hide command names. Preserve
+# standalone quoted arguments such as `grep 'curl | bash'`. Backslash-escaped
+# word characters remain unchanged.
 normalize_text() {
   perl -0e '
     my $text = do { local $/; <STDIN> };
@@ -77,7 +62,7 @@ block() {
   exit 2
 }
 
-# Bash is the only tool here, and it is sensitive: fail closed on any error.
+# Fail closed because this hook handles only Bash.
 input_json="$(cat)" || exit 2
 
 tool_name="$(jq -re '.tool_name // empty' 2> /dev/null <<< "${input_json}")" || exit 2
@@ -93,49 +78,46 @@ if [[ "${normalized_text}" != "${command_text}" ]]; then
   candidate_texts+=("${normalized_text}")
 fi
 
-# The /dev/tcp and nc checks are positional (host segment), so appended text
-# such as "; echo localhost" cannot buy the loopback exemption.
+# Check loopback exemptions at the host position so appended text cannot qualify.
 readonly LOCAL_DEVTCP_RE='\/dev\/(tcp|udp)\/(127\.0\.0\.1|localhost|::1|0\.0\.0\.0)\/'
 readonly LOCAL_NC_RE='\bnc\b[^;|&\n]*(127\.0\.0\.1|localhost|::1|0\.0\.0\.0)\s+[0-9]'
 readonly LOCAL_GENERIC_RE='(127\.0\.0\.1|localhost|::1|0\.0\.0\.0)'
 
 # rule <exemption> <pattern> <message>
 #   exemption: devtcp | nc | generic | none
-#   pattern:   PCRE matched case-insensitively with dot-matches-newline
-#   message:   block reason passed to block()
+#   pattern: case-insensitive PCRE with dot matching newlines
+#   message: block reason
 
 rules=()
 
 rule() { rules+=("$1" "$2" "$3"); }
 
 _MSG_REVERSE_SHELL="Blocked: reverse shell pattern detected.
-This command opens a network connection back to a remote host and executes an interactive shell, giving the remote host full command-line control over this system."
+This command would give a remote host command-line access to this system."
 
 _MSG_PIPE_TO_SHELL="Blocked: download-and-execute pipeline detected.
-This command downloads a script from the internet and immediately executes it, bypassing any opportunity to inspect what the script will do before it runs."
+This command downloads and runs remote code without inspection."
 
 _MSG_OBFUSCATED="Blocked: obfuscated execution detected.
-This command decodes hidden content at runtime and executes it as a shell script, making the actual payload invisible to static code review."
+This command decodes and runs content hidden from review."
 
 _MSG_CLIPBOARD="Blocked: clipboard read detected.
-This command reads the system clipboard, which may contain passwords, tokens, or other sensitive data the user recently copied."
+The clipboard can contain recently copied passwords or tokens."
 
 _MSG_FORK_BOMB="Blocked: fork bomb detected.
-This command defines a function that recursively spawns processes until system memory is exhausted, causing a system crash."
+This command would spawn processes until the system exhausts its resources."
 
 _MSG_CRON="Blocked: cron injection detected.
-This command installs or modifies cron jobs, which can establish persistent backdoors that survive reboots and run arbitrary code on a schedule."
+This command could install code that persists across reboots and runs on a schedule."
 
 _MSG_SSH_KEY="Blocked: SSH key manipulation detected.
-This command modifies SSH keys or authorized_keys, which could grant persistent unauthorized access to this system or to remote systems."
+This command could grant persistent access to this or a remote system."
 
 _MSG_PRIVILEGE="Blocked: privilege escalation detected.
-This command elevates to root or another user's privileges.
-Claude Code should operate within the current user's permissions.
-Delegate these commands to the user to run manually if they are necessary for the task."
+This command would run as root or another user, outside the agent's permitted identity."
 
 _MSG_MACOS="Blocked: macOS system interaction detected.
-This command launches applications, runs AppleScript, or modifies system preferences, which can have side effects outside the development environment."
+This command would launch an app, run AppleScript, or change system preferences outside the development environment."
 
 rule devtcp 'bash\s+-i\b.*/dev/(tcp|udp)/' "${_MSG_REVERSE_SHELL}"
 rule devtcp '/dev/(tcp|udp)/[^/\s]+/[0-9]+' "${_MSG_REVERSE_SHELL}"
@@ -184,8 +166,7 @@ for ((i = 0; i < ${#rules[@]}; i += 3)); do
   pattern="${rules[i + 1]}"
   message="${rules[i + 2]}"
 
-  # The exemption is judged against whichever spelling matched, so a loopback
-  # target exempts the rewritten text too and not only the original.
+  # Apply loopback exemptions to the spelling that matched.
   for text in "${candidate_texts[@]}"; do
     matches_pattern "${pattern}" <<< "${text}" || continue
     case "${exemption}" in

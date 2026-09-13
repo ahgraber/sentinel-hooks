@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Hook: Inject skill-usage instructions at SessionStart.
-#
-# A missing or empty instructions directory is reported and then ignored: the
-# session starts without the guidance rather than not at all.
+# SessionStart hook: inject shared instructions. Missing or empty instruction
+# directories warn and do not block startup.
 
 set -euo pipefail
 
@@ -50,8 +48,8 @@ to_json_string_literal() {
 
 escaped=$(to_json_string_literal "${content}")
 
-# `escaped` is already a complete JSON string literal, quotes included, so the
-# %s must NOT be quoted here. printf rather than a heredoc: bash 5.3+ hangs.
+# `escaped` includes JSON quotes; keep `%s` unquoted.
+# printf is intentional; heredocs hang on Bash 5.3+.
 printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": %s\n  }\n}\n' "${escaped}"
 
 exit 0

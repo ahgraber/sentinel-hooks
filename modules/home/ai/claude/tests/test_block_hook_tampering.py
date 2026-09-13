@@ -95,11 +95,16 @@ class TestMutationGate:
 
 
 class TestBashCommandProtection:
+    def test_bash_reading_repo_hook_proceeds(self):
+        # The agent module tree is read-through, so a recognized read of a hook
+        # source runs unprompted. Reviewing a guardrail is not changing it.
+        assert_allowed(bash(f"cat {repo_path('hooks', 'block-secrets.py')}"))
+
     def test_bash_touching_repo_hook_asks(self):
-        # The Bash branch matches on mention, not intent: a command's effect
-        # cannot be read off its text, so any reference is gated.
+        # Outside a recognized read the Bash branch still matches on mention,
+        # not intent: a command's effect cannot be read off its text.
         assert_ask(
-            bash(f"cat {repo_path('hooks', 'block-secrets.py')}"),
+            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-secrets.py')}"),
             "hooks",
         )
 

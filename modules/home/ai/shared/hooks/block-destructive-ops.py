@@ -3,20 +3,11 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""PreToolUse hook blocking destructive Bash commands, per block-destructive-ops-patterns.toml.
+"""Block destructive Bash commands from PreToolUse hooks.
 
-Each rule is matched against the command as written and against a normalized
-spelling of it, so a rule written for `rm -rf /` still fires on `r'm' -rf /`;
-matching both can only add matches, never drop one.
-
-An `ask` rule needs an agent that honors PreToolUse prompts, so where that
-cannot be confirmed the rule blocks instead — fail closed. A missing or
-unreadable pattern file fails open, rather than refusing every Bash command over
-this hook's own configuration error.
-
-Rules are read from this file's own directory, so a caller substituting rules
-runs a copy of this script elsewhere, and every sibling module imported here has
-to travel with that copy; `SIBLING_MODULES` in the tests is the list.
+Rules match raw and normalized command spellings. Unsupported asks block.
+Missing or unreadable rules fail open. Rules and sibling modules load from the
+hook's directory.
 """
 
 import json
@@ -29,7 +20,7 @@ from hook_response import Decision, invoking_agent, respond, supports_ask
 
 
 def load_rules() -> list[dict]:
-    """Load rules from the co-located TOML file, flat or nested, flattened into one list. Return [] on any error."""
+    """Return co-located rules from flat or nested TOML; return `[]` on error."""
     patterns_file = Path(__file__).parent / "block-destructive-ops-patterns.toml"
     try:
         with open(patterns_file, "rb") as f:
@@ -59,15 +50,9 @@ def _splices_word(char: str) -> bool:
 
 
 def normalize(command: str) -> str:
-    """Rewrite shell spellings that hide a command word from the rule patterns.
+    """Remove line continuations and quote splices that hide command words.
 
-    A line continuation splits a word across lines and a quote pair splices into
-    the middle of one, so `r'm' -rf /` reaches the shell as `rm -rf /` while the
-    patterns are written against the plain spelling. Quotes are dropped only
-    where they cannot be delimiting an argument, so `grep 'rm -rf /'` keeps its
-    quotes and searching for a string is never rewritten into running it.
-    Backslash-escaped word characters are left as written; undoing those needs
-    quote-context tracking, which this does not do.
+    Preserve standalone quoted arguments and backslash-escaped word characters.
     """
     text = _LINE_CONTINUATION.sub("", command)
 
@@ -89,10 +74,8 @@ def main() -> None:
     except Exception:  # noqa: BLE001
         respond(
             Decision.BLOCK,
-            "block-destructive-ops could not parse the hook payload, so the "
-            "command in it was never checked. This hook covers Bash alone, "
-            "where an unchecked command can delete work, rewrite history, or "
-            "reach past this machine, so it is refused rather than let through.",
+            "Blocked: block-destructive-ops could not parse the hook payload, "
+            "so the Bash command was never checked and is refused.",
         )
 
     if data.get("tool_name") != "Bash":
@@ -111,9 +94,7 @@ def main() -> None:
     if not rules:
         sys.exit(0)
 
-    # A `block` must win over an `ask` regardless of file order, or an earlier
-    # ask rule (`git add -A`) masks a later block (`rm -rf /`) in a chained
-    # command and downgrades it to a prompt. Hence one first match per mode.
+    # A block match overrides asks. Preserve the first match within each mode.
     first_block: str | None = None
     first_ask: str | None = None
 
@@ -151,8 +132,8 @@ def main() -> None:
         if supports_ask(agent):
             respond(Decision.ASK, first_ask, agent=agent)
         first_ask += (
-            "\n\nThis agent cannot require confirmation from a PreToolUse "
-            "hook, so this command is blocked instead of prompted."
+            "\n\nThis agent cannot show a confirmation prompt, so this command "
+            "is blocked instead of prompted."
         )
         respond(Decision.BLOCK, f"Blocked: {first_ask}", agent=agent)
 
@@ -165,11 +146,9 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001
-        # Bash is the only tool here, and it is sensitive: fail closed.
+        # Fail closed because this hook handles only Bash.
         respond(
             Decision.BLOCK,
-            "block-destructive-ops failed while checking this command, so the "
-            "command was never checked. This hook covers Bash alone, where an "
-            "unchecked command can delete work, rewrite history, or reach past "
-            "this machine, so it is refused rather than let through.",
+            "Blocked: block-destructive-ops failed; the Bash command was never "
+            "checked and is refused.",
         )

@@ -1,6 +1,8 @@
 # Delta Spec: dangerous-bash-blocking
 
-## MODIFIED Requirement: RuleRegistrationPattern
+## MODIFIED Requirements
+
+### Requirement: RuleRegistrationPattern
 
 ADDED to existing spec:
 

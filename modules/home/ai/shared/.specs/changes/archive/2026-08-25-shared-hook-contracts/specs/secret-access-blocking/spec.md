@@ -4,7 +4,9 @@
 
 ---
 
-## MODIFIED Requirement: AskOnCredentialStoreRead
+## MODIFIED Requirements
+
+### Requirement: AskOnCredentialStoreRead
 
 The system SHALL ask before a read of a credential store.
 
@@ -13,7 +15,7 @@ The set of credential stores is unchanged.
 Whether a supplied path denotes a credential store SHALL be determined according to `path-matching`.
 A store reached by a differing letter case on a case-insensitive filesystem is the same store, and SHALL prompt.
 
-### Scenario: CaseVariantCredentialStore
+#### Scenario: CaseVariantCredentialStore
 
 - **GIVEN** a Read tool call is intercepted on a case-insensitive filesystem
 - **WHEN** the target is a credential store named under a differing letter case
@@ -21,7 +23,7 @@ A store reached by a differing letter case on a case-insensitive filesystem is t
 
 ---
 
-## MODIFIED Requirement: AskOnSecretFileAccess
+### Requirement: AskOnSecretFileAccess
 
 The system SHALL ask before access to a file whose location marks it as secret-bearing.
 

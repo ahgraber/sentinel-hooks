@@ -260,3 +260,32 @@ class TestArbitraryText:
 
     def test_command_naming_nothing_guarded(self, guarded: GuardedLocations) -> None:
         assert guarded.mentioned_in("git status") is False
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("rm -rf modules/home/ai/shared/hooks", id="bare-directory"),
+            pytest.param("ls modules/home/ai/shared/hooks/", id="trailing-separator"),
+            pytest.param("cd modules/home/ai/shared/hooks && ls", id="before-operator"),
+            pytest.param("cat 'modules/home/ai/shared/hooks/x.py'", id="quoted"),
+        ],
+    )
+    def test_a_directory_is_named_with_or_without_its_separator(
+        self, guarded: GuardedLocations, command: str
+    ) -> None:
+        """The declaration's trailing separator is a boundary, not text to match."""
+        assert guarded.mentioned_in(command) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("cat my-modules/home/ai/shared/hooks/x", id="longer-prefix"),
+            pytest.param("cat modules/home/ai/shared/hooks-old/x", id="longer-suffix"),
+            pytest.param("cat vendor/x-modules/home/ai/shared/hooks", id="both"),
+        ],
+    )
+    def test_a_longer_name_holding_the_fragment_is_not_guarded(
+        self, guarded: GuardedLocations, command: str
+    ) -> None:
+        """A component matches whole; a backup beside a guarded tree is its own path."""
+        assert guarded.mentioned_in(command) is False

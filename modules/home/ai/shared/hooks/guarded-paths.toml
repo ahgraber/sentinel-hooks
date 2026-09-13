@@ -1,12 +1,9 @@
-# The guarded surface, declared once. Every enforcement implementation parses
-# this file at invocation, and the conformance tests over the Claude settings,
-# Codex TOMLs, and VS Code edit approvals treat it as their oracle.
-#
-# Notation: `~/` is the user's home; `<repo>/` this repository, matched against
-# whichever checkout or worktree contains the path being judged; `*` a wildcard
-# path segment. A trailing `/` guards the directory and everything under it.
+# Source of truth for guarded paths across hook implementations and conformance tests.
+# `~/` means the user's home; `<repo>/` means the checkout containing the path.
+# `*` matches one path segment. A trailing `/` includes all descendants.
 
-[gated] # ask where the agent's tool surface can prompt; refuse elsewhere
+# ask when the agent/tool supports it; refuse otherwise
+[gated]
 deployed = [
   "~/.agents/skills/",
   "~/.claude.json",
@@ -17,9 +14,8 @@ deployed = [
   "~/.codex/hooks.json",
   "~/.codex/rules/",
   "~/.codex/skills/",
-  # `-p <name>` layers $CODEX_HOME/<name>.config.toml over the base config, so
-  # a layer widens anything the base narrows. It need not exist yet, so only
-  # the fragment can carry it.
+  # Named Codex profiles can widen base permissions and may not exist yet, so
+  # guard them by fragment.
   "~/.codex/*.config.toml",
   "~/.copilot/hooks/",
   "~/Library/Application Support/Code/User/prompts/global.instructions.md",
@@ -28,10 +24,10 @@ deployed = [
   "~/.config/Code/User/prompts/global.instructions.md",
   "~/.config/Code/User/prompts/shell.instructions.md",
   "~/.config/Code/User/settings.json",
-  # These two paths only, not the whole of ~/.pi, which also holds the npm
-  # prefix this module installs into.
+  # Guard only agent settings; ~/.pi also contains the module's npm prefix.
   "~/.pi/agent/settings.json",
   "~/.pi/agent/extensions/",
+  "~/.pi/agent/skills/",
 ]
 sources = [
   "<repo>/users/*/home-manager/claude/settings.json",
@@ -50,10 +46,19 @@ sources = [
   "<repo>/modules/home/apps/vscode/settings.json",
 ]
 
-[credentials] # block on every agent; zero-access reads; never asked
-paths = ["~/.claude/.credentials.json", "~/.codex/auth.json", "~/.pi/agent/auth.json"]
+# block on every agent; zero-access reads; never asked
+[credentials]
+paths = [
+  "~/.claude/.credentials.json",
+  "~/.codex/auth.json",
+  "~/.pi/agent/auth.json",
+  # Home activation renders this MCP environment file from 1Password. Declare
+  # it explicitly because the `.env` heuristic does not match its suffix.
+  "~/.config/mcp-secrets.env",
+]
 
-[instruction-layers] # markdown carve-out: [location, layer] pairs
+# markdown carve-out: [location, layer] pairs
+[instruction-layers]
 layers = [
   ["~/.claude/hooks/", "instructions/"],
   ["~/.codex/hooks/", "instructions/"],
@@ -67,25 +72,49 @@ layers = [
 [location-only] # judged by resolution alone, no text fragment
 paths = ["~/.claude/", "~/.codex/", "~/.copilot/"]
 
-# Permits bash read ops; forbids writes.
-# The classifier accepts only utilities that cannot write or execute.
-# Adding a location here leaves the sandbox as the only layer that sees a Bash read of it.
+# Permit Bash reads through utilities that cannot write or execute. The sandbox
+# is the remaining guard for reads under these paths.
 [read-through]
-paths = ["~/.claude/skills/", "~/.codex/skills/", "~/.agents/skills/"]
-[secret-floor] # read-gating floor tests, beyond the credential paths above
+paths = [
+  # Allow ordinary reads under agent homes.
+  # Writes remain ask-gated, and credential reads remain blocked.
+  "~/.claude/",
+  "~/.codex/",
+  "~/.copilot/",
+  # Specifically permit reads under the skills subdirectories
+  "~/.claude/skills/",
+  "~/.codex/skills/",
+  "~/.pi/agent/skills/",
+  "~/.agents/skills/",
+  # Allow reads for reviewing tracked guardrail sources. Writes remain ask-gated,
+  # and credential reads remain blocked.
+  "<repo>/modules/home/ai/",
+]
+
+# Permit existing scripts to run from these paths. Keep this separate from
+# read-through because script execution permits more than reading.
+[exec-through]
+paths = ["~/.claude/skills/", "~/.codex/skills/", "~/.pi/agent/skills/", "~/.agents/skills/"]
+
+# read-gating floor tests, beyond the credential paths above
+[secret-floor]
 paths = ["~/.config/sops-nix/secrets/example", "~/.local/state/sops-nix/secrets.d/1/example"]
 
-[[exceptions]] # deliberate loosenings, one table per exception
+# deliberate loosenings, one table per exception
+[[exceptions]]
 surface = "vscode-edit-approvals"
 pattern = "**/Code/User/workspaceStorage/**"
 why = "VS Code's own per-workspace state churn; gating it prompts on every chat session"
 
 [[exceptions]]
+surface = "sensitive-path-name-heuristic"
+pattern = "<repo>/scripts/mcp-secrets.sh"
+# This tracked renderer holds no secret; `[credentials]` blocks its output.
+why = "a tracked program named for the secret file it renders, holding none itself"
+
+[[exceptions]]
 surface = "codex-guarded-workspace"
 pattern = "~/.codex/*.config.toml"
-# Codex rejects read access on a glob path outright, accepting only an exact
-# path or a trailing /** subtree. A profile layer need not exist yet, so no
-# exact path reaches it, and deny would hide a file this class declares
-# readable. The layers stay gated by the tamper hook, by the Claude
-# Edit(~/.codex/*.config.toml) rule, and by the VS Code **/.codex/** glob.
+# Codex read grants accept exact paths and trailing `/**` only. Profile layers
+# may not exist yet, so other guardrails gate their edits.
 why = "Codex accepts no read-access glob, and a profile layer has no exact path until it exists"

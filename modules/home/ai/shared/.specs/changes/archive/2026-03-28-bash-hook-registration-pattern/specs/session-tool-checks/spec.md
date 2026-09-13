@@ -1,6 +1,8 @@
 # Delta Spec: session-tool-checks
 
-## MODIFIED Requirement: ToolRegistrationPattern
+## MODIFIED Requirements
+
+### Requirement: ToolRegistrationPattern
 
 ADDED to existing spec:
 

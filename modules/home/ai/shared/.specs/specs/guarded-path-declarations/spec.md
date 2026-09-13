@@ -1,13 +1,15 @@
 # Spec: guarded-path-declarations
 
-## Requirement: SingleDeclarationSource
+## Requirements
+
+### Requirement: SingleDeclarationSource
 
 The system SHALL declare the guarded surface in one manifest: the gated protected classes, the agent credential class, the instruction layers, the location-only roots, and the secret-floor representatives.
 
 Every enforcement implementation SHALL take these declarations from the manifest rather than carrying a copy.
 A copy is a second authoring surface, and a second authoring surface is where one platform or one implementation gets left behind.
 
-### Scenario: TwoImplementationsOneSource
+#### Scenario: TwoImplementationsOneSource
 
 - **GIVEN** two implementations of the tamper policy in different languages
 - **WHEN** each judges the same path

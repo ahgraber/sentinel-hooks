@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# Stop hook: run pre-commit over every file the turn changed.
+# Stop hook: run pre-commit hooks on every file changed during the turn.
 #
-# End-of-turn rather than per-edit: a per-edit run fires autofixers mid-sequence
-# (stripping an import before its first use lands) and never sees files written
-# by Bash.
+# Per-edit checks can remove imports before later edits use them and cannot see
+# files written by Bash, so this hook runs at the end of the turn.
 #
-# Exit codes:
-#   0 = proceed
-#   2 = block the stop; stderr goes back to the agent to fix
+# Exit 0 to proceed or 2 to block the stop and return stderr to the agent.
 set -euo pipefail
 
 payload="$(cat)"
 
-# Set on the pass after a block, so this caps the agent at one blocking round.
+# Set after a block to limit the agent to one blocking round.
 if [[ "$(jq -r '.stop_hook_active // false' <<< "${payload}")" == "true" ]]; then
   exit 0
 fi
@@ -55,11 +52,10 @@ else
   exit 0
 fi
 
-# `run --files` does no stashing; a bare `run` stashes the work tree and leaves it
-# reverted if the cycle fails partway.
+# `run --files` avoids stashing, which can leave the worktree reverted after failure.
 output="$(cd "${root}" && "${runner}" run --files "${files[@]}" 2>&1)" && exit 0
 
 printf '%s\n' "${output}" >&2
-printf '\n%s failed on the changed files. Fix the reported problems before finishing; hooks that rewrote files have already applied their changes, so re-read those files rather than trusting your in-context copy.\n' \
+printf '\n%s failed on changed files. Fix the reported problems before finishing. Hooks may have changed files; re-read those files before editing.\n' \
   "${runner}" >&2
 exit 2

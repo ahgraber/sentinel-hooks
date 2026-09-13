@@ -108,11 +108,17 @@ class TestMutationProtection:
 
 
 class TestBashCommandProtection:
+    def test_bash_reading_repo_hook_proceeds(self):
+        # The agent module tree is read-through, so a recognized read runs
+        # unprompted here too. This is the agent whose gate is a refusal rather
+        # than a question, so the carve-out is what makes review reachable.
+        assert_allowed(bash(f"cat {repo_path('hooks', 'block-secrets.py')}"))
+
     def test_bash_touching_repo_hook_blocks(self):
-        # Bash matches on mention, not intent: a command's effect is not
-        # readable off its text, so any reference blocks.
+        # Outside a recognized read, Bash still matches on mention, not intent:
+        # a command's effect is not readable off its text.
         assert_block_contract(
-            bash(f"cat {repo_path('hooks', 'block-secrets.py')}"),
+            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-secrets.py')}"),
             "hooks",
         )
 

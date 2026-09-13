@@ -3,11 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pyyaml"]
 # ///
-"""Re-inject the skills catalog as SessionStart `additionalContext` after compaction.
-
-For SessionStart with matcher:compact — the platform injects the catalog at
-initial startup, but compaction compresses it away.
-"""
+"""Re-inject the skills catalog after SessionStart compaction."""
 
 import json
 import os
@@ -52,7 +48,7 @@ def parse_frontmatter(text: str) -> dict:
 
 
 def _user_skill_dirs() -> list[Path]:
-    """Return directories containing user-level SKILL.md files."""
+    """Return default and existing project-level Claude skill directories."""
     home = Path.home()
     dirs = [home / ".claude" / "skills"]
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", "")
@@ -68,8 +64,7 @@ def _plugin_cache_dir() -> Path:
     return Path.home() / ".claude" / "plugins" / "cache"
 
 
-# Official plugin skills reach the catalog through user symlinks already, and
-# temp checkouts under plugins/cache are stale.
+# Skip official-plugin symlinks and stale temporary checkouts.
 _SKIP_PLUGIN_PREFIXES = ("claude-plugins-official", "temp_git_")
 
 
@@ -91,10 +86,9 @@ def _read_skill(skill_file: Path) -> tuple[str, str] | None:
 
 
 def _collect_user_skills() -> list[tuple[str, str]]:
-    """Collect skills from user-level skill directories.
+    """Collect unique user skills from direct child directories in sorted order.
 
-    Each child directory is checked for SKILL.md directly, rather than relying
-    on `rglob` following symlinks, whose behavior changed in Python 3.13.
+    Direct iteration follows skill-directory symlinks consistently on Python 3.13.
     """
     seen: set[str] = set()
     skills: list[tuple[str, str]] = []
@@ -121,7 +115,7 @@ def _collect_user_skills() -> list[tuple[str, str]]:
 
 
 def _collect_plugin_skills(exclude: set[str]) -> list[tuple[str, str]]:
-    """Collect skills from the plugin cache, namespaced as `plugin:skill`, skipping names in `exclude`."""
+    """Collect unique `plugin:skill` entries, skipping excluded names and prefixes."""
     cache = _plugin_cache_dir()
     if not cache.is_dir():
         return []

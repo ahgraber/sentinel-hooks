@@ -1,6 +1,8 @@
 # Spec: hook-tampering-blocking
 
-## Requirement: Purpose
+## Requirements
+
+### Requirement: Purpose
 
 The system SHALL ensure that the files constraining an agent's behavior — its own or any other agent's — change only with the user's approval.
 

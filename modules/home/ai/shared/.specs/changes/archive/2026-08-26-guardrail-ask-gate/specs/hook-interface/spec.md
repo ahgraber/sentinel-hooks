@@ -4,7 +4,9 @@
 
 ---
 
-## MODIFIED Requirement: ExitCodes
+## MODIFIED Requirements
+
+### Requirement: ExitCodes
 
 Serves: safe-degradation
 
@@ -72,7 +74,7 @@ For the shell tool the same output is ignored and the call proceeds, so `Ask` de
 Where the surface has no interactive user, the platform itself treats the prompt as a denial, which is the degradation direction this requirement requires.
 Established empirically on 2026-08-27; the probe record in the change's `.verify/` directory is the evidence.
 
-### Scenario: WarnOnAgentThatSupportsIt
+#### Scenario: WarnOnAgentThatSupportsIt
 
 - **GIVEN** a hook reaches a `Warn` decision
 - **WHEN** the invoking agent can report a reason without refusing the tool call
@@ -104,7 +106,7 @@ Established empirically on 2026-08-27; the probe record in the change's `.verify
 
 ---
 
-## MODIFIED Requirement: NoSideEffects
+### Requirement: NoSideEffects
 
 Serves: contract-states-its-property
 
@@ -121,7 +123,7 @@ This binds a hook at invocation.
 It does not bind test or tooling code that imports the same modules outside the tool-call path.
 Read as a blanket prohibition on writing to disk, the requirement is applied wherever the mechanism appears rather than where the boundary is at stake, and cost is spent where no protection is bought.
 
-### Scenario: HookDoesNotAlterWhatItJudges
+#### Scenario: HookDoesNotAlterWhatItJudges
 
 - **GIVEN** a hook is judging a tool call
 - **WHEN** it reaches its decision

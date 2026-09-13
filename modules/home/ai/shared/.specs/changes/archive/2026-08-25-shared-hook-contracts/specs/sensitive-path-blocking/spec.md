@@ -4,7 +4,9 @@
 
 ---
 
-## MODIFIED Requirement: ZeroAccessPaths
+## MODIFIED Requirements
+
+### Requirement: ZeroAccessPaths
 
 The system SHALL define a set of zero-access paths that may never be written to or modified.
 
@@ -24,7 +26,7 @@ A name heuristic that stopped applying because a letter was capitalised would be
 Every pattern in this requirement therefore matches without regard to case, on every volume.
 The error this admits is refusing a path that resembles a secret and is not one, which is the safe direction for a set whose members may never be read.
 
-### Scenario: CaseVariantCredentialDirectory
+#### Scenario: CaseVariantCredentialDirectory
 
 - **GIVEN** a Read, Write, or Edit tool call is intercepted
 - **WHEN** the target lies within a credential directory named under a differing letter case
@@ -32,7 +34,7 @@ The error this admits is refusing a path that resembles a secret and is not one,
 
 ---
 
-## MODIFIED Requirement: PackageDirExemption
+### Requirement: PackageDirExemption
 
 The exemption SHALL cover the directories holding this repository's own hook sources, for every agent.
 
@@ -42,7 +44,7 @@ Reaching one of them requires the name-based patterns not to apply, and an agent
 The exemption SHALL be declared once for the whole family, not per agent.
 Naming the agents one at a time is what left the shared directory uncovered when these modules moved, making a guardrail source unreachable to the people responsible for it.
 
-### Scenario: GuardrailSourceNamedForWhatItBlocks
+#### Scenario: GuardrailSourceNamedForWhatItBlocks
 
 - **GIVEN** a Read, Write, or Edit tool call is intercepted
 - **WHEN** the target is a hook source in this repository whose name matches a name-based pattern
@@ -50,7 +52,7 @@ Naming the agents one at a time is what left the shared directory uncovered when
 
 ---
 
-## MODIFIED Requirement: ToolScope
+### Requirement: ToolScope
 
 The system SHALL evaluate tool calls when `tool_name` is `Bash`, `Read`, `Write`, `Edit`, or `apply_patch`.
 

@@ -4,7 +4,9 @@
 
 ---
 
-## MODIFIED Requirement: ExitCodes
+## MODIFIED Requirements
+
+### Requirement: ExitCodes
 
 The system SHALL express its outcome as one of four decisions:
 
@@ -26,7 +28,7 @@ A hook that emits one code for all agents is therefore limited to the codes on w
 Where an agent cannot express `Warn`, the system SHALL degrade it to `Allow`, never to `Block`.
 Degrading upward would convert a diagnostic into a refusal, and would refuse every tool call for as long as the condition persisted.
 
-### Scenario: WarnOnAgentThatSupportsIt
+#### Scenario: WarnOnAgentThatSupportsIt
 
 - **GIVEN** a hook reaches a `Warn` decision
 - **WHEN** the invoking agent can report a reason without refusing the tool call
@@ -40,7 +42,9 @@ Degrading upward would convert a diagnostic into a refusal, and would refuse eve
 
 ---
 
-## ADDED Requirement: AgentIdentification
+## ADDED Requirements
+
+### Requirement: AgentIdentification
 
 The system SHALL determine which agent invoked it, and SHALL do so in one place.
 
@@ -62,7 +66,7 @@ Where these disagree, the invocation path SHALL decide, because it reflects how 
 Where the agent cannot be established, the system SHALL treat it as one that supports neither warning nor prompting.
 Both degrade safely: a warning becomes silence, and a prompt becomes a refusal.
 
-### Scenario: AgentCannotBeEstablished
+#### Scenario: AgentCannotBeEstablished
 
 - **GIVEN** a hook reaches a decision that needs a prompt
 - **WHEN** the invoking agent cannot be identified
@@ -70,7 +74,9 @@ Both degrade safely: a warning becomes silence, and a prompt becomes a refusal.
 
 ---
 
-## MODIFIED Requirement: ErrorHandlingByDamagePotential
+## MODIFIED Requirements
+
+### Requirement: ErrorHandlingByDamagePotential
 
 The system SHALL handle internal errors differently based on the damage potential of the tool being evaluated, as previously specified.
 
@@ -81,7 +87,7 @@ A failure that prevents the hook from running at all — an interpreter that can
 At least one agent refuses the tool call on any such failure.
 The stated fail-open posture therefore does not hold uniformly for startup failures, and SHALL NOT be represented as if it did.
 
-### Scenario: HookCannotStart
+#### Scenario: HookCannotStart
 
 - **GIVEN** a hook is registered but cannot be executed
 - **WHEN** a tool call is intercepted

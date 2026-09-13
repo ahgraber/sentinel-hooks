@@ -3,30 +3,12 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Hard-block reads and writes that reach a zero-access path.
+"""Block reads and writes that reach zero-access paths.
 
-PreToolUse hook for `Read`, `Write`, `Edit`, `Bash`, and Codex's `apply_patch`;
-every agent sends the same snake_case `{tool_name, tool_input}` payload, and a
-tool a given agent never emits is simply a dead branch there.
-
-Bash handling is fail safe, not precise: the goal is to prevent operations over
-secrets, not to model shell grammar. Where a command segment invokes a
-recognized read or transfer command, every token of that segment is checked,
-with no option/operand modelling, so a secret filename blocks wherever it
-appears — operand, attached option value, copy source, or behind a wrapper. That
-over-denies (a search pattern such as `grep -r secret .` blocks), which is the
-intended bias: missing a real secret read is worse than blocking a benign one.
-
-Out of scope, because they need real shell evaluation that command-text parsing
-cannot do; the boundary for them is the sandbox's literal-prefix denies, the
-network egress allowlist, and `block-secrets.py`:
-  - Interpreters that open the file in code: `python -c`, `perl`, `node -e`.
-  - A command word behind a variable: `c=cat; $c .env`.
-  - Wrappers whose child is a nested command string: `bash -c`, `eval`,
-    backticks, and `xargs`/`find -exec` across pipeline segments.
-  - Symlink indirection: `ln -s ~/.aws/credentials link`, then read `link`.
-  - On Codex the native `read_file`/`grep` tools emit no PreToolUse, so only
-    shell reads are covered there.
+This PreToolUse hook covers Read, Write, Edit, Bash, and Codex `apply_patch`.
+Bash parsing is conservative and can block benign commands. It does not evaluate
+shell code, dynamic commands, nested command strings, or symlink indirection.
+Codex native read tools emit no PreToolUse and are not covered.
 """
 
 import glob
@@ -40,6 +22,7 @@ from typing import NoReturn
 from guarded_paths import (
     NAME_HEURISTIC_EXEMPT_RE,
     ManifestError,
+    fragment,
     load_manifest,
     spellings,
 )
@@ -55,9 +38,8 @@ EXTENSION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# The boundary class includes `*` so shell globs (`*.env`, `.env*`) match too.
-# Case-insensitive because macOS — the platform whose sandbox globs this mirrors
-# — has a case-insensitive filesystem by default.
+# Include `*` so shell globs match. Use case-insensitive matching to mirror
+# the default macOS filesystem.
 DOTENV_RE = re.compile(r"(?:^|[/\\*])\.env(?:\.[^/\\]+|\*)?$", re.IGNORECASE)
 ENVRC_RE = re.compile(r"(?:^|[/\\*])\.envrc$", re.IGNORECASE)
 
@@ -73,11 +55,8 @@ CRED_FILE_RE = re.compile(
 DOCKER_CONFIG_RE = re.compile(r"(?:^|[/\\])\.docker[/\\]config\.json$", re.IGNORECASE)
 
 
-# No generic pattern reaches the agent credential stores: the files are named
-# auth.json, and `.claude/` is exempt from the name heuristic so the hook
-# sources named for what they guard against stay readable. Built from the
-# manifest's `[credentials]` class, whose mutation block-hook-tampering.py
-# refuses; this hook is what refuses the read.
+# Credential paths come from the manifest. This hook blocks reads;
+# block-hook-tampering blocks writes.
 def _credential_alternation(paths) -> str:
     """The regex alternation matching any credential path's relative form."""
     parts = []
@@ -88,16 +67,16 @@ def _credential_alternation(paths) -> str:
 
 
 try:
-    _CREDENTIAL_PATHS = load_manifest()["credentials"]["paths"]
+    _MANIFEST = load_manifest()
+    _CREDENTIAL_PATHS = _MANIFEST["credentials"]["paths"]
     MANIFEST_ERROR = None
 except (ManifestError, KeyError, TypeError) as _exc:
+    _MANIFEST = {}
     _CREDENTIAL_PATHS = ()
     MANIFEST_ERROR = str(_exc)
 
 AGENT_CREDENTIAL_RE = re.compile(
-    # `(?!)` never matches: the safe fallback when the manifest could not be
-    # loaded, since main() then reports the failure and skips every other check
-    # too rather than silently narrowing just this one.
+    # `(?!)` matches nothing; `main()` reports the manifest failure.
     rf"(?:^|[/\\])(?:{_credential_alternation(_CREDENTIAL_PATHS)})[^/\\]*$"
     if _CREDENTIAL_PATHS
     else r"(?!)",
@@ -106,6 +85,27 @@ AGENT_CREDENTIAL_RE = re.compile(
 
 CRED_DIR_RE = re.compile(
     r"(?:^|[/\\])\.(?:ssh|aws|kube|gnupg|azure)(?:[/\\]|$)", re.IGNORECASE
+)
+
+
+# Apply exceptions only to the spelling that triggered the name heuristic; a
+# link must not borrow its target's exception.
+def _exception_alternation(manifest) -> str:
+    """The regex alternation matching any declared exception's trailing form."""
+    parts = [
+        re.escape(fragment(exception["pattern"])).replace("/", r"[/\\]")
+        for exception in manifest.get("exceptions", ())
+        if exception.get("surface") == "sensitive-path-name-heuristic"
+    ]
+    return "|".join(parts)
+
+
+_NAME_EXCEPTIONS = _exception_alternation(_MANIFEST)
+
+NAME_HEURISTIC_EXCEPTION_RE = re.compile(
+    # `(?!)` never matches, so a manifest that declared none excuses none.
+    rf"(?:^|[/\\])(?:{_NAME_EXCEPTIONS})$" if _NAME_EXCEPTIONS else r"(?!)",
+    re.IGNORECASE,
 )
 
 ZERO_ACCESS_FILES_RE = re.compile(
@@ -137,19 +137,18 @@ def is_zero_access(path: str) -> bool:
 
 
 def is_named_for_secrets(path: str) -> bool:
-    """True if the file name is the only signal, and the directory does not excuse it."""
+    """Return whether only the unexempted file name signals a secret."""
     return bool(
         NAME_PATTERN_RE.search(os.path.basename(path))
         and not NAME_HEURISTIC_EXEMPT_RE.search(path)
+        and not NAME_HEURISTIC_EXCEPTION_RE.search(path)
     )
 
 
 def should_block(path: str) -> bool:
-    """True if any spelling of `path` reaches a zero-access location.
+    """Return whether any spelling of `path` reaches a zero-access location.
 
-    Each spelling is judged whole. Matching under one spelling and taking the
-    exemption from another would let a symbolic link outside a package tree
-    borrow that tree's exemption.
+    Apply heuristics and exemptions to the same spelling.
     """
     return any(
         is_zero_access(candidate) or is_named_for_secrets(candidate)
@@ -162,15 +161,12 @@ def block(path: str, tool: str) -> NoReturn:
     respond(
         Decision.BLOCK,
         f"Blocked: {tool} targeting zero-access path '{path}'.\n"
-        f"{action} this path would expose credentials, private keys, or "
-        "authentication secrets to Claude's context. A prompt injection attack "
-        "could trick Claude into forwarding this material to an attacker. "
-        f"{_EXPOSURE_RISK}",
+        f"{action} it could expose credentials or private keys to the agent, where "
+        "a later tool call could disclose or use them.",
     )
 
 
-# Commands that read or transfer file contents. cp/mv/scp/rsync/sftp are here so
-# a secret used as a *source* operand blocks, not just secret destinations.
+# Include transfer commands so secret source operands also block.
 READ_CMDS = frozenset(
     {
         "cat",
@@ -240,7 +236,6 @@ READ_CMDS = frozenset(
         "xq",
         "tomlq",
         "envsubst",
-        # archive / compression / crypto readers (dump file contents)
         "tar",
         "unzip",
         "zcat",
@@ -256,7 +251,6 @@ READ_CMDS = frozenset(
         "gpg",
         "gpg2",
         "age",
-        # editors / pagers that can print a file
         "vi",
         "vim",
         "view",
@@ -267,9 +261,8 @@ READ_CMDS = frozenset(
     }
 )
 
-# shlex(punctuation_chars=True) groups runs of ();<>|& into single tokens, so a
-# token may be e.g. '(<' or ');'. A punctuation-only token is never a word; one
-# that contains a command separator ends a segment.
+# `shlex` groups punctuation runs. A punctuation-only token is never a word;
+# a run containing a separator ends the segment.
 _PUNCT_ONLY_RE = re.compile(r"^[|&;<>()]+$")
 _SEGMENT_SEP_RE = re.compile(r"[|;&()]")
 _LEADING_OPT_RE = re.compile(r"^-{1,2}[A-Za-z][A-Za-z-]*")
@@ -280,10 +273,9 @@ _ANSI_C_RE = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
 
 
 def _decode_ansi_c(command: str) -> str:
-    """Decode `$'...'` ANSI-C quoted spans to their literal characters.
+    """Decode ANSI-C quoted spans and preserve token boundaries.
 
-    The decoded text is re-wrapped in single quotes so shlex still treats it as
-    one token. Fail-safe: on any decode error the span is left untouched.
+    Leave a span unchanged if decoding fails.
     """
 
     def repl(m: "re.Match[str]") -> str:
@@ -305,11 +297,7 @@ def _norm_cmdword(token: str) -> str:
 
 
 def _lex_tokens(command: str) -> list[str]:
-    """Quote- and operator-aware tokenisation (flat list).
-
-    Falls back to a permissive split on unbalanced quotes, so a command shlex
-    cannot parse is still scanned.
-    """
+    """Tokenize quotes and operators; use a permissive split for unclosed quotes."""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
@@ -322,7 +310,7 @@ def _lex_tokens(command: str) -> list[str]:
 
 
 def _candidate_paths(token: str):
-    """Yield the strings in a token that could name a file, so an attached option value (`if=.env`, `-f.env`) is caught."""
+    """Yield the token and any attached option value that can name a file."""
     yield token
     if "=" in token:
         yield token.split("=", 1)[1]
@@ -332,11 +320,7 @@ def _candidate_paths(token: str):
 
 
 def expand_glob_candidates(token: str, cwd: str):
-    """Yield the token and, if it globs, every path it expands to, as the shell would.
-
-    Closes the class where a wildcard hides a sensitive literal from the
-    regexes (`cat .en*`). Fail-safe: an expansion error yields the token alone.
-    """
+    """Yield the token and its glob matches; yield only the token on error."""
     yield token
     try:
         if not glob.has_magic(token):
@@ -352,13 +336,12 @@ def expand_glob_candidates(token: str, cwd: str):
 
 
 def extract_bash_read_targets(command: str) -> list[str]:
-    """Candidate read paths: input-redirection targets, and every token of a segment invoking a read command."""
+    """Return input-redirection targets and tokens from read-command segments."""
     targets: list[str] = []
     tokens = _lex_tokens(_decode_ansi_c(command))
 
-    # Input redirection reads a file whatever the command word is, so a bare
-    # `mapfile < .env` or `$(< .env)` is caught. The '<' may be grouped with
-    # other punctuation ('(<'); here-docs ('<<') are excluded.
+    # Input redirection reads a file regardless of the command. Exclude
+    # here-docs and include `<` inside punctuation runs.
     for i, tok in enumerate(tokens):
         if _PUNCT_ONLY_RE.match(tok) and "<" in tok and "<<" not in tok:
             for nxt in tokens[i + 1 :]:
@@ -366,10 +349,8 @@ def extract_bash_read_targets(command: str) -> list[str]:
                     targets.extend(_candidate_paths(nxt))
                     break
 
-    # Checking every token of a read segment includes the command's own search
-    # pattern, so `grep -r secret .` over-denies. Accepted: over-deny beats a
-    # missed secret. A carve-out must not reintroduce option modelling — narrow
-    # NAME_PATTERN out of the search commands instead.
+    # Checking every token can block benign search patterns. Keep that bias and
+    # narrow `NAME_PATTERN` instead of modeling options.
     segment: list[str] = []
     for tok in [*tokens, ";"]:  # trailing sentinel flushes the last segment
         if _PUNCT_ONLY_RE.match(tok) and _SEGMENT_SEP_RE.search(tok):
@@ -390,14 +371,14 @@ def _strip_quotes(token: str) -> str:
 
 
 def extract_bash_write_targets(command: str) -> list[str]:
-    """Extract likely write-destination paths from a Bash command string."""
+    """Return likely write destinations in a Bash command."""
     targets: list[str] = []
 
     # Excludes here-docs and here-strings (<<, <<<) and stderr-only `2>`.
     for m in re.finditer(r"(?:(?<![<2&])>>?\|?|&>>?)\s*([^\s|&;><]+)", command):
         targets.append(m.group(1))
 
-    # cp / mv / install — destination is the final non-option token
+    # `cp`, `mv`, and `install` use the final non-option token as destination.
     for cmd in ("cp", "mv", "install"):
         for m in re.finditer(
             rf"\b{cmd}\b\s+((?:(?:-[^\s]+|--[^\s]+|\S+)\s+)+?)(\S+)\s*(?:$|[|&;])",
@@ -424,7 +405,7 @@ def extract_bash_write_targets(command: str) -> list[str]:
 
 
 def extract_apply_patch_targets(command: str) -> list[str]:
-    """Extract target file paths from a Codex apply_patch command body."""
+    """Return paths named by Codex `apply_patch` headers."""
     return [match.group("path").strip() for match in PATCH_PATH_RE.finditer(command)]
 
 
@@ -432,8 +413,7 @@ def main() -> None:
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
-        # Fail open: the tool is unknown on a parse failure, and this hook
-        # handles read-only tools as well as sensitive ones.
+        # Fail open because a malformed payload does not identify the tool.
         sys.exit(0)
 
     tool_name = data.get("tool_name", "")
@@ -444,9 +424,7 @@ def main() -> None:
         sys.exit(0)
 
     if MANIFEST_ERROR is not None:
-        # A broken manifest leaves the agent-credential class unmatchable, so
-        # the call proceeds rather than checking a narrowed, silent subset, and
-        # the break is reported. block-hook-tampering.py does the same.
+        # Report a broken manifest and fail open instead of checking a partial set.
         respond(
             Decision.WARN,
             "block-sensitive-paths could not load guarded-paths.toml "
@@ -489,6 +467,4 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001
-        # Fail open: Read is read-only, so the tool mix here implies no damage
-        # potential from an internal error.
         sys.exit(0)

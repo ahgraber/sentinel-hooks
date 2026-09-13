@@ -1,6 +1,8 @@
 # Spec: path-matching
 
-## Requirement: Purpose
+## Requirements
+
+### Requirement: Purpose
 
 The system SHALL provide one answer to the question every path-guarding hook asks: does this path, as supplied by a tool call, denote a location the caller must not modify?
 
