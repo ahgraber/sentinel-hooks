@@ -22,9 +22,7 @@ def _make_stub_bin(bin_dir: str, name: str) -> None:
     os.chmod(stub, 0o755)
 
 
-def run_session_hook(
-    available_tools: list[str], extra_path: str = ""
-) -> subprocess.CompletedProcess:
+def run_session_hook(available_tools: list[str], extra_path: str = "") -> subprocess.CompletedProcess:
     """Run the hook with only the named tools resolvable on PATH, as stubs."""
     import tempfile
 

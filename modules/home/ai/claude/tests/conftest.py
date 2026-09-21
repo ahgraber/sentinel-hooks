@@ -1,9 +1,9 @@
 """Shared fixtures and helpers for security hook tests."""
 
-import json
-import subprocess
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -39,13 +39,10 @@ def run_hook(
     """
     hook_path = resolve_hook(hook_filename)
 
-    if hook_path.suffix == ".sh":
-        cmd = ["bash", str(hook_path)]
-    else:
-        cmd = ["python3", str(hook_path)]
+    cmd = ["bash", str(hook_path)] if hook_path.suffix == ".sh" else ["python3", str(hook_path)]
 
     if stdin_text is None:
-        payload = {}
+        payload = {"cwd": str(Path.cwd())}
         if tool_name is not None:
             payload["tool_name"] = tool_name
         if tool_input is not None:
@@ -72,12 +69,8 @@ def run_hook(
 
 
 def assert_allowed(result: HookResult) -> None:
-    assert result.exit_code == 0, (
-        f"Expected allow (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
-    )
-    assert "permissionDecision" not in result.stdout, (
-        f"Expected no ask JSON, got: {result.stdout}"
-    )
+    assert result.exit_code == 0, f"Expected allow (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
+    assert "permissionDecision" not in result.stdout, f"Expected no ask JSON, got: {result.stdout}"
 
 
 def assert_blocked(result: HookResult, message_substring: str = "") -> None:
@@ -93,12 +86,17 @@ def assert_blocked(result: HookResult, message_substring: str = "") -> None:
 _AI_BLOCK_CHECKS = [
     ("section delimiter", "---"),
     ("AI INSTRUCTIONS header", "ai instructions:"),
-    ("workaround prohibition", "do not attempt"),
     ("current-task directive", "your current task"),
     ("intended-step directive", "your intended step"),
     ("what-was-blocked directive", "what was blocked"),
     ("user-action directive", "how the user can help"),
 ]
+
+# A refusal closes with one instruction of two: stop where the policy refused
+# the operation, retry where the classifier did not recognize the command and
+# the message names commands that would work. Requiring the stop form of every
+# refusal contradicts a message that lists accepted commands.
+_CLOSING_INSTRUCTIONS = {"stop": "do not attempt", "retry": "the classifier stopped this call"}
 
 
 def assert_block_contract(result: HookResult, message_substring: str = "") -> None:
@@ -106,23 +104,22 @@ def assert_block_contract(result: HookResult, message_substring: str = "") -> No
     assert_blocked(result, message_substring)
     stderr_lower = result.stderr.lower()
     for label, needle in _AI_BLOCK_CHECKS:
-        assert needle.lower() in stderr_lower, (
-            f"Block contract violation — missing {label}.\nstderr: {result.stderr}"
-        )
+        assert needle.lower() in stderr_lower, f"Block contract violation — missing {label}.\nstderr: {result.stderr}"
+    found = [name for name, needle in _CLOSING_INSTRUCTIONS.items() if needle in stderr_lower]
+    assert len(found) == 1, (
+        f"Block contract violation — expected exactly one closing instruction, found {found or 'none'}."
+        f"\nstderr: {result.stderr}"
+    )
 
 
 def assert_ask(result: HookResult, reason_substring: str = "") -> None:
-    assert result.exit_code == 0, (
-        f"Expected ask (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
-    )
+    assert result.exit_code == 0, f"Expected ask (exit 0), got exit {result.exit_code}.\nstderr: {result.stderr}"
     data = json.loads(result.stdout)
     decision = data["hookSpecificOutput"]["permissionDecision"]
     assert decision == "ask", f"Expected permissionDecision 'ask', got '{decision}'"
     if reason_substring:
         reason = data["hookSpecificOutput"]["permissionDecisionReason"]
-        assert reason_substring.lower() in reason.lower(), (
-            f"Expected '{reason_substring}' in reason, got: {reason}"
-        )
+        assert reason_substring.lower() in reason.lower(), f"Expected '{reason_substring}' in reason, got: {reason}"
 
 
 @pytest.fixture

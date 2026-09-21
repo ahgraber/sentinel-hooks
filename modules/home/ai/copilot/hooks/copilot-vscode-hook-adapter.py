@@ -11,12 +11,12 @@ on top of jq/perl-heavy downstream hook invocations.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
-from copy import deepcopy
-from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SHARED_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "ai" / "shared" / "hooks"
@@ -122,6 +122,7 @@ def _extract_all_paths(tool_input: dict) -> list[str]:
 
 
 def normalize_payload(raw_data: dict) -> dict:
+    """Remap a VS Code tool name and input into Claude Code's shape."""
     data = deepcopy(raw_data)
     tool_name = data.get("tool_name")
     if not isinstance(tool_name, str):
@@ -167,9 +168,8 @@ def normalize_payload(raw_data: dict) -> dict:
     return data
 
 
-def execute_hook(
-    script_name: str, script_args: list[str], payload: dict
-) -> subprocess.CompletedProcess[str]:
+def execute_hook(script_name: str, script_args: list[str], payload: dict) -> subprocess.CompletedProcess[str]:
+    """Run the named shared hook script with the given payload on stdin."""
     script_path = SCRIPT_PATHS.get(script_name)
     if script_path is None:
         return subprocess.CompletedProcess(
@@ -181,7 +181,7 @@ def execute_hook(
 
     command = hook_command(script_path, script_args)
 
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603
         command,
         input=json.dumps(payload),
         text=True,
@@ -192,6 +192,7 @@ def execute_hook(
 
 
 def hook_command(script_path: Path, script_args: list[str]) -> list[str]:
+    """Build the argv to invoke a hook script by its file extension."""
     if script_path.suffix == ".py":
         return ["uv", "run", "--script", str(script_path), *script_args]
     if script_path.suffix == ".sh":
@@ -200,6 +201,7 @@ def hook_command(script_path: Path, script_args: list[str]) -> list[str]:
 
 
 def emit_result(result: subprocess.CompletedProcess[str]) -> None:
+    """Write a hook's stdout and stderr through, with the agent name rewritten."""
     stdout = rewrite_agent_name(result.stdout)
     stderr = rewrite_agent_name(result.stderr)
     if stdout:
@@ -209,6 +211,7 @@ def emit_result(result: subprocess.CompletedProcess[str]) -> None:
 
 
 def rewrite_agent_name(text: str) -> str:
+    """Replace references to Claude with Copilot in hook output text."""
     if not text:
         return text
 
@@ -225,12 +228,14 @@ def rewrite_agent_name(text: str) -> str:
 
 
 def run_hook(script_name: str, script_args: list[str], payload: dict) -> int:
+    """Run a hook script and emit its output, returning its exit code."""
     result = execute_hook(script_name, script_args, payload)
     emit_result(result)
     return result.returncode
 
 
 def main() -> int:
+    """Dispatch the CLI-invoked hook, fanning out over multi-path edits."""
     if len(sys.argv) < 2:
         sys.stderr.write("Usage: copilot-vscode-hook-adapter.py <script> [args...]\n")
         return 1

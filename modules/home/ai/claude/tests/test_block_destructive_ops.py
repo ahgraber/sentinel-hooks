@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from pathlib import Path
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
-import pytest
 from conftest import run_hook as run_installed_hook
+import pytest
 
 HOOKS_DIR = Path(__file__).resolve().parents[2] / "shared" / "hooks"
 HOOK_SOURCE = HOOKS_DIR / "block-destructive-ops.py"
@@ -198,9 +198,7 @@ class TestNormalize:
             pytest.param("'rm' -rf /", "rm -rf /", id="standalone-quoted-word"),
             pytest.param("rm \\\n -rf /", "rm  -rf /", id="continuation-between-words"),
             pytest.param("r\\\nm -rf /", "rm -rf /", id="continuation-within-word"),
-            pytest.param(
-                "pre'fix suffix'", "prefix suffix", id="adjacent-span-splices"
-            ),
+            pytest.param("pre'fix suffix'", "prefix suffix", id="adjacent-span-splices"),
         ],
     )
     def test_obfuscated_spelling_is_rewritten(self, command, expected):
@@ -257,9 +255,7 @@ class TestNormalizedRuleMatching:
     def test_ordinary_quoted_command_is_untouched(self, hook_path: Path, command):
         assert run_hook(hook_path, command).returncode == 0
 
-    def test_multiword_rule_is_not_assembled_across_arguments(
-        self, hook_path: Path
-    ) -> None:
+    def test_multiword_rule_is_not_assembled_across_arguments(self, hook_path: Path) -> None:
         """Unquoting must not weld separate arguments into a rule match.
 
         `synthetic-danger\\s+-force` matches only when the two words are
@@ -270,9 +266,7 @@ class TestNormalizedRuleMatching:
 
 def _verdict(command: str) -> str:
     """Run the installed hook, with the real rule catalogue, and label the outcome."""
-    result = run_installed_hook(
-        "block-destructive-ops.py", "Bash", {"command": command}
-    )
+    result = run_installed_hook("block-destructive-ops.py", "Bash", {"command": command})
     if result.exit_code == 2:
         return "block"
     if "permissionDecision" in result.stdout:
@@ -308,10 +302,7 @@ class TestCatalogueNormalizationParity:
         expected = _verdict(plain)
         actual = _verdict(obfuscated)
 
-        assert actual == expected, (
-            f"Spelling changed the verdict: {plain!r} -> {expected}, "
-            f"{obfuscated!r} -> {actual}"
-        )
+        assert actual == expected, f"Spelling changed the verdict: {plain!r} -> {expected}, {obfuscated!r} -> {actual}"
 
     def test_parity_table_is_not_vacuous(self) -> None:
         """At least one pair must reach a rule, or parity proves nothing.
@@ -321,6 +312,4 @@ class TestCatalogueNormalizationParity:
         """
         verdicts = [_verdict(param.values[0]) for param in NORMALIZATION_PAIRS]
 
-        assert any(v != "allow" for v in verdicts), (
-            f"No pair in NORMALIZATION_PAIRS matches any rule: {verdicts}"
-        )
+        assert any(v != "allow" for v in verdicts), f"No pair in NORMALIZATION_PAIRS matches any rule: {verdicts}"

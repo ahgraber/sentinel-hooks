@@ -7,24 +7,19 @@ agent, everything else protected is put to the user.
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
+import sys
 
+from guarded_paths import load_manifest
 import pytest
 
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
-REPO_ROOT = next(
-    parent
-    for parent in Path(__file__).resolve().parents
-    if (parent / "flake.nix").is_file()
-)
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "flake.nix").is_file())
 
 
 def load_hook():
     """Import the hook by location; its filename is not a valid identifier."""
-    spec = importlib.util.spec_from_file_location(
-        "block_hook_tampering", HOOKS_DIR / "block-hook-tampering.py"
-    )
+    spec = importlib.util.spec_from_file_location("block_hook_tampering", HOOKS_DIR / "block-hook-tampering.py")
     module = importlib.util.module_from_spec(spec)
     if str(HOOKS_DIR) not in sys.path:
         sys.path.insert(0, str(HOOKS_DIR))
@@ -42,33 +37,20 @@ def _declared_path(declaration: str) -> str:
 
 def test_credential_and_enforcement_paths_report_distinct_classes() -> None:
     assert HOOK.protected_class("~/.codex/auth.json") == HOOK.CREDENTIAL
-    assert (
-        HOOK.protected_class(
-            f"{REPO_ROOT}/modules/home/ai/shared/hooks/guarded_paths.py"
-        )
-        == HOOK.GATED
-    )
+    assert HOOK.protected_class(f"{REPO_ROOT}/modules/home/ai/shared/hooks/guarded_paths.py") == HOOK.GATED
 
 
-@pytest.mark.parametrize("declaration", sorted(HOOK.CREDENTIAL_FILES))
+@pytest.mark.parametrize("declaration", sorted(HOOK.POLICY.classes["block"].declarations))
 def test_every_credential_declaration_reports_the_credential_class(
     declaration: str,
 ) -> None:
     assert HOOK.protected_class(_declared_path(declaration)) == HOOK.CREDENTIAL
 
 
-@pytest.mark.parametrize("declaration", sorted(HOOK.GUARDED_FILES))
+@pytest.mark.parametrize("declaration", sorted(load_manifest()["guarded"]["paths"]))
 def test_every_other_declared_path_reports_the_gated_class(declaration: str) -> None:
-    """No declared path outside CREDENTIAL_FILES may reach the credential class.
-
-    A declaration resolving into the instruction-markdown carve-out is writable
-    rather than gated, which is why the assertion branches.
-    """
     path = _declared_path(declaration)
-    if HOOK.is_instruction_markdown(path):
-        assert HOOK.protected_class(path) is None
-    else:
-        assert HOOK.protected_class(path) == HOOK.GATED
+    assert HOOK.protected_class(path) == HOOK.GATED
 
 
 def test_an_unprotected_path_reports_no_class(tmp_path: Path) -> None:

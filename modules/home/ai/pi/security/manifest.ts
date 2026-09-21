@@ -19,17 +19,24 @@ function loadGuardedManifest(): { manifest: GuardedManifest | null; error: strin
   }
   try {
     const data = parseToml(readFileSync(tomlPath, "utf8")) as Record<string, unknown>
-    const gated = (data.gated ?? {}) as { deployed?: string[]; sources?: string[] }
-    const credentials = (data.credentials ?? {}) as { paths?: string[] }
-    const instructionLayers = (data["instruction-layers"] ?? {}) as { layers?: Array<[string, string]> }
-    const locationOnly = (data["location-only"] ?? {}) as { paths?: string[] }
+    const paths = (name: string): string[] => {
+      const table = data[name] as { paths?: unknown } | undefined
+      if (!Array.isArray(table?.paths) || !table.paths.every((path) => typeof path === "string")) {
+        throw new Error(`Missing or invalid ${name}.paths`)
+      }
+      return table.paths
+    }
+    const guarded = [...paths("guarded"), ...paths("exec-through"), ...paths("write-through")]
+    const blocked = paths("block")
+    const writable = paths("write-through")
+    if (!Array.isArray(data.exceptions)) throw new Error("Missing exceptions table")
     return {
       manifest: {
-        gatedDeployed: gated.deployed ?? [],
-        gatedSources: gated.sources ?? [],
-        credentialPaths: credentials.paths ?? [],
-        instructionLayers: instructionLayers.layers ?? [],
-        locationOnlyPaths: locationOnly.paths ?? [],
+        gatedDeployed: guarded.filter((path) => !path.startsWith("<repo>/")),
+        gatedSources: guarded.filter((path) => path.startsWith("<repo>/")),
+        credentialPaths: blocked,
+        instructionLayers: writable.filter((path) => path.endsWith("/*.md")).map((path) => [path.slice(0, -4), ""]),
+        locationOnlyPaths: [],
       },
       error: null,
     }
@@ -49,8 +56,8 @@ export const GUARDED_FILES = GUARDED_MANIFEST
 // Credential writes are refused outright, never prompted.
 export const CREDENTIAL_FILES = GUARDED_MANIFEST ? GUARDED_MANIFEST.credentialPaths : []
 
-// Instruction markdown stays writable; only enforcement is gated.
+// The temporary Pi port can express direct Markdown carve-outs only.
 export const INSTRUCTION_LAYERS: Array<[string, string]> = GUARDED_MANIFEST ? GUARDED_MANIFEST.instructionLayers : []
 
-// Matched by resolved location only; text matching would over-refuse.
+// The class manifest has no location-only declarations.
 export const LOCATION_ONLY = GUARDED_MANIFEST ? GUARDED_MANIFEST.locationOnlyPaths : []

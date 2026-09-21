@@ -3,39 +3,26 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+from pathlib import Path
 import re
 import subprocess
-from pathlib import Path
 from types import ModuleType
 
-REPO_ROOT = next(
-    parent
-    for parent in Path(__file__).resolve().parents
-    if (parent / "flake.nix").is_file()
-)
-ADAPTER_PATH = (
-    REPO_ROOT
-    / "modules"
-    / "home"
-    / "ai"
-    / "copilot"
-    / "hooks"
-    / "copilot-vscode-hook-adapter.py"
-)
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "flake.nix").is_file())
+ADAPTER_PATH = REPO_ROOT / "modules" / "home" / "ai" / "copilot" / "hooks" / "copilot-vscode-hook-adapter.py"
 
 
 def load_adapter() -> ModuleType:
     spec = importlib.util.spec_from_file_location("copilot_hook_adapter", ADAPTER_PATH)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 SECURITY_POLICY = REPO_ROOT / "modules/home/ai/copilot/hooks/security-policy.json"
-ADAPTER_INVOCATION_RE = re.compile(
-    r"copilot-vscode-hook-adapter\.py\s+([A-Za-z0-9._-]+)"
-)
+ADAPTER_INVOCATION_RE = re.compile(r"copilot-vscode-hook-adapter\.py\s+([A-Za-z0-9._-]+)")
 
 
 def test_configured_dispatch_targets_exist() -> None:
@@ -46,15 +33,8 @@ def test_configured_dispatch_targets_exist() -> None:
     assert invoked, "found no adapter invocations in security-policy.json"
 
     unknown = invoked - set(adapter.SCRIPT_PATHS)
-    assert not unknown, (
-        "security-policy.json invokes scripts the adapter cannot resolve: "
-        f"{sorted(unknown)}"
-    )
-    missing = {
-        name: str(adapter.SCRIPT_PATHS[name])
-        for name in invoked
-        if not adapter.SCRIPT_PATHS[name].is_file()
-    }
+    assert not unknown, f"security-policy.json invokes scripts the adapter cannot resolve: {sorted(unknown)}"
+    missing = {name: str(adapter.SCRIPT_PATHS[name]) for name in invoked if not adapter.SCRIPT_PATHS[name].is_file()}
     assert not missing, f"configured adapter targets do not exist: {missing}"
 
 
@@ -76,9 +56,7 @@ class TestMultiPathFanOut:
 
         def record(_script, _args, payload):
             seen.append(payload["tool_input"])
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr=""
-            )
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr(adapter, "execute_hook", record)
         monkeypatch.setattr(
@@ -103,9 +81,7 @@ class TestMultiPathFanOut:
         payload = json.dumps(
             {
                 "tool_name": "editFiles",
-                "tool_input": {
-                    "filePaths": ["~/.claude/settings.json", "~/.codex/auth.json"]
-                },
+                "tool_input": {"filePaths": ["~/.claude/settings.json", "~/.codex/auth.json"]},
             }
         )
         result = subprocess.run(
@@ -116,9 +92,7 @@ class TestMultiPathFanOut:
             check=False,
             timeout=60,
         )
-        assert result.returncode == 2, (
-            f"expected a refusal, got exit {result.returncode}\nstdout: {result.stdout}"
-        )
+        assert result.returncode == 2, f"expected a refusal, got exit {result.returncode}\nstdout: {result.stdout}"
         assert result.stdout == "", "a refusal must write nothing to stdout"
         assert "credential" in result.stderr.lower()
 
@@ -132,15 +106,12 @@ def test_ask_response_passes_through_intact(monkeypatch, capsys) -> None:
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "ask",
                 "permissionDecisionReason": (
-                    "Claude Code may not change this enforcement file "
-                    "without your approval."
+                    "Claude Code may not change this enforcement file without your approval."
                 ),
             }
         }
     )
-    hook_result = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout=ask_json, stderr=""
-    )
+    hook_result = subprocess.CompletedProcess(args=[], returncode=0, stdout=ask_json, stderr="")
     monkeypatch.setattr(adapter, "execute_hook", lambda *args, **kwargs: hook_result)
 
     exit_code = adapter.run_hook("block-hook-tampering.py", [], {"tool_name": "Write"})

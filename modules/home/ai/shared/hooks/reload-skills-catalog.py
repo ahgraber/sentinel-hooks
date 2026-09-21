@@ -7,8 +7,8 @@
 
 import json
 import os
-import sys
 from pathlib import Path
+import sys
 
 try:
     import yaml
@@ -96,9 +96,7 @@ def _collect_user_skills() -> list[tuple[str, str]]:
         if not d.is_dir():
             continue
         for child in sorted(d.iterdir()):
-            if not child.is_dir() and not (
-                child.is_symlink() and child.resolve().is_dir()
-            ):
+            if not child.is_dir() and not (child.is_symlink() and child.resolve().is_dir()):
                 continue
             skill_file = child / "SKILL.md"
             if not skill_file.exists():
@@ -154,6 +152,7 @@ def collect_skills() -> list[tuple[str, str]]:
 
 
 def main() -> None:
+    """Emit the skills catalog as SessionStart additional context."""
     skills = collect_skills()
     if not skills:
         sys.exit(0)

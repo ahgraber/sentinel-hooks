@@ -11,12 +11,12 @@ hook's directory.
 """
 
 import json
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 
-import tomllib
 from hook_response import Decision, invoking_agent, respond, supports_ask
+import tomllib
 
 
 def load_rules() -> list[dict]:
@@ -69,6 +69,7 @@ def normalize(command: str) -> str:
 
 
 def main() -> None:
+    """Read the PreToolUse payload from stdin and respond to the Bash command."""
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
@@ -132,8 +133,7 @@ def main() -> None:
         if supports_ask(agent):
             respond(Decision.ASK, first_ask, agent=agent)
         first_ask += (
-            "\n\nThis agent cannot show a confirmation prompt, so this command "
-            "is blocked instead of prompted."
+            "\n\nThis agent cannot show a confirmation prompt, so this command is blocked instead of prompted."
         )
         respond(Decision.BLOCK, f"Blocked: {first_ask}", agent=agent)
 
@@ -149,6 +149,5 @@ if __name__ == "__main__":
         # Fail closed because this hook handles only Bash.
         respond(
             Decision.BLOCK,
-            "Blocked: block-destructive-ops failed; the Bash command was never "
-            "checked and is refused.",
+            "Blocked: block-destructive-ops failed; the Bash command was never checked and is refused.",
         )

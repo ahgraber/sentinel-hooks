@@ -9,8 +9,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
 from guarded_paths import GuardedLocations, folds_case, repo_root_of, spellings
+import pytest
 
 
 def make_repo(root: Path) -> Path:
@@ -50,7 +50,7 @@ class TestSingleDeclaration:
             repo_root=str(tree / "repo"),
         )
         absent = tree / "repo" / "users" / "testuser" / "home-manager" / "codex"
-        assert locations.contains(str(absent / "config.toml")) is True
+        assert bool(locations.contains(str(absent / "config.toml"))) is True
 
     def test_wildcard_within_a_segment_matches_under_home(self, tree: Path) -> None:
         """A profile layer file need not exist yet, so the pattern is matched, not enumerated."""
@@ -59,12 +59,10 @@ class TestSingleDeclaration:
             home=str(tree / "home"),
             repo_root=str(tree / "repo"),
         )
-        assert locations.fragments == (".config.toml",)
-        assert locations.contains("~/.codex/work.config.toml") is True
+        assert locations.fragments == (".codex/*.config.toml",)
+        assert bool(locations.contains("~/.codex/work.config.toml")) is True
 
-    def test_that_wildcard_does_not_reach_a_file_of_the_same_name_elsewhere(
-        self, tree: Path
-    ) -> None:
+    def test_that_wildcard_does_not_reach_a_file_of_the_same_name_elsewhere(self, tree: Path) -> None:
         locations = GuardedLocations(
             ["~/.codex/*.config.toml"],
             home=str(tree / "home"),
@@ -72,36 +70,28 @@ class TestSingleDeclaration:
         )
         elsewhere = tree / "work" / "app" / "review.config.toml"
         elsewhere.parent.mkdir(parents=True)
-        assert locations.contains(str(elsewhere)) is False
+        assert bool(locations.contains(str(elsewhere))) is False
 
 
 class TestSpellingIndependence:
     def test_plain_path_is_guarded(self, guarded: GuardedLocations, tree: Path) -> None:
         target = tree / "repo" / "modules" / "home" / "ai" / "shared" / "hooks" / "x.py"
-        assert guarded.contains(str(target)) is True
+        assert bool(guarded.contains(str(target))) is True
 
-    def test_traversal_components_do_not_defeat_it(
-        self, guarded: GuardedLocations, tree: Path
-    ) -> None:
+    def test_traversal_components_do_not_defeat_it(self, guarded: GuardedLocations, tree: Path) -> None:
         target = tree / "repo" / "modules" / ".." / "modules" / "home" / "ai"
-        assert guarded.contains(str(target / "shared" / "hooks" / "x.py")) is True
+        assert bool(guarded.contains(str(target / "shared" / "hooks" / "x.py"))) is True
 
-    def test_symbolic_link_alias_does_not_defeat_it(
-        self, guarded: GuardedLocations, tree: Path
-    ) -> None:
+    def test_symbolic_link_alias_does_not_defeat_it(self, guarded: GuardedLocations, tree: Path) -> None:
         alias = tree / "alias"
         alias.symlink_to(tree / "repo" / "modules" / "home" / "ai" / "shared" / "hooks")
-        assert guarded.contains(str(alias / "x.py")) is True
+        assert bool(guarded.contains(str(alias / "x.py"))) is True
 
     def test_home_notation_does_not_defeat_it(self, tree: Path) -> None:
-        locations = GuardedLocations(
-            ["~/.codex/rules/"], home=str(tree / "home"), repo_root=str(tree / "repo")
-        )
-        assert locations.contains("~/.codex/rules/default.rules") is True
+        locations = GuardedLocations(["~/.codex/rules/"], home=str(tree / "home"), repo_root=str(tree / "repo"))
+        assert bool(locations.contains("~/.codex/rules/default.rules")) is True
 
-    def test_a_file_leading_out_of_a_guarded_directory_is_guarded(
-        self, tree: Path
-    ) -> None:
+    def test_a_file_leading_out_of_a_guarded_directory_is_guarded(self, tree: Path) -> None:
         """Home Manager and sops-nix deploy links whose targets sit outside the
         guarded directory, so the resolved form alone would guard nothing."""
         home = tree / "home"
@@ -113,14 +103,10 @@ class TestSpellingIndependence:
         deployed = home / ".codex" / "rules" / "default.rules"
         deployed.symlink_to(target)
 
-        locations = GuardedLocations(
-            ["~/.codex/rules/"], home=str(home), repo_root=str(tree / "repo")
-        )
-        assert locations.contains(str(deployed)) is True
+        locations = GuardedLocations(["~/.codex/rules/"], home=str(home), repo_root=str(tree / "repo"))
+        assert bool(locations.contains(str(deployed))) is True
 
-    def test_a_symlinked_home_directory_does_not_defeat_it(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_symlinked_home_directory_does_not_defeat_it(self, tmp_path: Path) -> None:
         """Both spellings of home must be judged, since a path written through a
         symlinked home resolves somewhere the declarations do not name.
 
@@ -140,38 +126,33 @@ class TestSpellingIndependence:
         (real_home / ".claude" / "projects" / "session.jsonl").symlink_to(target)
 
         locations = GuardedLocations(
-            ["~/.claude/settings.json"],
-            location_only=["~/.claude/"],
+            ["~/.claude/settings.json", "~/.claude/"],
             home=str(home_link),
             repo_root=str(root),
         )
         probe = home_link / ".claude" / "projects" / "session.jsonl"
-        assert locations.contains(str(probe)) is True
+        assert bool(locations.contains(str(probe))) is True
 
     def test_unrelated_path_is_not_guarded(self, guarded: GuardedLocations) -> None:
-        assert guarded.contains("/etc/hosts") is False
+        assert bool(guarded.contains("/etc/hosts")) is False
 
 
 class TestRepositoryContainment:
     """`<repo>` declarations name a place in a repository, not one checkout of it."""
 
-    def test_a_second_checkout_is_guarded(
-        self, guarded: GuardedLocations, tmp_path: Path
-    ) -> None:
+    def test_a_second_checkout_is_guarded(self, guarded: GuardedLocations, tmp_path: Path) -> None:
         other = make_repo(tmp_path / "elsewhere")
         target = other / "modules" / "home" / "ai" / "shared" / "hooks" / "x.py"
-        assert guarded.contains(str(target)) is True
+        assert bool(guarded.contains(str(target))) is True
 
-    def test_a_worktree_is_guarded(
-        self, guarded: GuardedLocations, tmp_path: Path
-    ) -> None:
+    def test_a_worktree_is_guarded(self, guarded: GuardedLocations, tmp_path: Path) -> None:
         """A worktree marks its root with a `.git` file rather than a directory."""
         worktree = tmp_path / "worktree"
         (worktree / "modules" / "home" / "ai" / "shared" / "hooks").mkdir(parents=True)
         (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n")
         target = worktree / "modules" / "home" / "ai" / "shared" / "hooks" / "x.py"
         assert repo_root_of(str(target)) == str(worktree)
-        assert guarded.contains(str(target)) is True
+        assert bool(guarded.contains(str(target))) is True
 
     def test_the_same_shape_outside_a_repository_is_not_guarded(
         self, guarded: GuardedLocations, tmp_path: Path
@@ -179,43 +160,36 @@ class TestRepositoryContainment:
         """A copy of the tree is not the tree: shape alone does not guard it."""
         backup = tmp_path / "backups" / "modules" / "home" / "ai" / "shared" / "hooks"
         backup.mkdir(parents=True)
-        assert guarded.contains(str(backup / "x.py")) is False
+        assert bool(guarded.contains(str(backup / "x.py"))) is False
 
-    def test_a_relative_path_of_that_shape_is_guarded(
-        self, guarded: GuardedLocations
-    ) -> None:
+    def test_a_relative_path_of_that_shape_is_guarded(self, guarded: GuardedLocations) -> None:
         """It means whatever the working directory makes it mean, so it is refused."""
-        assert guarded.contains("modules/home/ai/shared/hooks/x.py") is True
+        assert bool(guarded.contains("modules/home/ai/shared/hooks/x.py")) is True
 
 
-class TestLocationOnlyDeclarations:
-    """A directory too broad to match as text is matched by resolution alone."""
+class TestBroadDeclarations:
+    """Resolved paths use location checks, including broad declarations."""
 
     @pytest.fixture
     def guarded(self, tree: Path) -> GuardedLocations:
         return GuardedLocations(
-            ["~/.claude/settings.json"],
-            location_only=["~/.claude/"],
+            ["~/.claude/settings.json", "~/.claude/"],
             home=str(tree / "home"),
             repo_root=str(tree / "repo"),
         )
 
-    def test_contributes_no_fragment(self, guarded: GuardedLocations) -> None:
-        assert guarded.fragments == (".claude/settings.json",)
+    def test_contributes_a_fragment(self, guarded: GuardedLocations) -> None:
+        assert guarded.fragments == (".claude/settings.json", ".claude/")
 
-    def test_anything_resolving_inside_it_is_guarded(
-        self, guarded: GuardedLocations, tree: Path
-    ) -> None:
+    def test_anything_resolving_inside_it_is_guarded(self, guarded: GuardedLocations, tree: Path) -> None:
         session = tree / "home" / ".claude" / "projects"
         session.mkdir(parents=True)
-        assert guarded.contains(str(session / "log.jsonl")) is True
+        assert bool(guarded.contains(str(session / "log.jsonl"))) is True
 
-    def test_a_same_named_directory_elsewhere_is_not(
-        self, guarded: GuardedLocations, tree: Path
-    ) -> None:
+    def test_a_same_named_directory_elsewhere_is_not(self, guarded: GuardedLocations, tree: Path) -> None:
         project = tree / "work" / "app" / ".claude" / "agents"
         project.mkdir(parents=True)
-        assert guarded.contains(str(project / "reviewer.md")) is False
+        assert bool(guarded.contains(str(project / "reviewer.md"))) is False
 
 
 class TestLetterCase:
@@ -225,7 +199,7 @@ class TestLetterCase:
         if not folds_case(str(tree)):
             pytest.skip("filesystem under test is case-sensitive")
         target = tree / "repo" / "Modules" / "Home" / "AI" / "Shared" / "Hooks" / "x.py"
-        assert guarded.contains(str(target)) is True
+        assert bool(guarded.contains(str(target))) is True
 
     def test_case_variant_is_a_different_file_where_the_filesystem_does_not(
         self, guarded: GuardedLocations, tree: Path
@@ -233,20 +207,16 @@ class TestLetterCase:
         if folds_case(str(tree)):
             pytest.skip("filesystem under test is case-insensitive")
         target = tree / "repo" / "Modules" / "Home" / "AI" / "Shared" / "Hooks" / "x.py"
-        assert guarded.contains(str(target)) is False
+        assert bool(guarded.contains(str(target))) is False
 
 
 class TestUnresolvablePath:
-    def test_written_form_still_decides(
-        self, guarded: GuardedLocations, tree: Path
-    ) -> None:
+    def test_written_form_still_decides(self, guarded: GuardedLocations, tree: Path) -> None:
         unresolvable = f"{tree}/repo/modules/home/ai/shared/hooks/x\x00.py"
-        assert guarded.contains(unresolvable) is True
+        assert bool(guarded.contains(unresolvable)) is True
 
-    def test_resolution_failure_does_not_escape(
-        self, guarded: GuardedLocations
-    ) -> None:
-        assert guarded.contains("/tmp/nothing\x00here") is False
+    def test_resolution_failure_does_not_escape(self, guarded: GuardedLocations) -> None:
+        assert bool(guarded.contains("/tmp/nothing\x00here")) is False
 
     def test_spellings_omits_the_form_it_could_not_produce(self) -> None:
         assert len(spellings("/tmp/x\x00y")) == 2
@@ -270,9 +240,7 @@ class TestArbitraryText:
             pytest.param("cat 'modules/home/ai/shared/hooks/x.py'", id="quoted"),
         ],
     )
-    def test_a_directory_is_named_with_or_without_its_separator(
-        self, guarded: GuardedLocations, command: str
-    ) -> None:
+    def test_a_directory_is_named_with_or_without_its_separator(self, guarded: GuardedLocations, command: str) -> None:
         """The declaration's trailing separator is a boundary, not text to match."""
         assert guarded.mentioned_in(command) is True
 
@@ -284,8 +252,52 @@ class TestArbitraryText:
             pytest.param("cat vendor/x-modules/home/ai/shared/hooks", id="both"),
         ],
     )
-    def test_a_longer_name_holding_the_fragment_is_not_guarded(
-        self, guarded: GuardedLocations, command: str
-    ) -> None:
+    def test_a_longer_name_holding_the_fragment_is_not_guarded(self, guarded: GuardedLocations, command: str) -> None:
         """A component matches whole; a backup beside a guarded tree is its own path."""
         assert guarded.mentioned_in(command) is False
+
+
+class TestDeclarationChains:
+    def test_declaration_covers_its_intermediate_and_final_targets(self, tree):
+        target = tree / "target"
+        target.mkdir()
+        middle = tree / "middle"
+        middle.symlink_to(target)
+        declared = tree / "home" / "guarded"
+        declared.symlink_to(middle)
+        locations = GuardedLocations(["~/guarded/"], home=str(tree / "home"))
+
+        matches = locations.contains(str(middle / "file"))
+
+        assert [(match.declaration, match.distance) for match in matches] == [("~/guarded/", 1)]
+        assert locations.contains(str(target / "file"))
+        assert str(middle / "file") in spellings(str(declared / "file"))
+
+    def test_relative_path_uses_supplied_cwd(self, guarded, tree):
+        outside = tree / "outside"
+        outside.mkdir()
+
+        matches = guarded.contains("modules/home/ai/shared/hooks/file", cwd=str(outside))
+
+        assert not matches
+
+    @pytest.mark.parametrize(
+        ("path", "matches"),
+        [
+            ("~/instructions/x.md", True),
+            ("~/instructions/nested/x.md", False),
+            ("~/instructions/x.py", False),
+        ],
+    )
+    def test_last_component_glob_does_not_span_directories(self, tree, path, matches):
+        locations = GuardedLocations(["~/instructions/*.md"], home=str(tree / "home"))
+
+        result = locations.contains(path)
+
+        assert bool(result) is matches
+
+    def test_fragment_keeps_the_glob_component(self, tree):
+        locations = GuardedLocations(["~/instructions/*.md"], home=str(tree / "home"))
+
+        assert locations.mentioned_in("${X:-instructions/x.md}")
+        assert not locations.mentioned_in("${X:-elsewhere.md}")

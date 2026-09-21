@@ -24,16 +24,30 @@ _WARN_CAPABLE = frozenset({CLAUDE})
 # Copilot honors ask responses for file tools only; other asks block.
 _COPILOT_ASK_TOOLS = frozenset({"Write", "Edit"})
 
-AI_INSTRUCTIONS = """
+_REPORT_POINTS = """1. Your current task — what you were working on
+2. Your intended step — what you were trying to do and why
+3. What was blocked — the specific action blocked and the reason given above
+4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed"""
+
+STOP_INSTRUCTIONS = f"""
 ---
 AI INSTRUCTIONS:
 You have been blocked from performing this operation. Do NOT attempt to find alternative commands, equivalent steps, or workarounds that achieve the same result through a different path.
 
 Stop and report the following to the user immediately:
-1. Your current task — what you were working on
-2. Your intended step — what you were trying to do and why
-3. What was blocked — the specific action blocked and the reason given above
-4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed
+{_REPORT_POINTS}
+"""
+
+# For a refusal the classifier caused rather than the policy.
+RETRY_INSTRUCTIONS = f"""
+---
+AI INSTRUCTIONS:
+The classifier stopped this call because the command does not match any form it can check for writes. Reading this path is allowed; writing to it needs the user's approval.
+
+If one of the commands listed above under "Recognized reads use" does what you need, run that instead.
+
+If none of them does, stop and report the following to the user:
+{_REPORT_POINTS}
 """
 
 
@@ -44,9 +58,20 @@ class Decision(enum.StrEnum):
     ASK = "ask"
 
 
-def invoking_agent(
-    invocation_path: str | None = None, payload: dict | None = None
-) -> str:
+class Instruction(enum.StrEnum):
+    """Which closing instruction a refusal carries."""
+
+    STOP = "stop"
+    RETRY = "retry"
+
+
+_INSTRUCTION_TEXT = {
+    Instruction.STOP: STOP_INSTRUCTIONS,
+    Instruction.RETRY: RETRY_INSTRUCTIONS,
+}
+
+
+def invoking_agent(invocation_path: str | None = None, payload: dict | None = None) -> str:
     """Name the agent this hook is running for."""
     path = sys.argv[0] if invocation_path is None else invocation_path
     normalized = path.replace("\\", "/")
@@ -79,6 +104,7 @@ def respond(
     *,
     agent: str | None = None,
     tool_name: str | None = None,
+    instruction: Instruction = Instruction.STOP,
 ) -> NoReturn:
     """Encode `decision` for the invoking agent and exit."""
     who = invoking_agent() if agent is None else agent
@@ -97,7 +123,7 @@ def respond(
         sys.exit(0)
 
     if decision in (Decision.BLOCK, Decision.ASK):
-        sys.stderr.write(f"{message}\n{AI_INSTRUCTIONS}\n")
+        sys.stderr.write(f"{message}\n{_INSTRUCTION_TEXT[instruction]}\n")
         sys.exit(2)
 
     if decision is Decision.WARN:

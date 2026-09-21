@@ -7,7 +7,13 @@ Agent credentials refuse everywhere.
 
 from pathlib import Path
 
-from conftest import assert_allowed, assert_ask, assert_block_contract, run_hook
+from conftest import (
+    assert_allowed,
+    assert_ask,
+    assert_block_contract,
+    assert_blocked,
+    run_hook,
+)
 
 HOOK = "block-hook-tampering.py"
 HOOKS_DIR = Path(__file__).parents[2] / "shared" / "hooks"
@@ -70,8 +76,8 @@ class TestMutationGate:
     def test_deployed_settings_write_asks(self):
         assert_ask(write("~/.claude/settings.json"), "settings.json")
 
-    def test_deployed_project_state_write_asks(self):
-        assert_ask(write("~/.claude.json"), ".claude.json")
+    def test_deployed_project_state_write_blocks(self):
+        assert_blocked(write("~/.claude.json"), ".claude.json")
 
     def test_repo_hook_edit_asks(self):
         assert_ask(edit(repo_path("hooks", "block-secrets.py")), "hooks")
@@ -109,7 +115,7 @@ class TestBashCommandProtection:
         )
 
     def test_bash_touching_deployed_settings_asks(self):
-        assert_ask(bash("cat ~/.claude/settings.json"), "settings.json")
+        assert_allowed(bash("cat ~/.claude/settings.json"))
 
     def test_bash_naming_a_credential_blocks(self):
         assert_block_contract(bash("cat ~/.codex/auth.json"), "auth.json")
@@ -122,26 +128,20 @@ class TestBashCommandProtection:
     def test_bash_mixing_instruction_markdown_and_protected_path_asks(self):
         instruction = repo_path("hooks", "instructions", "00-response-style.md")
 
-        assert_ask(
-            bash(f"cat {instruction} ~/.claude/settings.json"),
-            "settings.json",
-        )
+        assert_allowed(bash(f"cat {instruction} ~/.claude/settings.json"))
 
     def test_unrelated_bash_allowed(self):
         assert_allowed(bash("echo hello"))
 
 
-class TestInstructionMarkdownAllowlist:
-    """`instructions/*.md` is prompt text rather than enforcement, so it stays
-    writable; anything else under the same directory does not."""
+class TestInstructionMarkdownGuard:
+    """Instruction text is guarded enforcement."""
 
     def test_repo_instruction_markdown_write_allowed(self):
-        assert_allowed(
-            write(repo_path("hooks", "instructions", "00-response-style.md"))
-        )
+        assert_ask(write(repo_path("hooks", "instructions", "00-response-style.md")))
 
     def test_deployed_instruction_markdown_write_allowed(self):
-        assert_allowed(write("~/.claude/hooks/instructions/00-response-style.md"))
+        assert_ask(write("~/.claude/hooks/instructions/00-response-style.md"))
 
     def test_nested_instruction_path_asks(self):
         assert_ask(

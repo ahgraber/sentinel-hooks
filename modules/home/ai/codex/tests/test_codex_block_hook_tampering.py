@@ -47,16 +47,7 @@ def apply_patch(path: str):
     return run_hook(
         HOOK,
         "apply_patch",
-        {
-            "command": (
-                "*** Begin Patch\n"
-                f"*** Update File: {path}\n"
-                "@@\n"
-                "-old\n"
-                "+new\n"
-                "*** End Patch\n"
-            )
-        },
+        {"command": (f"*** Begin Patch\n*** Update File: {path}\n@@\n-old\n+new\n*** End Patch\n")},
     )
 
 
@@ -109,9 +100,7 @@ class TestMutationProtection:
 
 class TestBashCommandProtection:
     def test_bash_reading_repo_hook_proceeds(self):
-        # The agent module tree is read-through, so a recognized read runs
-        # unprompted here too. This is the agent whose gate is a refusal rather
-        # than a question, so the carve-out is what makes review reachable.
+        # Recognized reads of guarded hook sources proceed.
         assert_allowed(bash(f"cat {repo_path('hooks', 'block-secrets.py')}"))
 
     def test_bash_touching_repo_hook_blocks(self):
@@ -122,21 +111,18 @@ class TestBashCommandProtection:
             "hooks",
         )
 
-    def test_bash_touching_deployed_codex_home_blocks(self):
-        assert_block_contract(bash("cat ~/.codex/config.toml"), "config.toml")
+    def test_bash_reading_deployed_codex_settings_proceeds(self):
+        assert_allowed(bash("cat ~/.codex/config.toml"))
 
     def test_bash_referencing_only_instruction_markdown_allowed(self):
         instruction = repo_path("hooks", "instructions", "00-response-style.md")
 
         assert_allowed(bash(f"cat {instruction}"))
 
-    def test_bash_mixing_instruction_markdown_and_protected_path_blocks(self):
+    def test_bash_reading_instructions_and_settings_proceeds(self):
         instruction = repo_path("hooks", "instructions", "00-response-style.md")
 
-        assert_block_contract(
-            bash(f"cat {instruction} ~/.codex/config.toml"),
-            "config.toml",
-        )
+        assert_allowed(bash(f"cat {instruction} ~/.codex/config.toml"))
 
     def test_unrelated_bash_allowed(self):
         assert_allowed(bash("echo hello"))
@@ -155,25 +141,21 @@ class TestApplyPatchProtection:
             "rules",
         )
 
-    def test_apply_patch_instruction_markdown_allowed(self):
-        assert_allowed(
-            apply_patch(repo_path("hooks", "instructions", "00-response-style.md"))
-        )
+    def test_apply_patch_instruction_markdown_blocks(self):
+        assert_block_contract(apply_patch(repo_path("hooks", "instructions", "00-response-style.md")))
 
     def test_unrelated_apply_patch_allowed(self):
         assert_allowed(apply_patch("/tmp/notes.txt"))
 
 
-class TestInstructionMarkdownAllowlist:
-    """`instructions/*.md` is prompt text rather than enforcement, so it stays writable."""
+class TestInstructionMarkdownGuard:
+    """Instruction text is guarded enforcement."""
 
-    def test_repo_instruction_markdown_write_allowed(self):
-        assert_allowed(
-            write(repo_path("hooks", "instructions", "00-response-style.md"))
-        )
+    def test_repo_instruction_markdown_write_blocks(self):
+        assert_block_contract(write(repo_path("hooks", "instructions", "00-response-style.md")))
 
-    def test_deployed_instruction_markdown_write_allowed(self):
-        assert_allowed(write("~/.codex/hooks/instructions/00-response-style.md"))
+    def test_deployed_instruction_markdown_write_blocks(self):
+        assert_block_contract(write("~/.codex/hooks/instructions/00-response-style.md"))
 
     def test_nested_instruction_path_blocks(self):
         assert_block_contract(
@@ -189,16 +171,9 @@ class TestInstructionMarkdownAllowlist:
 
 
 class TestPathResolution:
-    """Exercise the realpath-resolved PROTECTED_PATHS layer.
+    """Writes through a symlink retain the target source's protection."""
 
-    The target must be a file Codex owns outright: this layer compares a realpath
-    against a prefix, and `hooks/` resolves into the shared directory, outside the
-    prefix this hook defends.
-    """
-
-    CODEX_OWNED_FILE = (
-        REPO_ROOT / "modules" / "home" / "ai" / "codex" / "rules" / "default.rules"
-    )
+    CODEX_OWNED_FILE = REPO_ROOT / "modules" / "home" / "ai" / "codex" / "rules" / "default.rules"
 
     def test_write_through_symlink_to_repo_source_blocks(self, tmp_path: Path):
         alias = tmp_path / "notes.rules"

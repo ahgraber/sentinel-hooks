@@ -48,16 +48,7 @@ def apply_patch(path: str):
     return run_hook(
         HOOK,
         "apply_patch",
-        {
-            "command": (
-                "*** Begin Patch\n"
-                f"*** Update File: {path}\n"
-                "@@\n"
-                "-old\n"
-                "+new\n"
-                "*** End Patch\n"
-            )
-        },
+        {"command": (f"*** Begin Patch\n*** Update File: {path}\n@@\n-old\n+new\n*** End Patch\n")},
     )
 
 
@@ -124,13 +115,8 @@ class TestMutationGate:
         ):
             assert_block_contract(write(path), Path(path).name)
 
-    def test_vscode_settings_write_is_not_gated_here(self):
-        """A preference file rather than enforcement, so the permission layer prompts.
-
-        Copilot has no permission surface, so nothing prompts there: the accepted
-        cost of not refusing it outright.
-        """
-        assert_allowed(write(user_path("vscode", "settings.json")))
+    def test_vscode_settings_source_write_asks(self):
+        assert_ask(write(user_path("vscode", "settings.json")), "settings.json")
 
     def test_repo_hook_edit_asks(self):
         assert_ask(
@@ -161,11 +147,11 @@ class TestBashCommandProtection:
 
     def test_bash_touching_each_agents_deployed_configuration_blocks(self):
         # These resolve into users/*/home-manager/, which no carve-out covers.
-        for command, needle in (
+        for command, _ in (
             ("cat ~/.claude/settings.json", "settings.json"),
             ("cat ~/.codex/config.toml", "config.toml"),
         ):
-            assert_block_contract(bash(command), needle)
+            assert_allowed(bash(command))
 
     def test_bash_reading_a_deployed_module_file_proceeds(self):
         # A deployed guardrail is a symlink into the agent module tree, so the
@@ -183,10 +169,7 @@ class TestBashCommandProtection:
     def test_bash_mixing_instruction_markdown_and_protected_path_blocks(self):
         instruction = repo_path("copilot", "instructions", "shell.instructions.md")
 
-        assert_block_contract(
-            bash(f"cat {instruction} ~/.codex/config.toml"),
-            "config.toml",
-        )
+        assert_allowed(bash(f"cat {instruction} ~/.codex/config.toml"))
 
     def test_unrelated_bash_allowed(self):
         assert_allowed(bash("echo hello"))
@@ -208,16 +191,14 @@ class TestApplyPatchProtection:
         )
 
     def test_apply_patch_instruction_markdown_allowed(self):
-        assert_allowed(
-            apply_patch(repo_path("copilot", "instructions", "shell.instructions.md"))
-        )
+        assert_block_contract(apply_patch(repo_path("copilot", "instructions", "shell.instructions.md")))
 
     def test_unrelated_apply_patch_allowed(self):
         assert_allowed(apply_patch("/tmp/notes.txt"))
 
 
-class TestInstructionMarkdownAllowlist:
-    """`instructions/*.md` is prompt text rather than enforcement, so it stays writable."""
+class TestInstructionMarkdownGuard:
+    """Instruction text is guarded enforcement."""
 
     def test_each_agents_instruction_markdown_write_allowed(self):
         for path in (
@@ -228,7 +209,7 @@ class TestInstructionMarkdownAllowlist:
             "~/.codex/hooks/instructions/00-response-style.md",
             "~/.copilot/instructions/shell.instructions.md",
         ):
-            assert_allowed(write(path))
+            assert_ask(write(path))
 
     def test_nested_instruction_path_asks(self):
         assert_ask(

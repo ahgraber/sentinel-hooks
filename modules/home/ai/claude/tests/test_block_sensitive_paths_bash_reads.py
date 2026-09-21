@@ -1,11 +1,8 @@
 """Tests for Bash read-target blocking in block-sensitive-paths.py.
 
-The Bash read path is deliberately fail-safe: it tokenises with `shlex` and, if a
-segment invokes a recognized read command, checks every token against the
-sensitivity rules. There is no option/operand modelling — a secret filename that
-appears anywhere blocks, and a secret-looking search pattern over-denies. That
-over-deny is accepted on purpose (missing a real secret read is worse than
-blocking a benign command); see the `TODO(over-deny carve-out)` in the hook.
+The shared lexer resolves words and assigns kinds. Strong rules check every
+word of a recognized read segment. The name heuristic checks path candidates
+and redirection targets, so a search pattern alone does not trigger it.
 """
 
 from conftest import assert_allowed, assert_blocked, run_hook
@@ -25,9 +22,7 @@ class TestBashReadBlocked:
         assert_blocked(bash("cat .env.production"), "zero-access")
 
     def test_service_account_json(self):
-        assert_blocked(
-            bash("head -n 5 ./deploy/service-account-prod.json"), "zero-access"
-        )
+        assert_blocked(bash("head -n 5 ./deploy/service-account-prod.json"), "zero-access")
 
     def test_credentials_json(self):
         assert_blocked(bash("grep -i token ./config/credentials.json"), "zero-access")
@@ -72,9 +67,7 @@ class TestReaderCoverage:
         assert_blocked(bash("read -r line < .env"), "zero-access")
 
     def test_while_read_redirect(self):
-        assert_blocked(
-            bash('while read -r l; do echo "$l"; done < .env'), "zero-access"
-        )
+        assert_blocked(bash('while read -r l; do echo "$l"; done < .env'), "zero-access")
 
     def test_null_command_substitution_redirect(self):
         assert_blocked(bash("x=$(< .env); echo $x"), "zero-access")
@@ -83,7 +76,7 @@ class TestReaderCoverage:
         assert_blocked(bash("openssl rsa -in server.pem"), "zero-access")
 
     def test_gpg_decrypt(self):
-        assert_blocked(bash("gpg -d mysecret.txt"), "zero-access")
+        assert_blocked(bash("gpg -d ./mysecret.txt"), "zero-access")
 
     def test_tar_extract_to_stdout(self):
         assert_blocked(bash("tar xOf archive.tar .env"), "zero-access")
@@ -135,10 +128,14 @@ class TestBareCredentialsAndWrappers:
     def test_bare_ssh_key(self):
         assert_blocked(bash("cat id_rsa"), "zero-access")
 
-    def test_bare_credentials(self):
+    def test_bare_credentials(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "credentials").touch()
         assert_blocked(bash("cat credentials"), "zero-access")
 
-    def test_bare_secret(self):
+    def test_bare_secret(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "secret").touch()
         assert_blocked(bash("cat secret"), "zero-access")
 
     def test_sudo_with_options(self):
@@ -154,10 +151,10 @@ class TestBareCredentialsAndWrappers:
 
 class TestAcceptedOverDeny:
     def test_grep_secret_pattern(self):
-        assert_blocked(bash("grep -r secret ."), "zero-access")
+        assert_allowed(bash("grep -r secret ."))
 
     def test_jq_credentials_filter(self):
-        assert_blocked(bash("jq '.credentials' config.json"), "zero-access")
+        assert_allowed(bash("jq '.credentials' config.json"))
 
     def test_grep_context_dotenv_pattern(self):
         assert_blocked(bash("grep -A 3 .env README.md"), "zero-access")

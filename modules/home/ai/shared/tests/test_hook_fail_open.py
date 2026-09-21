@@ -14,10 +14,10 @@ failure path on every call, with nothing turning red.
 
 from __future__ import annotations
 
-import json
-import subprocess
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -40,9 +40,7 @@ class HookResult:
     stderr: str
 
 
-def run_hook(
-    hook: str, payload: dict | None = None, *, raw: str | None = None
-) -> HookResult:
+def run_hook(hook: str, payload: dict | None = None, *, raw: str | None = None) -> HookResult:
     """Run `hook` over a payload, or over `raw` bytes when the payload must not parse."""
     result = subprocess.run(
         ["python3", str(HOOKS_DIR / hook)],
@@ -59,9 +57,7 @@ class TestUnexpectedErrorFailsOpen:
     """A hook covering read-only tools lets the call through when it breaks."""
 
     def test_an_error_inside_the_judgment_allows_the_call(self) -> None:
-        result = run_hook(
-            SENSITIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT}
-        )
+        result = run_hook(SENSITIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT})
 
         assert result.exit_code == 0, (
             f"{SENSITIVE} refused a call it failed to judge; the tool mix here "
@@ -79,26 +75,19 @@ class TestTamperHookGatesWhatItCannotJudge:
     """
 
     @pytest.mark.parametrize("tool_name", ["Bash", "Write", "Edit", "apply_patch"])
-    def test_an_error_inside_the_judgment_refuses_the_call(
-        self, tool_name: str
-    ) -> None:
+    def test_an_error_inside_the_judgment_refuses_the_call(self, tool_name: str) -> None:
         """No agent is named here, so the ask degrades to the refusal."""
-        result = run_hook(
-            TAMPERING, {"tool_name": tool_name, "tool_input": MALFORMED_TOOL_INPUT}
-        )
+        result = run_hook(TAMPERING, {"tool_name": tool_name, "tool_input": MALFORMED_TOOL_INPUT})
 
         assert result.exit_code == 2, (
-            f"{TAMPERING} allowed a {tool_name} call it failed to judge"
-            f"\nstdout: {result.stdout}"
+            f"{TAMPERING} allowed a {tool_name} call it failed to judge\nstdout: {result.stdout}"
         )
         assert result.stdout == "", "a refusal writes nothing to stdout"
         assert "block-hook-tampering failed" in result.stderr
 
     def test_a_read_is_allowed_whatever_its_payload_holds(self) -> None:
         """A read is passed before anything in the payload is reached."""
-        result = run_hook(
-            TAMPERING, {"tool_name": "Read", "tool_input": MALFORMED_TOOL_INPUT}
-        )
+        result = run_hook(TAMPERING, {"tool_name": "Read", "tool_input": MALFORMED_TOOL_INPUT})
 
         assert result.exit_code == 0
         assert result.stdout == ""
@@ -116,13 +105,10 @@ class TestUnexpectedErrorFailsClosed:
     """The Bash-only hook refuses instead, because every tool it covers is sensitive."""
 
     def test_an_error_inside_the_judgment_refuses_the_command(self) -> None:
-        result = run_hook(
-            DESTRUCTIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT}
-        )
+        result = run_hook(DESTRUCTIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT})
 
         assert result.exit_code == 2, (
-            "block-destructive-ops covers Bash alone, where an unchecked "
-            "command can delete work or rewrite history"
+            "block-destructive-ops covers Bash alone, where an unchecked command can delete work or rewrite history"
         )
         assert "never checked" in result.stderr
 
@@ -140,16 +126,12 @@ class TestEmptyCommandIsAllowed:
     def test_an_empty_bash_command_allows_the_call(self, hook: str) -> None:
         result = run_hook(hook, {"tool_name": "Bash", "tool_input": {"command": ""}})
 
-        assert result.exit_code == 0, (
-            f"{hook} judged an empty command\nstderr: {result.stderr}"
-        )
+        assert result.exit_code == 0, f"{hook} judged an empty command\nstderr: {result.stderr}"
         assert result.stdout == ""
         assert result.stderr == "", "an Allow reports nothing"
 
     def test_an_empty_apply_patch_allows_the_call(self) -> None:
-        result = run_hook(
-            SENSITIVE, {"tool_name": "apply_patch", "tool_input": {"command": ""}}
-        )
+        result = run_hook(SENSITIVE, {"tool_name": "apply_patch", "tool_input": {"command": ""}})
 
         assert result.exit_code == 0
         assert result.stderr == ""

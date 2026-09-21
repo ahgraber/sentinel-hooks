@@ -103,31 +103,30 @@
       "blocked": true,
       "why": "repository source of pi configuration"
     },
-
     {
       "path": "~/.claude/hooks/instructions/00-response-style.md",
-      "blocked": false,
-      "why": "prompt text held directly in an instructions directory"
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
     },
     {
       "path": "modules/home/ai/shared/hooks/instructions/00-response-style.md",
-      "blocked": false,
-      "why": "prompt text at the repository source"
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
     },
     {
       "path": "modules/home/ai/copilot/instructions/shell.instructions.md",
-      "blocked": false,
-      "why": "Copilot keeps its prompt text at the top of its own directory"
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
     },
     {
       "path": "modules/home/ai/shared/hooks/instructions/nested/note.md",
       "blocked": true,
-      "why": "the carve-out is one level deep only"
+      "why": "instruction text is guarded enforcement"
     },
     {
       "path": "modules/home/ai/shared/hooks/instructions/helper.py",
       "blocked": true,
-      "why": "the carve-out is markdown only"
+      "why": "instruction text is guarded enforcement"
     },
     {
       "path": "~/.claude/skills/deploy/SKILL.md",
@@ -146,8 +145,8 @@
     },
     {
       "path": "~/.pi/agent/npm/lib/node_modules/pkg/index.js",
-      "blocked": false,
-      "why": "the npm prefix shares ~/.pi with the extensions and is not enforcement"
+      "blocked": true,
+      "why": "all paths within the declared Pi agent home are guarded"
     },
     {
       "path": "src/main.py",
@@ -168,6 +167,17 @@
       "path": "~/Downloads/users/testuser/home-manager/codex/hooks.json",
       "blocked": false,
       "why": "same, for a repository-source spelling that sits in no repository"
+    },
+    {
+      "path": "~/.pi/npm/lib/node_modules/pkg/index.js",
+      "blocked": false,
+      "why": "the npm prefix outside the agent home is not guarded"
+    },
+    {
+      "path": "~/.claude/projects/demo/memory/note.txt",
+      "blocked": false,
+      "pi_blocked": true,
+      "why": "memory is write-through; the temporary Pi port has no directory write-through outcome"
     }
   ]
 }

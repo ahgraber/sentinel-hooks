@@ -293,12 +293,13 @@ const GUARDED_PATH_CASES = JSON.parse(
   await readFile(join(SOURCE_DIR, "..", "..", "shared", "tests", "guarded-path-cases.json"), "utf8"),
 ).cases
 
-test("Pi agrees with the shared tamper-protection verdicts", async (t) => {
+test("Pi checks shared verdicts with explicit temporary class divergences", async (t) => {
   assert.ok(GUARDED_PATH_CASES.length > 20, "shared case table did not load")
 
-  for (const { path, blocked, why } of GUARDED_PATH_CASES) {
-    await t.test(`${blocked ? "blocks" : "allows"} ${path}`, () => {
-      assert.equal(isProtectedPath(path.replace(/^~/, homedir())), blocked, why)
+  for (const { path, blocked, pi_blocked, why } of GUARDED_PATH_CASES) {
+    const expected = pi_blocked ?? blocked
+    await t.test(`${pi_blocked === undefined ? "shared" : "temporary Pi divergence"}: ${expected ? "blocks" : "allows"} ${path}`, () => {
+      assert.equal(isProtectedPath(path.replace(/^~/, homedir())), expected, why)
     })
   }
 })

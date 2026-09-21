@@ -1,7 +1,7 @@
 """Behavioral tests for bash-command-validator.sh."""
 
-import pytest
 from conftest import assert_allowed, assert_blocked, run_hook
+import pytest
 
 HOOK = "bash-command-validator.sh"
 

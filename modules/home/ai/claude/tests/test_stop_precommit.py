@@ -1,26 +1,18 @@
 """Tests for stop-precommit.sh, the end-of-turn pre-commit hook."""
 
 import json
+from pathlib import Path
 import shutil
 import subprocess
-from pathlib import Path
 
-import pytest
 from conftest import HookResult
+import pytest
 
 HOOK_PATH = Path(__file__).parents[2] / "shared" / "hooks" / "stop-precommit.sh"
 
-RUNNER = (
-    "prek"
-    if shutil.which("prek")
-    else "pre-commit"
-    if shutil.which("pre-commit")
-    else None
-)
+RUNNER = "prek" if shutil.which("prek") else "pre-commit" if shutil.which("pre-commit") else None
 
-requires_runner = pytest.mark.skipif(
-    RUNNER is None, reason="neither prek nor pre-commit is on PATH"
-)
+requires_runner = pytest.mark.skipif(RUNNER is None, reason="neither prek nor pre-commit is on PATH")
 
 PASSING_CONFIG = """repos:
   - repo: local
@@ -62,9 +54,7 @@ def _create_git_repo(path: Path, config: str | None = None) -> Path:
     if config is not None:
         (path / ".pre-commit-config.yaml").write_text(config)
     (path / "tracked.txt").write_text("init\n")
-    subprocess.run(
-        ["git", "-C", str(path), "add", "."], check=True, capture_output=True
-    )
+    subprocess.run(["git", "-C", str(path), "add", "."], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "commit", "-m", "init"],
         check=True,
@@ -73,9 +63,7 @@ def _create_git_repo(path: Path, config: str | None = None) -> Path:
     return path
 
 
-def _run_hook(
-    cwd: Path, *, stop_hook_active: bool = False, run_cwd: Path | None = None
-) -> HookResult:
+def _run_hook(cwd: Path, *, stop_hook_active: bool = False, run_cwd: Path | None = None) -> HookResult:
     """Run the Stop hook with a payload rooted at the given directory.
 
     run_cwd sets the process working directory, which the hook falls back to when
@@ -95,15 +83,11 @@ def _run_hook(
         timeout=120,
         cwd=str(run_cwd) if run_cwd else None,
     )
-    return HookResult(
-        exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr
-    )
+    return HookResult(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
 def _assert_silent(result: HookResult) -> None:
-    assert result.exit_code == 0, (
-        f"Expected exit 0, got {result.exit_code}.\nstderr: {result.stderr}"
-    )
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}.\nstderr: {result.stderr}"
     assert result.stderr.strip() == "", f"Expected no stderr, got: {result.stderr}"
 
 
@@ -118,9 +102,7 @@ class TestEarlyReturns:
     def test_non_git_directory_is_a_no_op(self, tmp_path):
         _assert_silent(_run_hook(tmp_path))
 
-    def test_unresolvable_payload_cwd_falls_back_to_the_process_directory(
-        self, tmp_path
-    ):
+    def test_unresolvable_payload_cwd_falls_back_to_the_process_directory(self, tmp_path):
         """A missing cwd must not crash the hook or escape to an unrelated repo."""
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
@@ -190,9 +172,7 @@ class TestChangedFileSet:
 
         result = _run_hook(repo)
 
-        assert result.exit_code == 0, (
-            f"An ignored file reached the runner.\nstderr: {result.stderr}"
-        )
+        assert result.exit_code == 0, f"An ignored file reached the runner.\nstderr: {result.stderr}"
 
     def test_deleted_file_is_excluded(self, tmp_path):
         """--diff-filter=d drops deletions, which the runner cannot open."""
@@ -201,9 +181,7 @@ class TestChangedFileSet:
 
         result = _run_hook(repo)
 
-        assert result.exit_code == 0, (
-            f"A deleted path reached the runner.\nstderr: {result.stderr}"
-        )
+        assert result.exit_code == 0, f"A deleted path reached the runner.\nstderr: {result.stderr}"
 
     def test_repo_without_head_uses_the_staged_diff(self, tmp_path):
         """A repo with no commits still resolves a file set."""
@@ -234,6 +212,4 @@ class TestFailureContract:
 
         assert result.exit_code == 2, "A failing run must block the stop"
         assert "reject-target" in result.stderr, "Runner output must reach the agent"
-        assert "re-read those files" in result.stderr, (
-            "The agent must be told its in-context copies may be stale"
-        )
+        assert "re-read those files" in result.stderr, "The agent must be told its in-context copies may be stale"

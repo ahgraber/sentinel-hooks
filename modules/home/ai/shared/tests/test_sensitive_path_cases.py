@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
+import sys
 
+from hermetic import load_hook
 import pytest
 
 CASES_FILE = Path(__file__).parent / "sensitive-path-cases.json"
@@ -22,9 +23,7 @@ def load_should_block():
     """Import the hook by location; its filename is not a valid identifier."""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location(
-        "block_sensitive_paths", HOOKS_DIR / "block-sensitive-paths.py"
-    )
+    spec = importlib.util.spec_from_file_location("block_sensitive_paths", HOOKS_DIR / "block-sensitive-paths.py")
     module = importlib.util.module_from_spec(spec)
     if str(HOOKS_DIR) not in sys.path:
         sys.path.insert(0, str(HOOKS_DIR))
@@ -47,3 +46,14 @@ def test_cases_are_loaded() -> None:
 def test_verdict_matches_the_shared_table(case: dict) -> None:
     path = os.path.expanduser(case["path"])
     assert should_block(path) is case["blocked"], case["why"]
+
+
+@pytest.mark.parametrize("case", json.loads(CASES_FILE.read_text())["bash_cases"])
+def test_bash_word_cases(case, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for name in case["exists"]:
+        (tmp_path / name).touch()
+    hook = load_hook("block-sensitive-paths")
+    assert bool(hook.bash_blocked_target(case["command"], str(tmp_path))) is case["blocked"]

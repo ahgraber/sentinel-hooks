@@ -8,20 +8,18 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import sys
 from pathlib import Path
+import sys
 
-import pytest
 from guarded_paths import folds_case
+import pytest
 
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 
 
 def load_hook():
     """Import the hook by location; its filename is not a valid identifier."""
-    spec = importlib.util.spec_from_file_location(
-        "block_hook_tampering", HOOKS_DIR / "block-hook-tampering.py"
-    )
+    spec = importlib.util.spec_from_file_location("block_hook_tampering", HOOKS_DIR / "block-hook-tampering.py")
     module = importlib.util.module_from_spec(spec)
     if str(HOOKS_DIR) not in sys.path:
         sys.path.insert(0, str(HOOKS_DIR))
@@ -47,35 +45,42 @@ def hooks_of(repo: Path) -> Path:
     return repo / "modules" / "home" / "ai" / "shared" / "hooks"
 
 
-class TestInstructionCarveOut:
-    def test_genuine_instruction_markdown_stays_writable(self, repo: Path):
+def test_ancestor_uses_payload_working_directory(repo):
+    assert HOOK.destroys_a_guarded_ancestor("rm -rf modules/home/ai", cwd=str(repo)) == "modules/home/ai"
+
+
+def test_relative_ancestor_without_cwd_does_not_use_process_directory(repo, monkeypatch):
+    monkeypatch.chdir(repo)
+    assert HOOK.destroys_a_guarded_ancestor("rm -rf modules/home/ai") is None
+
+
+def test_newline_does_not_hide_a_destroyed_ancestor(repo):
+    ancestor = str(repo / "modules/home/ai")
+    command = f"cat ordinary\nrm -rf {ancestor}"
+    assert HOOK.destroys_a_guarded_ancestor(command, cwd=str(repo)) == ancestor
+
+
+class TestInstructionGuard:
+    def test_instruction_markdown_is_guarded(self, repo: Path):
         markdown = hooks_of(repo) / "instructions" / "00-style.md"
 
-        assert HOOK.is_instruction_markdown(str(markdown))
-        assert not HOOK.is_protected_path(str(markdown))
+        assert HOOK.is_protected_path(str(markdown))
 
     def test_markdown_link_to_a_hook_is_a_write_to_that_hook(self, repo: Path):
         alias = hooks_of(repo) / "instructions" / "notes.md"
         alias.symlink_to("../block-destructive-ops.py")
 
-        assert not HOOK.is_instruction_markdown(str(alias))
         assert HOOK.is_protected_path(str(alias))
 
-    def test_markdown_link_blocks_even_where_the_target_does_not_exist(
-        self, repo: Path
-    ):
+    def test_markdown_link_blocks_even_where_the_target_does_not_exist(self, repo: Path):
         alias = hooks_of(repo) / "instructions" / "notes.md"
         alias.symlink_to("../block-secrets.py")
 
-        assert not HOOK.is_instruction_markdown(str(alias))
         assert HOOK.is_protected_path(str(alias))
 
-    def test_markdown_outside_any_instruction_directory_is_not_carved_out(
-        self, repo: Path
-    ):
+    def test_markdown_outside_any_instruction_directory_is_not_carved_out(self, repo: Path):
         markdown = hooks_of(repo) / "README.md"
 
-        assert not HOOK.is_instruction_markdown(str(markdown))
         assert HOOK.is_protected_path(str(markdown))
 
 
@@ -116,9 +121,7 @@ class TestAttachedOperands:
             "install --target={target}",
         ],
     )
-    def test_operand_is_resolved_however_it_is_attached(
-        self, alias: Path, command: str
-    ):
+    def test_operand_is_resolved_however_it_is_attached(self, alias: Path, command: str):
         target = alias / "block-destructive-ops.py"
 
         assert HOOK.command_mentions_protected_path(command.format(target=target))
@@ -126,11 +129,8 @@ class TestAttachedOperands:
     def test_unguarded_redirection_still_passes(self, alias: Path, tmp_path: Path):
         assert not HOOK.command_mentions_protected_path(f"echo x >{tmp_path}/notes.txt")
 
-    def test_redirecting_instruction_markdown_elsewhere_stays_allowed(
-        self, repo: Path, tmp_path: Path
-    ):
+    def test_redirecting_instruction_markdown_elsewhere_stays_allowed(self, repo: Path, tmp_path: Path):
         markdown = hooks_of(repo) / "instructions" / "00-style.md"
         command = f"cat {markdown} >{tmp_path}/copy.md"
 
         assert HOOK.command_mentions_protected_path(command)
-        assert HOOK._only_instruction_markdown(HOOK._paths_in(command))

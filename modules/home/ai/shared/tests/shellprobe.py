@@ -12,11 +12,11 @@ cannot reach a real utility.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import os
+from pathlib import Path
 import shutil
 import subprocess
-from dataclasses import dataclass
-from pathlib import Path
 
 # The shim writes its own argv and exits. `$RANDOM` and `$$` together keep
 # concurrent invocations inside one command from overwriting each other.
@@ -102,7 +102,5 @@ class ShellProbe:
             if not words:
                 continue
             decoded = [word.decode("utf-8", "surrogateescape") for word in words]
-            invocations.append(
-                Invocation(os.path.basename(decoded[0]), tuple(decoded[1:]))
-            )
+            invocations.append(Invocation(os.path.basename(decoded[0]), tuple(decoded[1:])))
         return invocations

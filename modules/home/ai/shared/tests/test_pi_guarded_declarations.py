@@ -8,22 +8,18 @@ structural: neither carries a mirrored literal, both name the one manifest, and
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
+import re
 
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 EXTENSION = Path(__file__).parents[2] / "pi" / "security" / "index.ts"
-CASES = json.loads((Path(__file__).parent / "guarded-path-cases.json").read_text())[
-    "cases"
-]
+CASES = json.loads((Path(__file__).parent / "guarded-path-cases.json").read_text())["cases"]
 
 SOURCE = EXTENSION.read_text()
 
 
 def test_extension_reads_the_manifest_rather_than_a_mirrored_literal() -> None:
-    assert "guarded-paths.toml" in SOURCE, (
-        f"{EXTENSION.name} no longer names the manifest it is supposed to read"
-    )
+    assert "guarded-paths.toml" in SOURCE, f"{EXTENSION.name} no longer names the manifest it is supposed to read"
     for name in (
         "GUARDED_FILES",
         "CREDENTIAL_FILES",
@@ -41,28 +37,13 @@ def test_hook_and_extension_agree_on_the_manifest_filename() -> None:
     assert "guarded-paths.toml" in hook_source
 
 
-def test_instruction_layer_carve_out_has_behavioral_coverage() -> None:
-    """Both language suites assert this table, so a case here covers both sides."""
-    instruction_cases = [c for c in CASES if "instructions" in c["path"]]
-    assert any(not c["blocked"] for c in instruction_cases), (
-        "no case shows the instruction-markdown carve-out actually allowing a write"
-    )
-    assert any(c["blocked"] for c in instruction_cases), (
-        "no case shows the carve-out's narrowness (nested, non-markdown, or a link)"
-    )
+def test_write_through_has_explicit_pi_divergence():
+    memory = [case for case in CASES if "/projects/" in case["path"]]
+    assert memory
+    assert all(not case["blocked"] and case["pi_blocked"] for case in memory)
 
 
-def test_location_only_class_has_behavioral_coverage() -> None:
-    """A location-only declaration contributes no text fragment, so only a path
-    resolving inside the guarded root can cover it."""
-    home_wide_cases = [
-        c
-        for c in CASES
-        if "whole" in c["why"] or "not only the" in c["why"] or "shares" in c["why"]
-    ]
-    assert any(c["blocked"] for c in home_wide_cases), (
-        "no case shows a location-only root guarding a path it names no file for"
-    )
-    assert any(not c["blocked"] for c in home_wide_cases), (
-        "no case shows a sibling outside the location-only root staying allowed"
-    )
+def test_instruction_markdown_is_guarded():
+    instructions = [case for case in CASES if "/instructions/" in case["path"]]
+    assert instructions
+    assert all(case["blocked"] for case in instructions)

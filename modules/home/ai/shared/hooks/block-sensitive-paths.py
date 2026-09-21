@@ -7,26 +7,30 @@
 
 This PreToolUse hook covers Read, Write, Edit, Bash, and Codex `apply_patch`.
 Bash parsing is conservative and can block benign commands. It does not evaluate
-shell code, dynamic commands, nested command strings, or symlink indirection.
+shell code, dynamic commands, or nested command strings. Path checks follow
+symlink chains.
 Codex native read tools emit no PreToolUse and are not covered.
 """
 
-import glob
 import json
 import os
+from pathlib import Path
 import re
-import shlex
 import sys
 from typing import NoReturn
 
+import apply_patch
 from guarded_paths import (
     NAME_HEURISTIC_EXEMPT_RE,
+    GuardedLocations,
     ManifestError,
+    PathPolicy,
     fragment,
     load_manifest,
     spellings,
 )
 from hook_response import Decision, invoking_agent, respond
+import shell_words
 
 _EXPOSURE_RISK = (
     "Exposed credentials risk unauthorized access, account takeover, and data "
@@ -43,9 +47,7 @@ EXTENSION_RE = re.compile(
 DOTENV_RE = re.compile(r"(?:^|[/\\*])\.env(?:\.[^/\\]+|\*)?$", re.IGNORECASE)
 ENVRC_RE = re.compile(r"(?:^|[/\\*])\.envrc$", re.IGNORECASE)
 
-SSH_KEY_RE = re.compile(
-    r"(?:^|[/\\])id_(?:rsa|dsa|ecdsa|ed25519)[^/\\]*$", re.IGNORECASE
-)
+SSH_KEY_RE = re.compile(r"(?:^|[/\\])id_(?:rsa|dsa|ecdsa|ed25519)[^/\\]*$", re.IGNORECASE)
 
 CRED_FILE_RE = re.compile(
     r"(?:^|[/\\])(?:\.netrc|\.npmrc|\.pypirc|\.git-credentials"
@@ -58,40 +60,46 @@ DOCKER_CONFIG_RE = re.compile(r"(?:^|[/\\])\.docker[/\\]config\.json$", re.IGNOR
 # Credential paths come from the manifest. This hook blocks reads;
 # block-hook-tampering blocks writes.
 def _credential_alternation(paths) -> str:
-    """The regex alternation matching any credential path's relative form."""
+    """Build the regex alternation matching any credential path's relative form."""
     parts = []
     for path in paths:
         relative = path.removeprefix("~/")
-        parts.append(re.escape(relative).replace("/", r"[/\\]"))
+        parts.append(re.escape(relative).replace(r"\*", r"[^/\\]*").replace("/", r"[/\\]"))
     return "|".join(parts)
 
 
+def _require_str_list(block_paths: object) -> list:
+    """Return `block_paths` unchanged, or raise if it is not a list of strings."""
+    if not isinstance(block_paths, list) or any(not isinstance(path, str) for path in block_paths):
+        raise ManifestError("block paths must be a list of strings")
+    return block_paths
+
+
+_CREDENTIAL_PATHS = ()
 try:
     _MANIFEST = load_manifest()
-    _CREDENTIAL_PATHS = _MANIFEST["credentials"]["paths"]
+    block_paths = _require_str_list(_MANIFEST["block"]["paths"])
+    _CREDENTIAL_PATHS = tuple(block_paths)
+    POLICY = PathPolicy(_MANIFEST)
     MANIFEST_ERROR = None
-except (ManifestError, KeyError, TypeError) as _exc:
+except Exception as _exc:  # noqa: BLE001 -- preserve independent checks and report construction failures
+    POLICY = None
     _MANIFEST = {}
-    _CREDENTIAL_PATHS = ()
     MANIFEST_ERROR = str(_exc)
 
 AGENT_CREDENTIAL_RE = re.compile(
     # `(?!)` matches nothing; `main()` reports the manifest failure.
-    rf"(?:^|[/\\])(?:{_credential_alternation(_CREDENTIAL_PATHS)})[^/\\]*$"
-    if _CREDENTIAL_PATHS
-    else r"(?!)",
+    rf"(?:^|[/\\])(?:{_credential_alternation(_CREDENTIAL_PATHS)})[^/\\]*$" if _CREDENTIAL_PATHS else r"(?!)",
     re.IGNORECASE,
 )
 
-CRED_DIR_RE = re.compile(
-    r"(?:^|[/\\])\.(?:ssh|aws|kube|gnupg|azure)(?:[/\\]|$)", re.IGNORECASE
-)
+CRED_DIR_RE = re.compile(r"(?:^|[/\\])\.(?:ssh|aws|kube|gnupg|azure)(?:[/\\]|$)", re.IGNORECASE)
 
 
 # Apply exceptions only to the spelling that triggered the name heuristic; a
 # link must not borrow its target's exception.
 def _exception_alternation(manifest) -> str:
-    """The regex alternation matching any declared exception's trailing form."""
+    """Build the regex alternation matching any declared exception's trailing form."""
     parts = [
         re.escape(fragment(exception["pattern"])).replace("/", r"[/\\]")
         for exception in manifest.get("exceptions", ())
@@ -101,6 +109,29 @@ def _exception_alternation(manifest) -> str:
 
 
 _NAME_EXCEPTIONS = _exception_alternation(_MANIFEST)
+
+NIX_STORE = Path("/nix/store")
+NIX_HOOK_SOURCES = GuardedLocations(
+    exception["pattern"]
+    for exception in _MANIFEST.get("exceptions", ())
+    if exception.get("surface") == "sensitive-path-nix-hook-wrapper"
+)
+
+
+def is_nix_hook_wrapper(path: str) -> bool:
+    """Recognize a Home Manager store symlink to an explicitly excused hook."""
+    wrapper = Path(path)
+    if wrapper.parent != NIX_STORE or not wrapper.is_symlink():
+        return False
+    name = re.fullmatch(r"[0-9abcdfghijklmnpqrsvwxyz]{32}-(hm_.+)", wrapper.name)
+    if name is None:
+        return False
+    target = Path(os.path.realpath(wrapper))
+    if not NIX_HOOK_SOURCES.contains(str(target)):
+        return False
+    expected = "hm_" + re.sub(r"[^A-Za-z0-9+._?=]", "", target.name)
+    return name.group(1) == expected
+
 
 NAME_HEURISTIC_EXCEPTION_RE = re.compile(
     # `(?!)` never matches, so a manifest that declared none excuses none.
@@ -116,13 +147,9 @@ ZERO_ACCESS_FILES_RE = re.compile(
 # The only class subject to the package-directory exemption.
 NAME_PATTERN_RE = re.compile(r"credentials|secret", re.IGNORECASE)
 
-PATCH_PATH_RE = re.compile(
-    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$", re.MULTILINE
-)
-
 
 def is_zero_access(path: str) -> bool:
-    """True if one spelling of a path matches a strong zero-access signal."""
+    """Return True if one spelling of a path matches a strong zero-access signal."""
     return bool(
         EXTENSION_RE.search(path)
         or DOTENV_RE.search(path)
@@ -142,27 +169,42 @@ def is_named_for_secrets(path: str) -> bool:
         NAME_PATTERN_RE.search(os.path.basename(path))
         and not NAME_HEURISTIC_EXEMPT_RE.search(path)
         and not NAME_HEURISTIC_EXCEPTION_RE.search(path)
+        and not is_nix_hook_wrapper(path)
     )
 
 
-def should_block(path: str) -> bool:
+def should_block(path: str, cwd: str | None = None) -> bool:
     """Return whether any spelling of `path` reaches a zero-access location.
 
     Apply heuristics and exemptions to the same spelling.
     """
-    return any(
-        is_zero_access(candidate) or is_named_for_secrets(candidate)
-        for candidate in spellings(path)
+    if POLICY and POLICY.verdict(path, "read", cwd=cwd) == "block":
+        return True
+    if not os.path.isabs(path) and not path.startswith("~"):
+        if cwd is None:
+            return is_zero_access(path) or is_named_for_secrets(path)
+        path = os.path.join(cwd, path)
+    return any(is_zero_access(candidate) or is_named_for_secrets(candidate) for candidate in spellings(path))
+
+
+def _manifest_warning() -> str:
+    return (
+        "block-sensitive-paths could not load guarded-paths.toml "
+        f"({MANIFEST_ERROR}); the full declared policy could not be checked; "
+        "available block declarations and strong rules still apply."
     )
 
 
 def block(path: str, tool: str) -> NoReturn:
+    """Respond with a block decision for a zero-access path."""
     action = "Reading" if tool in ("Read", "Bash read") else "Accessing"
     respond(
         Decision.BLOCK,
         f"Blocked: {tool} targeting zero-access path '{path}'.\n"
         f"{action} it could expose credentials or private keys to the agent, where "
-        "a later tool call could disclose or use them.",
+        "a later tool call could disclose or use them."
+        + (f"\n{_manifest_warning()}" if MANIFEST_ERROR is not None else "")
+        + ("\n" + "\n".join(POLICY.findings) if POLICY and POLICY.findings else ""),
     )
 
 
@@ -261,155 +303,94 @@ READ_CMDS = frozenset(
     }
 )
 
-# `shlex` groups punctuation runs. A punctuation-only token is never a word;
-# a run containing a separator ends the segment.
-_PUNCT_ONLY_RE = re.compile(r"^[|&;<>()]+$")
-_SEGMENT_SEP_RE = re.compile(r"[|;&()]")
-_LEADING_OPT_RE = re.compile(r"^-{1,2}[A-Za-z][A-Za-z-]*")
 
-# Bash decodes the C escapes in `$'...'` (`\056` -> '.'), so the literal
-# filename regexes must see the decoded form, not the escape sequence.
-_ANSI_C_RE = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
-
-
-def _decode_ansi_c(command: str) -> str:
-    """Decode ANSI-C quoted spans and preserve token boundaries.
-
-    Leave a span unchanged if decoding fails.
-    """
-
-    def repl(m: "re.Match[str]") -> str:
-        body = m.group(1)
-        try:
-            decoded = body.encode("latin-1", "backslashreplace").decode(
-                "unicode_escape"
-            )
-        except Exception:  # noqa: BLE001
-            return m.group(0)
-        return "'" + decoded.replace("'", "'\\''") + "'"
-
-    return _ANSI_C_RE.sub(repl, command)
+def _word_candidates(word):
+    yield word.value
+    yield from word.paths
+    if "=" in word.value:
+        yield word.value.split("=", 1)[1]
+    if word.kind == "option":
+        attached = re.sub(r"^-{1,2}[A-Za-z][A-Za-z-]*", "", word.value)
+        if attached:
+            yield attached
 
 
-def _norm_cmdword(token: str) -> str:
-    """Basename of a command word (already unquoted by shlex)."""
-    return os.path.basename(token.lstrip("\\"))
+def _read_words(segment):
+    reads = any(os.path.basename(word.value) in READ_CMDS for word in segment)
+    for word in segment:
+        input_redirect = word.redirection and "<" in word.redirection and "<<" not in word.redirection
+        if reads or input_redirect or word.kind == "unresolvable":
+            yield word
 
 
-def _lex_tokens(command: str) -> list[str]:
-    """Tokenize quotes and operators; use a permissive split for unclosed quotes."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        return list(lexer)
-    except ValueError:
-        tokens: list[str] = []
-        for part in re.split(r"([|&;\n<>()]+)", command):
-            tokens.extend(part.split())
-        return tokens
-
-
-def _candidate_paths(token: str):
-    """Yield the token and any attached option value that can name a file."""
-    yield token
-    if "=" in token:
-        yield token.split("=", 1)[1]
-    stripped = _LEADING_OPT_RE.sub("", token)
-    if stripped and stripped != token:
-        yield stripped
-
-
-def expand_glob_candidates(token: str, cwd: str):
-    """Yield the token and its glob matches; yield only the token on error."""
-    yield token
-    try:
-        if not glob.has_magic(token):
-            return
-        pattern = os.path.expanduser(token)
-        if os.path.isabs(pattern):
-            matches = glob.glob(pattern)
-        else:
-            matches = glob.glob(pattern, root_dir=cwd or None)
-        yield from matches
-    except (OSError, ValueError):
+def _write_words(segment):
+    for word in segment:
+        if (word.redirection and ">" in word.redirection) or word.value.startswith("of="):
+            yield word
+    words = [word for word in segment if word.kind not in {"option", "redirection target"}]
+    if not words:
         return
+    name = os.path.basename(words[0].value)
+    if name in {"cp", "mv", "install"} and len(words) > 2:
+        yield words[-1]
+    elif name in {"tee", "truncate"}:
+        yield from words[1:]
+    elif name in {"chmod", "chown"}:
+        yield from words[2:]
 
 
-def extract_bash_read_targets(command: str) -> list[str]:
-    """Return input-redirection targets and tokens from read-command segments."""
-    targets: list[str] = []
-    tokens = _lex_tokens(_decode_ansi_c(command))
-
-    # Input redirection reads a file regardless of the command. Exclude
-    # here-docs and include `<` inside punctuation runs.
-    for i, tok in enumerate(tokens):
-        if _PUNCT_ONLY_RE.match(tok) and "<" in tok and "<<" not in tok:
-            for nxt in tokens[i + 1 :]:
-                if not _PUNCT_ONLY_RE.match(nxt):
-                    targets.extend(_candidate_paths(nxt))
-                    break
-
-    # Checking every token can block benign search patterns. Keep that bias and
-    # narrow `NAME_PATTERN` instead of modeling options.
-    segment: list[str] = []
-    for tok in [*tokens, ";"]:  # trailing sentinel flushes the last segment
-        if _PUNCT_ONLY_RE.match(tok) and _SEGMENT_SEP_RE.search(tok):
-            words = [t for t in segment if not _PUNCT_ONLY_RE.match(t)]
-            if any(_norm_cmdword(w) in READ_CMDS for w in words):
-                for word in words:
-                    targets.extend(_candidate_paths(word))
-            segment = []
-        else:
-            segment.append(tok)
-    return targets
+def extract_bash_read_targets(command: str, cwd: str | None = None) -> list[str]:
+    """Return the paths a Bash command reads."""
+    return [
+        path
+        for segment in shell_words.lex(command, cwd) or []
+        for word in _read_words(segment)
+        for path in _word_candidates(word)
+    ]
 
 
-def _strip_quotes(token: str) -> str:
-    if len(token) >= 2 and token[0] in "\"'" and token[-1] == token[0]:
-        token = token[1:-1]
-    return token.strip("\"'")
+def extract_bash_write_targets(command: str, cwd: str | None = None) -> list[str]:
+    """Return the paths a Bash command writes."""
+    return [
+        path
+        for segment in shell_words.lex(command, cwd) or []
+        for word in _write_words(segment)
+        for path in _word_candidates(word)
+    ]
 
 
-def extract_bash_write_targets(command: str) -> list[str]:
-    """Return likely write destinations in a Bash command."""
-    targets: list[str] = []
-
-    # Excludes here-docs and here-strings (<<, <<<) and stderr-only `2>`.
-    for m in re.finditer(r"(?:(?<![<2&])>>?\|?|&>>?)\s*([^\s|&;><]+)", command):
-        targets.append(m.group(1))
-
-    # `cp`, `mv`, and `install` use the final non-option token as destination.
-    for cmd in ("cp", "mv", "install"):
-        for m in re.finditer(
-            rf"\b{cmd}\b\s+((?:(?:-[^\s]+|--[^\s]+|\S+)\s+)+?)(\S+)\s*(?:$|[|&;])",
-            command,
-        ):
-            targets.append(m.group(2))
-
-    for m in re.finditer(
-        r"\btee\b(?:\s+-{1,2}[A-Za-z][\w=-]*)*\s+([^\s|&;]+)", command
-    ):
-        targets.append(m.group(1))
-
-    for cmd in ("chmod", "chown"):
-        for m in re.finditer(rf"\b{cmd}\b\s+\S+\s+([^\s|&;]+)", command):
-            targets.append(m.group(1))
-
-    for m in re.finditer(r"(?<![\w/])of=([^\s|&;<>]+)", command):
-        targets.append(_strip_quotes(m.group(1)))
-
-    for m in re.finditer(r"\btruncate\b\s+(?:-[^\s]+\s+)*([^\s|&;<>]+)", command):
-        targets.append(_strip_quotes(m.group(1)))
-
-    return targets
-
-
-def extract_apply_patch_targets(command: str) -> list[str]:
-    """Return paths named by Codex `apply_patch` headers."""
-    return [match.group("path").strip() for match in PATCH_PATH_RE.finditer(command)]
+def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
+    """Check strong rules on read words and name rules on paths only."""
+    segments = shell_words.lex(command, cwd)
+    if segments is None:
+        # No shell reading exists for this command. Preserve strong-rule checks
+        # on the literal text; the tamper hook gates unresolved guarded text.
+        return command if is_zero_access(command) else None
+    for segment in segments:
+        for word in _write_words(segment):
+            for path in _word_candidates(word):
+                if should_block(path, cwd):
+                    return path
+        for word in _read_words(segment):
+            for path in _word_candidates(word):
+                resolved = path
+                if cwd and not os.path.isabs(path) and not path.startswith("~"):
+                    resolved = os.path.join(cwd, path)
+                if POLICY and POLICY.verdict(path, "read", cwd=cwd) == "block":
+                    return path
+                forms = spellings(resolved)
+                if any(is_zero_access(form) for form in forms):
+                    return path
+                if word.kind in {
+                    "path candidate",
+                    "redirection target",
+                } and any(is_named_for_secrets(form) for form in forms):
+                    return path
+    return None
 
 
 def main() -> None:
+    """Read the hook payload from stdin and respond to the tool call."""
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
@@ -423,41 +404,31 @@ def main() -> None:
     if tool_name not in ("Bash", "Read", "Write", "Edit", "apply_patch"):
         sys.exit(0)
 
-    if MANIFEST_ERROR is not None:
-        # Report a broken manifest and fail open instead of checking a partial set.
-        respond(
-            Decision.WARN,
-            "block-sensitive-paths could not load guarded-paths.toml "
-            f"({MANIFEST_ERROR}); this tool call was not checked.",
-            agent=invoking_agent(payload=data),
-        )
-
     if tool_name in ("Read", "Write", "Edit"):
         path = tool_input.get("file_path") or tool_input.get("path", "")
-        if path and should_block(path):
+        if path and should_block(path, cwd or None):
             block(path, tool_name)
 
     elif tool_name == "apply_patch":
         command = tool_input.get("command", "")
-        if not command:
-            sys.exit(0)
-        for target in extract_apply_patch_targets(command):
-            if should_block(target):
+        for target in apply_patch.targets(command):
+            if should_block(target, cwd or None):
                 block(target, "apply_patch")
 
     elif tool_name == "Bash":
         command = tool_input.get("command", "")
-        if not command:
-            sys.exit(0)
-        for target in extract_bash_write_targets(command):
-            for cand in expand_glob_candidates(target, cwd):
-                if should_block(cand):
-                    block(cand, "Bash write")
-        for target in extract_bash_read_targets(command):
-            for cand in expand_glob_candidates(target, cwd):
-                if should_block(cand):
-                    block(cand, "Bash read")
+        target = bash_blocked_target(command, cwd or None)
+        if target is not None:
+            block(target, "Bash read")
 
+    if MANIFEST_ERROR is not None:
+        respond(Decision.WARN, _manifest_warning(), agent=invoking_agent(payload=data))
+    if POLICY and POLICY.findings:
+        respond(
+            Decision.WARN,
+            "\n".join(POLICY.findings),
+            agent=invoking_agent(payload=data),
+        )
     sys.exit(0)
 
 

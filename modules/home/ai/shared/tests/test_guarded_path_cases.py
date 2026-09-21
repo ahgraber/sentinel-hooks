@@ -10,8 +10,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import sys
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -21,9 +21,7 @@ HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 
 def load_is_protected_path():
     """Import the hook by location; its filename is not a valid identifier."""
-    spec = importlib.util.spec_from_file_location(
-        "block_hook_tampering", HOOKS_DIR / "block-hook-tampering.py"
-    )
+    spec = importlib.util.spec_from_file_location("block_hook_tampering", HOOKS_DIR / "block-hook-tampering.py")
     module = importlib.util.module_from_spec(spec)
     if str(HOOKS_DIR) not in sys.path:
         sys.path.insert(0, str(HOOKS_DIR))

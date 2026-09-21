@@ -13,13 +13,13 @@ unconstrained here.
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
+import json
 from pathlib import Path
 
+from conformance import CLAUDE_SETTINGS, CODEX_CONFIGS, REPO_ROOT
 import pytest
 import tomllib
-from conformance import CLAUDE_SETTINGS, CODEX_CONFIGS, REPO_ROOT
 
 
 def owner(path: Path) -> str:
@@ -59,25 +59,21 @@ def test_paired_owners_are_discovered() -> None:
 class TestAllowlistsAgree:
     @staticmethod
     def _report(paths: list[Path], reader) -> str:
-        return "\n".join(
-            f"  {path.relative_to(REPO_ROOT)}: {sorted(reader(path))}" for path in paths
-        )
+        return "\n".join(f"  {path.relative_to(REPO_ROOT)}: {sorted(reader(path))}" for path in paths)
 
     def test_every_claude_file_declares_the_same_set(self, user: str) -> None:
         """The platform files split on paths and prose, never on reachable hosts."""
         paths = CLAUDE_BY_OWNER[user]
         sets = {frozenset(claude_domains(path)) for path in paths}
         assert len(sets) == 1, (
-            f"{user}'s Claude settings files disagree on allowedDomains:\n"
-            f"{self._report(paths, claude_domains)}"
+            f"{user}'s Claude settings files disagree on allowedDomains:\n{self._report(paths, claude_domains)}"
         )
 
     def test_every_codex_file_declares_the_same_set(self, user: str) -> None:
         paths = CODEX_BY_OWNER[user]
         sets = {frozenset(codex_domains(path)) for path in paths}
         assert len(sets) == 1, (
-            f"{user}'s Codex configs disagree on network.domains:\n"
-            f"{self._report(paths, codex_domains)}"
+            f"{user}'s Codex configs disagree on network.domains:\n{self._report(paths, codex_domains)}"
         )
 
     def test_the_two_agents_declare_the_same_set(self, user: str) -> None:

@@ -11,20 +11,16 @@ from pathlib import Path
 
 import tomllib
 
-REPO_ROOT = next(
-    parent
-    for parent in Path(__file__).resolve().parents
-    if (parent / "flake.nix").is_file()
-)
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "flake.nix").is_file())
 MANIFEST = Path(__file__).parent.parent / "hooks" / "guarded-paths.toml"
 
 CLAUDE_SETTINGS = sorted(REPO_ROOT.glob("users/*/home-manager/claude/settings*.json"))
 CODEX_CONFIGS = sorted(REPO_ROOT.glob("users/*/home-manager/codex/config*.toml"))
 # The module file is the deployed source (mkRepoSymlink); per-user profiles may
 # carry their own copy alongside it.
-VSCODE_SETTINGS = sorted(
-    REPO_ROOT.glob("users/*/home-manager/vscode/settings.json")
-) + sorted(REPO_ROOT.glob("modules/home/apps/vscode/settings.json"))
+VSCODE_SETTINGS = sorted(REPO_ROOT.glob("users/*/home-manager/vscode/settings.json")) + sorted(
+    REPO_ROOT.glob("modules/home/apps/vscode/settings.json")
+)
 
 
 def load_manifest() -> dict:
@@ -58,3 +54,9 @@ def glob_covers(pattern: str, path: str) -> bool:
         or path == pattern.rstrip("/")
         or path.startswith(f"{pattern.rstrip('/')}/")
     )
+
+
+SECRET_FLOOR_REPRESENTATIVES = (
+    "~/.config/sops-nix/secrets/example",
+    "~/.local/state/sops-nix/secrets.d/1/example",
+)

@@ -6,23 +6,20 @@ matrix — the same payload, judged per (agent, tool) pairing.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
-from dataclasses import dataclass
-from pathlib import Path
 
-import pytest
+import bash_commands
 from guarded_paths import folds_case
+import pytest
 
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 HOOK = HOOKS_DIR / "block-hook-tampering.py"
-REPO_ROOT = next(
-    parent
-    for parent in Path(__file__).resolve().parents
-    if (parent / "flake.nix").is_file()
-)
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "flake.nix").is_file())
 
 CLAUDE = "claude"
 CODEX = "codex"
@@ -31,6 +28,8 @@ UNKNOWN = "unknown"
 
 REPO_SOURCE = "modules/home/ai/codex/rules/default.rules"
 CREDENTIAL_PATHS = (
+    "~/.claude.json",
+    "~/.config/mcp-secrets.env",
     "~/.claude/.credentials.json",
     "~/.codex/auth.json",
     "~/.pi/agent/auth.json",
@@ -44,16 +43,18 @@ class GateResult:
     stderr: str
 
 
-def run_gate(
-    tool_name: str, tool_input: dict, agent: str, home: str | None = None
-) -> GateResult:
+def run_gate(tool_name: str, tool_input: dict, agent: str, home: str | None = None) -> GateResult:
     """Run the hook as `agent` would invoke it: Claude Code by the transcript
     path its payloads carry, the others by the declaration their adapters set.
 
     `home` substitutes the home directory the hook expands `~` against, so a
     case that needs files on disk can build them.
     """
-    payload: dict = {"tool_name": tool_name, "tool_input": tool_input}
+    payload: dict = {
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "cwd": str(REPO_ROOT),
+    }
     env = {**os.environ}
     env.pop("AI_HOOK_AGENT", None)
     if home is not None:
@@ -80,9 +81,7 @@ def write(path: str, agent: str, home: str | None = None) -> GateResult:
 
 
 def edit(path: str, agent: str) -> GateResult:
-    return run_gate(
-        "Edit", {"file_path": path, "old_string": "a", "new_string": "b"}, agent
-    )
+    return run_gate("Edit", {"file_path": path, "old_string": "a", "new_string": "b"}, agent)
 
 
 def bash(command: str, agent: str, home: str | None = None) -> GateResult:
@@ -100,25 +99,17 @@ def add_file(path: str, *lines: str) -> str:
 
 
 def ask_reason(result: GateResult) -> str:
-    assert result.exit_code == 0, (
-        f"Expected ask (exit 0), got {result.exit_code}.\nstderr: {result.stderr}"
-    )
+    assert result.exit_code == 0, f"Expected ask (exit 0), got {result.exit_code}.\nstderr: {result.stderr}"
     output = json.loads(result.stdout)["hookSpecificOutput"]
     assert output["permissionDecision"] == "ask"
     return output["permissionDecisionReason"]
 
 
 def assert_refused(result: GateResult, substring: str = "") -> None:
-    assert result.exit_code == 2, (
-        f"Expected refusal (exit 2), got {result.exit_code}.\nstdout: {result.stdout}"
-    )
-    assert result.stdout == "", (
-        f"A refusal must write nothing to stdout, got: {result.stdout}"
-    )
+    assert result.exit_code == 2, f"Expected refusal (exit 2), got {result.exit_code}.\nstdout: {result.stdout}"
+    assert result.stdout == "", f"A refusal must write nothing to stdout, got: {result.stdout}"
     if substring:
-        assert substring.lower() in result.stderr.lower(), (
-            f"Expected '{substring}' in stderr, got: {result.stderr}"
-        )
+        assert substring.lower() in result.stderr.lower(), f"Expected '{substring}' in stderr, got: {result.stderr}"
 
 
 class TestGatedClassesByAgent:
@@ -155,17 +146,13 @@ class TestGatedClassesByAgent:
 class TestCredentialClass:
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
     @pytest.mark.parametrize("credential", CREDENTIAL_PATHS)
-    def test_credential_write_refuses_under_every_agent(
-        self, agent: str, credential: str
-    ) -> None:
+    def test_credential_write_refuses_under_every_agent(self, agent: str, credential: str) -> None:
         assert_refused(write(credential, agent), Path(credential).name)
 
     @pytest.mark.parametrize("credential", CREDENTIAL_PATHS)
     def test_mixed_class_command_refuses(self, credential: str) -> None:
         """The most restrictive class wins, even where the agent could prompt."""
-        assert_refused(
-            bash(f"cat {REPO_SOURCE} {credential}", CLAUDE), Path(credential).name
-        )
+        assert_refused(bash(f"cat {REPO_SOURCE} {credential}", CLAUDE), Path(credential).name)
 
 
 class TestSpellingReachesTheGate:
@@ -180,23 +167,16 @@ class TestSpellingReachesTheGate:
         assert ask_reason(write(target, CLAUDE))
 
 
-class TestInstructionMarkdownCarveOut:
-    def test_direct_instruction_markdown_stays_writable(self) -> None:
-        result = write(
-            "modules/home/ai/claude/hooks/instructions/00-response-style.md", CLAUDE
-        )
-        assert result.exit_code == 0
-        assert result.stdout == ""
+class TestInstructionMarkdownIsGuarded:
+    def test_direct_instruction_markdown_asks(self) -> None:
+        result = write("modules/home/ai/claude/hooks/instructions/00-response-style.md", CLAUDE)
+        assert ask_reason(result)
 
     def test_nested_path_under_instructions_is_gated(self) -> None:
-        assert ask_reason(
-            write("modules/home/ai/claude/hooks/instructions/nested/note.md", CLAUDE)
-        )
+        assert ask_reason(write("modules/home/ai/claude/hooks/instructions/nested/note.md", CLAUDE))
 
     def test_non_markdown_in_instructions_is_gated(self) -> None:
-        assert ask_reason(
-            write("modules/home/ai/claude/hooks/instructions/helper.py", CLAUDE)
-        )
+        assert ask_reason(write("modules/home/ai/claude/hooks/instructions/helper.py", CLAUDE))
 
     def test_markdown_name_leading_to_enforcement_is_gated(self, tmp_path: Path):
         """A write to a link is a write to what the link leads to."""
@@ -211,6 +191,7 @@ class TestInstructionMarkdownCarveOut:
 
 
 SKILL_FILE = "~/.claude/skills/sdd-sync/references/sdd-spec-formats.md"
+SKILL_DIR = str(Path(SKILL_FILE).parent)
 SKILL_REAL = "~/.agents/skills/sdd-sync/references/sdd-spec-formats.md"
 
 READS = [
@@ -220,9 +201,13 @@ READS = [
     f"grep -n 'Baseline spec\\|## 2' {SKILL_FILE}",
     f"grep -n 'formats$' {SKILL_FILE}",
     f"head -64 {SKILL_FILE} | cut -c1-200",
-    f"cat {SKILL_FILE} | tr -s ' ' | sort | uniq -c | wc -l",
+    f"cat {SKILL_FILE} | tr -s ' ' | sort | wc -l",
     "ls ~/.claude/skills/sdd-sync",
     "find ~/.claude/skills -name SKILL.md",
+    f"rg --no-config -n pattern {SKILL_FILE}",
+    f"rg --no-config --files {SKILL_DIR}",
+    f"rg --no-config -l pattern {SKILL_FILE}",
+    f"rg --no-config --pre-glob '*.md' pattern {SKILL_FILE}",
     f"cat {SKILL_REAL}",
     f"grep -c . {SKILL_REAL}",
     # A banner separating two reads reaches standard output only, so it leaves
@@ -235,6 +220,9 @@ READS = [
 # reaches, a binary that is not the utility it is named after, and a utility
 # whose behavior is set by an argument rather than by the command line.
 NOT_READS = [
+    f"cat {SKILL_FILE} && cat evals/x.py | awk '{{print}}'",
+    "bash -c 'rm ~/.claude/settings.json'",
+    "echo ~/.claude/settings.json | xargs rm",
     f"cat {SKILL_FILE}\nrm -rf ~/.claude/skills",
     f"cat {SKILL_FILE} |& rm -rf ~/.claude/skills",
     f"cat {SKILL_FILE} ;& rm -rf ~/.claude/skills",
@@ -252,13 +240,17 @@ NOT_READS = [
     "awk 'BEGIN{system(\"rm -rf ~/.claude/skills\")}' " + SKILL_FILE,
     f"awk -f /tmp/program.awk {SKILL_FILE}",
     f"yq -i '.a = 1' {SKILL_FILE}",
-    # No form of ripgrep is a recognized read. It takes options from
-    # RIPGREP_CONFIG_PATH, and `-z` runs a decompressor named outside the
-    # command line, so the command text does not say what it does.
-    f"rg --pre /tmp/helper pattern {SKILL_FILE}",
+    # Ripgrep is a read only when --no-config is first and no option can run
+    # another program.
     f"rg -n pattern {SKILL_FILE}",
-    f"rg -z pattern {SKILL_FILE}",
-    f"rg --search-zip pattern {SKILL_FILE}",
+    f"rg --no-config --pre /tmp/helper pattern {SKILL_FILE}",
+    f"rg --no-config -z pattern {SKILL_FILE}",
+    f"rg --no-config --search-zip pattern {SKILL_FILE}",
+    f"rg --no-config --hostname-bin /tmp/helper pattern {SKILL_FILE}",
+    f"rg --no-config --pre=/tmp/helper pattern {SKILL_FILE}",
+    f"rg --no-config -nz pattern {SKILL_FILE}",
+    f"rg -e --no-config pattern {SKILL_FILE}",
+    f"rg --files --no-config {SKILL_DIR}",
     f"less {SKILL_FILE}",
     f"bat {SKILL_FILE}",
     f"sort --compress-program=/tmp/helper {SKILL_FILE}",
@@ -278,14 +270,12 @@ NOT_READS = [
 ]
 
 
-class TestReadThroughCarveOut:
-    """Under a read-through location a recognized read proceeds; the rest gates."""
+class TestGuardedLocationReads:
+    """Under a guarded location a recognized read proceeds; the rest gates."""
 
     @pytest.mark.parametrize("command", READS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_a_recognized_read_proceeds_under_every_agent(
-        self, command: str, agent: str
-    ) -> None:
+    def test_a_recognized_read_proceeds_under_every_agent(self, command: str, agent: str) -> None:
         result = bash(command, agent)
         assert result.exit_code == 0
         assert result.stdout == ""
@@ -297,37 +287,62 @@ class TestReadThroughCarveOut:
 
     @pytest.mark.parametrize("command", NOT_READS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
-    def test_anything_else_refuses_where_no_prompt_is_honored(
-        self, command: str, agent: str
-    ) -> None:
-        assert_refused(bash(command, agent), "not a recognized read")
+    def test_anything_else_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
+        assert_refused(bash(command, agent), "not recognized as an authorized action")
 
-    def test_one_guarded_path_outside_the_carve_out_gates_the_whole_command(
+    def test_reading_skills_and_guarded_settings_proceeds(
         self,
     ) -> None:
-        assert ask_reason(bash(f"cat {SKILL_FILE} ~/.claude/settings.json", CLAUDE))
+        assert_allowed(bash(f"cat {SKILL_FILE} ~/.claude/settings.json", CLAUDE))
 
     @pytest.mark.parametrize("path", [SKILL_FILE, SKILL_REAL])
-    def test_a_write_to_skill_content_still_gates_on_the_file_tools(
-        self, path: str
-    ) -> None:
+    def test_a_write_to_skill_content_still_gates_on_the_file_tools(self, path: str) -> None:
         assert ask_reason(write(path, CLAUDE))
         assert ask_reason(edit(path, CLAUDE))
+
+
+# Quoting is resolved before the read classifier judges a word. A `$` that
+# survives resolution is the literal character, so the word is a search pattern
+# and not an option the shell would rewrite into one the classifier never saw.
+RESOLVED_DOLLAR_READS = [
+    f"grep --regexp='$HOME' {SKILL_FILE}",
+    f"grep -e'$HOME' {SKILL_FILE}",
+    f"grep --regexp=$'\\x24HOME' {SKILL_FILE}",
+]
+
+# The shell rewrites each of these, so the lexer reports the word unresolvable.
+EXPANDED_DOLLAR_NOT_READS = [
+    f"grep --regexp=$HOME {SKILL_FILE}",
+    f'grep --regexp="$HOME" {SKILL_FILE}',
+]
+
+
+class TestAQuotedDollarInAnOptionIsTheLiteralCharacter:
+    """An option carrying `$` stays a read where quoting resolved it, and gates where it did not."""
+
+    @pytest.mark.parametrize("command", RESOLVED_DOLLAR_READS, ids=lambda c: c[:36])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_a_resolved_dollar_leaves_the_read_recognized(self, command: str, agent: str) -> None:
+        assert_allowed(bash(command, agent))
+
+    @pytest.mark.parametrize("command", EXPANDED_DOLLAR_NOT_READS, ids=lambda c: c[:36])
+    def test_an_unresolved_dollar_gates_the_command(self, command: str) -> None:
+        assert ask_reason(bash(command, CLAUDE))
+
+    def test_resolving_the_quoting_does_not_admit_a_write_option(self) -> None:
+        assert ask_reason(bash(f"sort --output='$HOME' {SKILL_FILE}", CLAUDE))
 
 
 UNJUDGED_BESIDE_A_READ = [
     f"cat {SKILL_FILE} && rg -n 'baseline|treatment' evals/README.md",
     f"cat {SKILL_FILE} && sed -n '1,5p' evals/run.py",
     f"cat {SKILL_FILE} && make test",
-    f"cat {SKILL_FILE} && cat evals/x.py | awk '{{print}}'",
 ]
 
 JUDGED_BESIDE_A_READ = [
     f"cat {SKILL_FILE} && rm -rf ~/.claude/skills/sdd-sync",
     f"cat {SKILL_FILE} && cd ~ && rm -rf .claude/hooks",
-    f"cat {SKILL_FILE} && cat ~/.pi/agent/settings.json",
     f"cat {SKILL_FILE}\nrm -rf ~/.claude/skills",
-    f"cat {SKILL_FILE} && rm -rf $(cat /tmp/target)",
     f"cat evals/x.py | tee {SKILL_FILE}",
     "cat evals/x.py ~/.codex/auth.json",
 ]
@@ -338,9 +353,7 @@ class TestOnlySegmentsNamingAGuardedPathAreJudged:
 
     @pytest.mark.parametrize("command", UNJUDGED_BESIDE_A_READ, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_an_unrelated_segment_does_not_gate_the_command(
-        self, command: str, agent: str
-    ) -> None:
+    def test_an_unrelated_segment_does_not_gate_the_command(self, command: str, agent: str) -> None:
         result = bash(command, agent)
         assert result.exit_code == 0
         assert result.stdout == ""
@@ -349,9 +362,174 @@ class TestOnlySegmentsNamingAGuardedPathAreJudged:
     @pytest.mark.parametrize("command", JUDGED_BESIDE_A_READ, ids=lambda c: c[:44])
     def test_a_segment_reaching_a_guarded_path_still_gates(self, command: str) -> None:
         result = bash(command, CLAUDE)
-        assert result.exit_code != 0 or json.loads(result.stdout)["hookSpecificOutput"][
-            "permissionDecision"
-        ] in ("ask", "deny")
+        assert result.exit_code != 0 or json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] in (
+            "ask",
+            "deny",
+        )
+
+
+# `trap` quotes its body into one word, so the word-level checks do not see the
+# paths inside it, and the body runs beside every later command.
+INSTALLS_DEFERRED_CODE = [
+    f"trap '/bin/echo banner' DEBUG; cat {SKILL_FILE}",
+    f"trap '/bin/echo banner' ERR; cat {SKILL_FILE}",
+    f"trap '/bin/echo banner' EXIT; cat {SKILL_FILE}",
+    f"trap 'cp /tmp/replacement.md {SKILL_FILE}' DEBUG; cat {SKILL_FILE}",
+    f"trap 'rm -rf {SKILL_DIR}' DEBUG; cat {SKILL_FILE}",
+    f"trap '/bin/echo banner' DEBUG; rg --no-config -n pattern {SKILL_FILE}",
+    f"cat {SKILL_FILE}; trap '/bin/echo banner' DEBUG",
+    # `builtin` only chooses how the shell dispatches `trap`.
+    f"builtin trap '/bin/echo banner' DEBUG; cat {SKILL_FILE}",
+    f"builtin trap 'cp /tmp/replacement.md {SKILL_FILE}' DEBUG; cat {SKILL_FILE}",
+    # The body alone, without a read beside it.
+    f"trap 'cp /tmp/replacement.md {SKILL_FILE}' DEBUG",
+    f"trap 'rm -rf {SKILL_DIR}' DEBUG; cat /etc/hosts",
+    # A definition rebinds the name, so it reaches the body, not the admitted program.
+    f'cat() {{ cp /tmp/replacement.md "$1"; }}; cat {SKILL_FILE}',
+    f'function cat {{ cp /tmp/replacement.md "$1"; }}; cat {SKILL_FILE}',
+    f'grep() {{ cp /tmp/replacement.md "$2"; }}; grep pattern {SKILL_FILE}',
+    f'rg() {{ command rg "${{@:2}}"; }}; rg --no-config needle {SKILL_FILE}',
+]
+
+# `trap -p` lists the installed handlers and `trap -` resets them.
+INSTALLS_NOTHING = [
+    f"trap -p DEBUG; cat {SKILL_FILE}",
+    f"trap - DEBUG; cat {SKILL_FILE}",
+    f"builtin trap -p DEBUG; cat {SKILL_FILE}",
+]
+
+
+def _admitted_utilities() -> list[str]:
+    """Read the admitted set from the classifier, so the test follows the source."""
+    return sorted(bash_commands.READ_ONLY_UTILITIES)
+
+
+class TestAnAdmittedUtilityWritesNoOperand:
+    """Every admitted utility must leave a second file operand untouched."""
+
+    @pytest.mark.parametrize("utility", _admitted_utilities())
+    def test_a_second_file_operand_is_not_written(self, utility: str, tmp_path: Path) -> None:
+        if shutil.which(utility) is None:
+            pytest.skip(f"{utility} is not installed here")
+        source = tmp_path / "source.txt"
+        source.write_text("REPLACEMENT\n")
+        target = tmp_path / "target.txt"
+        target.write_text("SENTINEL\n")
+        try:
+            subprocess.run(
+                [utility, str(source), str(target)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail(f"{utility} did not exit; it does not simply read its operands")
+        assert target.read_text() == "SENTINEL\n", (
+            f"{utility} wrote its second operand, so it is not a read. Remove it from bash_commands.READ_ONLY_UTILITIES."
+        )
+
+
+_STOP = "do not attempt to find alternative commands"
+_RETRY = "the classifier stopped this call"
+_REPORT = "how the user can help — describe exactly what command or steps"
+
+
+class TestTheInstructionFormFollowsWhatTheRefusalOffers:
+    """A refusal naming accepted commands says to use one; every other says stop."""
+
+    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    def test_a_refusal_naming_accepted_commands_says_to_use_one(self, agent: str) -> None:
+        stderr = bash(f"sed -n '1,5p' {SKILL_FILE}", agent).stderr.lower()
+        assert "recognized reads use:" in stderr
+        assert _RETRY in stderr
+        assert _STOP not in stderr
+
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
+    def test_a_refusal_naming_none_says_to_stop(self, agent: str) -> None:
+        stderr = write(SKILL_FILE, agent).stderr.lower()
+        assert "recognized reads use:" not in stderr
+        assert _STOP in stderr
+        assert _RETRY not in stderr
+
+    # The classifier stops on the shape of each of these, so a different utility
+    # runs into the same stop and the refusal omits the accepted set.
+    @pytest.mark.parametrize(
+        "command",
+        [
+            f"echo pwned > {SKILL_FILE}",
+            f"cat /tmp/x >> {SKILL_FILE}",
+            f"PATH=/tmp cat {SKILL_FILE}",
+            f"cat $(echo {SKILL_FILE})",
+            f"trap 'cp /tmp/x {SKILL_FILE}' DEBUG; cat {SKILL_FILE}",
+        ],
+        ids=lambda c: c[:34],
+    )
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
+    def test_an_objection_no_other_command_resolves_says_to_stop(self, command: str, agent: str) -> None:
+        stderr = bash(command, agent).stderr.lower()
+        assert "recognized reads use:" not in stderr
+        assert _STOP in stderr
+        assert _RETRY not in stderr
+
+    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    def test_an_ancestor_refusal_names_none_and_says_to_stop(self, agent: str) -> None:
+        # An ancestor matches no declaration, so this reaches the ancestor gate.
+        stderr = bash(f"rm -rf {REPO_ROOT}/modules/home/ai/pi", agent).stderr.lower()
+        assert "recognized reads use:" not in stderr
+        assert _STOP in stderr
+        assert _RETRY not in stderr
+
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_a_credential_refusal_says_to_stop(self, agent: str) -> None:
+        stderr = bash("cat ~/.codex/auth.json", agent).stderr.lower()
+        assert _STOP in stderr
+        assert _RETRY not in stderr
+
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_a_credential_refusal_says_to_stop_when_unrecognized(self, agent: str) -> None:
+        stderr = bash("sed -n '1,5p' ~/.codex/auth.json", agent).stderr.lower()
+        assert _STOP in stderr
+        assert _RETRY not in stderr
+
+    def test_a_decision_reaching_the_user_carries_neither(self) -> None:
+        reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE)).lower()
+        assert _STOP not in reason
+        assert _RETRY not in reason
+
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
+    def test_both_forms_ask_for_the_same_report(self, agent: str) -> None:
+        retry = bash(f"sed -n '1,5p' {SKILL_FILE}", agent).stderr.lower()
+        stop = write(SKILL_FILE, agent).stderr.lower()
+        assert _REPORT in retry
+        assert _REPORT in stop
+
+
+class TestInstallingDeferredCodeTakesNoReadCarveOut:
+    """A command that installs code for the shell to run later is judged whole."""
+
+    @pytest.mark.parametrize("command", INSTALLS_DEFERRED_CODE, ids=lambda c: c[:44])
+    def test_it_asks_under_claude(self, command: str) -> None:
+        assert ask_reason(bash(command, CLAUDE))
+
+    @pytest.mark.parametrize("command", INSTALLS_DEFERRED_CODE, ids=lambda c: c[:44])
+    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    def test_it_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
+        assert_refused(bash(command, agent), "not recognized as an authorized action")
+
+    def test_a_trap_body_naming_a_credential_refuses_everywhere(self) -> None:
+        assert_refused(
+            bash(f"trap 'cat ~/.codex/auth.json' DEBUG; cat {SKILL_FILE}", CLAUDE),
+            "credential",
+        )
+
+    @pytest.mark.parametrize("command", INSTALLS_NOTHING, ids=lambda c: c[:44])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_listing_or_resetting_handlers_keeps_the_carve_out(self, command: str, agent: str) -> None:
+        result = bash(command, agent)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
 
 
 # Absolute, unlike the named-path cases above. An ancestor carries no
@@ -397,16 +575,12 @@ class TestDestructiveOperationsOnAnAncestor:
 
     @pytest.mark.parametrize("command", DESTROYS_AN_ANCESTOR, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
-    def test_taking_the_ancestor_away_refuses_where_no_prompt_is_honored(
-        self, command: str, agent: str
-    ) -> None:
+    def test_taking_the_ancestor_away_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
         assert_refused(bash(command, agent), "holds agent enforcement")
 
     @pytest.mark.parametrize("command", LEAVES_THE_ANCESTOR_ALONE, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_reading_or_adding_beneath_an_ancestor_proceeds(
-        self, command: str, agent: str
-    ) -> None:
+    def test_reading_or_adding_beneath_an_ancestor_proceeds(self, command: str, agent: str) -> None:
         """Only taking the directory away is asked about, not working inside it."""
         result = bash(command, agent)
         assert result.exit_code == 0
@@ -428,20 +602,17 @@ AGENT_HOME_WRITES = [
     "cp /tmp/evil.py ~/.claude/hooks/block-secrets.py",
     "rm -rf ~/.codex/rules/",
     "sed -i s/a/b/ ~/.codex/config.toml",
-    "echo x > ~/.claude/projects/x/session.jsonl",
     # Read-through is not exec-through.
     "uv run ~/.claude/hooks/block-secrets.py",
 ]
 
 
-class TestAgentHomeIsReadThrough:
+class TestAgentHomeReadsProceed:
     """Session data an agent home mostly holds is readable; enforcement stays write-gated."""
 
     @pytest.mark.parametrize("command", AGENT_HOME_READS, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_a_recognized_read_proceeds_under_every_agent(
-        self, command: str, agent: str
-    ) -> None:
+    def test_a_recognized_read_proceeds_under_every_agent(self, command: str, agent: str) -> None:
         result = bash(command, agent)
         assert result.exit_code == 0
         assert result.stdout == ""
@@ -453,9 +624,7 @@ class TestAgentHomeIsReadThrough:
 
     @pytest.mark.parametrize("credential", CREDENTIAL_PATHS)
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_a_credential_read_is_still_refused_under_every_agent(
-        self, credential: str, agent: str
-    ) -> None:
+    def test_a_credential_read_is_still_refused_under_every_agent(self, credential: str, agent: str) -> None:
         """The credential class is judged before any carve-out, so it outranks this one."""
         assert_refused(bash(f"cat {credential}", agent), Path(credential).name)
 
@@ -470,11 +639,9 @@ class TestAgentHomeIsReadThrough:
         ["cat ~/.claude/settings.json", "cat ~/.codex/config.toml"],
         ids=lambda c: c[:40],
     )
-    def test_a_deployed_file_resolving_into_a_repository_source_still_gates(
-        self, command: str
-    ) -> None:
-        """The home carve-out covers the written form; the link's target carries its own."""
-        assert ask_reason(bash(command, CLAUDE))
+    def test_reading_a_deployed_repository_source_proceeds(self, command: str) -> None:
+        """Reads of guarded files proceed through every spelling."""
+        assert_allowed(bash(command, CLAUDE))
 
 
 PI_SOURCE = "modules/home/ai/pi/security/shell-words.ts"
@@ -502,14 +669,12 @@ MODULE_TREE_WRITES = [
 ]
 
 
-class TestAgentModuleTreeIsReadThrough:
+class TestAgentModuleTreeReadsProceed:
     """The agent module sources are reviewable by every agent; writes still gate."""
 
     @pytest.mark.parametrize("command", MODULE_TREE_READS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_a_recognized_read_proceeds_under_every_agent(
-        self, command: str, agent: str
-    ) -> None:
+    def test_a_recognized_read_proceeds_under_every_agent(self, command: str, agent: str) -> None:
         result = bash(command, agent)
         assert result.exit_code == 0
         assert result.stdout == ""
@@ -521,13 +686,11 @@ class TestAgentModuleTreeIsReadThrough:
 
     @pytest.mark.parametrize("command", MODULE_TREE_WRITES, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
-    def test_a_write_route_still_refuses_where_no_prompt_is_honored(
-        self, command: str, agent: str
-    ) -> None:
+    def test_a_write_route_still_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
         assert_refused(bash(command, agent))
 
-    def test_a_guarded_path_outside_the_tree_gates_the_whole_command(self) -> None:
-        assert ask_reason(bash(f"cat {PI_SOURCE} ~/.claude/settings.json", CLAUDE))
+    def test_reading_module_source_and_guarded_settings_proceeds(self) -> None:
+        assert_allowed(bash(f"cat {PI_SOURCE} ~/.claude/settings.json", CLAUDE))
 
     def test_editing_module_source_still_gates_on_the_file_tools(self) -> None:
         assert ask_reason(write(PI_SOURCE, CLAUDE))
@@ -542,9 +705,7 @@ class TestAgentModuleTreeIsReadThrough:
         ],
         ids=lambda c: c[:40],
     )
-    def test_a_deployed_file_resolving_into_the_tree_reads_through(
-        self, command: str
-    ) -> None:
+    def test_a_deployed_file_resolving_into_the_tree_reads_through(self, command: str) -> None:
         # A deployed guardrail is a link into this tree, and a path is judged in
         # every spelling it has, so the declaration reaches the deployed name
         # too. Intended: the copy an agent meets first is the one it reviews.
@@ -557,11 +718,9 @@ class TestAgentModuleTreeIsReadThrough:
         ["cat ~/.claude/settings.json", "cat ~/.codex/config.toml"],
         ids=lambda c: c[:40],
     )
-    def test_a_deployed_file_resolving_elsewhere_still_gates(
-        self, command: str
-    ) -> None:
-        # These resolve into users/*/home-manager/, which no carve-out covers.
-        assert ask_reason(bash(command, CLAUDE))
+    def test_reading_deployed_user_settings_proceeds(self, command: str) -> None:
+        # User settings sources are guarded and readable.
+        assert_allowed(bash(command, CLAUDE))
 
 
 INSTRUCTION_MARKDOWN = "modules/home/ai/shared/hooks/instructions/00-response-style.md"
@@ -599,9 +758,7 @@ class TestPatchIsJudgedByItsTargets:
         assert ask_reason(patch(body, CLAUDE))
 
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
-    def test_a_guarded_target_refuses_where_no_prompt_is_honored(
-        self, agent: str
-    ) -> None:
+    def test_a_guarded_target_refuses_where_no_prompt_is_honored(self, agent: str) -> None:
         assert_refused(patch(add_file(HOOK_SOURCE, "# x"), agent))
 
     def test_one_guarded_target_among_several_gates_the_patch(self) -> None:
@@ -617,9 +774,9 @@ class TestPatchIsJudgedByItsTargets:
         for credential in CREDENTIAL_PATHS:
             assert_refused(patch(add_file(credential, "{}"), CLAUDE), "credential")
 
-    def test_instruction_markdown_stays_writable(self) -> None:
+    def test_instruction_markdown_refuses_without_a_prompt(self) -> None:
         result = patch(add_file(INSTRUCTION_MARKDOWN, "## Heading"), CODEX)
-        assert result.exit_code == 0
+        assert_refused(result)
 
     def test_a_body_no_header_parses_is_judged_by_its_text(self) -> None:
         # Nothing states a target, so the text is all that is left to judge.
@@ -678,18 +835,14 @@ class TestExecThroughCarveOut:
 
     @pytest.mark.parametrize("command", RUNS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_a_recognized_run_proceeds_under_every_agent(
-        self, command: str, agent: str, skills_home: str
-    ) -> None:
+    def test_a_recognized_run_proceeds_under_every_agent(self, command: str, agent: str, skills_home: str) -> None:
         result = bash(command, agent, skills_home)
         assert result.exit_code == 0
         assert result.stdout == ""
         assert result.stderr == ""
 
     @pytest.mark.parametrize("command", NOT_RUNS, ids=lambda c: c[:40])
-    def test_anything_else_asks_under_claude(
-        self, command: str, skills_home: str
-    ) -> None:
+    def test_anything_else_asks_under_claude(self, command: str, skills_home: str) -> None:
         assert ask_reason(bash(command, CLAUDE, skills_home))
 
     @pytest.mark.parametrize("command", NOT_RUNS, ids=lambda c: c[:40])
@@ -697,48 +850,38 @@ class TestExecThroughCarveOut:
     def test_anything_else_refuses_where_no_prompt_is_honored(
         self, command: str, agent: str, skills_home: str
     ) -> None:
-        assert_refused(bash(command, agent, skills_home), "not a recognized read")
+        assert_refused(bash(command, agent, skills_home), "not recognized as an authorized action")
 
-    def test_an_argument_outside_the_carve_out_gates_the_whole_run(
-        self, skills_home: str
-    ) -> None:
+    def test_an_argument_outside_the_carve_out_gates_the_whole_run(self, skills_home: str) -> None:
         # `~/.pi/agent/` carries a declaration that no carve-out covers; the
-        # agent homes below `~/.claude` and `~/.codex` are read-through.
+        # agent homes below `~/.claude` and `~/.codex` are guarded, and a read
+        # of a guarded location proceeds.
         command = f"bash {SCRIPTS}/run.sh --settings ~/.pi/agent/settings.json"
         reason = ask_reason(bash(command, CLAUDE, skills_home))
-        assert "enforcement" in reason
+        assert "not recognized" in reason
 
-    def test_a_write_to_the_script_still_gates_on_the_file_tools(
-        self, skills_home: str
-    ) -> None:
+    def test_a_write_to_the_script_still_gates_on_the_file_tools(self, skills_home: str) -> None:
         assert ask_reason(write(f"{SCRIPTS}/run.sh", CLAUDE, skills_home))
 
 
-# The declared read-through and exec-through lists are identical, so no command
-# against the real manifest tells the two apart. A substituted manifest can, but
-# the hook binds both classes at import, so it has to reach a hook running from
-# its own copy.
+# This manifest separates a guarded-only location from an exec-through one, so a
+# run can be told from a read. The hook binds its classes at import, so the case
+# has to reach a hook running from its own copy.
 SPLIT_CLASSES = """\
-[gated]
-deployed = ["~/.example/readable/", "~/.example/runnable/"]
-sources = []
-[credentials]
-paths = []
-[instruction-layers]
-layers = []
-[location-only]
-paths = []
-[read-through]
+exceptions = []
+[guarded]
 paths = ["~/.example/readable/", "~/.example/runnable/"]
+[block]
+paths = []
 [exec-through]
 paths = ["~/.example/runnable/"]
-[secret-floor]
+[write-through]
 paths = []
 """
 
 
 class TestExecThroughIsItsOwnClass:
-    """A run is judged against the exec-through class, a read against read-through."""
+    """A run is judged against the exec-through class; a read proceeds under any class but block."""
 
     @staticmethod
     @pytest.fixture
@@ -783,12 +926,12 @@ class TestExecThroughIsItsOwnClass:
         assert result.exit_code == 0
         assert result.stdout == ""
 
-    def test_a_run_under_a_read_through_location_gates(self, split) -> None:
-        """Reading the exec-through class is what makes this gate; reading the
-        read-through class in its place would let it through."""
+    def test_a_run_under_a_guarded_only_location_gates(self, split) -> None:
+        """Judging the run against the exec-through class is what makes this
+        gate; the guarded default alone does not permit a run."""
         assert ask_reason(self._judge(split, "bash ~/.example/readable/run.sh"))
 
-    def test_a_read_under_a_read_through_location_still_proceeds(self, split) -> None:
+    def test_a_read_under_a_guarded_only_location_still_proceeds(self, split) -> None:
         result = self._judge(split, "cat ~/.example/readable/run.sh")
         assert result.exit_code == 0
         assert result.stdout == ""
@@ -799,9 +942,18 @@ class TestReaderHint:
 
     def test_the_prompt_names_the_accepted_readers(self) -> None:
         reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
-        assert "not recognized as a read" in reason
+        assert "not recognized as an authorized action" in reason
         for utility in ("cat", "grep", "head", "cut"):
             assert utility in reason
+
+    def test_the_prompt_leaves_them_out_where_they_would_not_help(self) -> None:
+        reason = ask_reason(bash(f"echo pwned > {SKILL_FILE}", CLAUDE))
+        assert "recognized reads use" not in reason.lower()
+        assert "a redirection" in reason
+
+    def test_the_prompt_states_required_first_options(self) -> None:
+        reason = ask_reason(bash(f"rg -n pattern {SKILL_FILE}", CLAUDE))
+        assert "rg requires --no-config as its first option" in reason
 
     def test_the_prompt_names_the_accepted_interpreters(self) -> None:
         reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
@@ -812,15 +964,11 @@ class TestReaderHint:
         reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
         assert "would modify" not in reason
 
-    def test_a_path_outside_the_carve_out_keeps_the_enforcement_wording(self) -> None:
-        reason = ask_reason(bash("cat ~/.claude/settings.json", CLAUDE))
-        assert "recognized as a read" not in reason
-        assert "enforcement" in reason
+    def test_a_guarded_settings_read_proceeds(self) -> None:
+        assert_allowed(bash("cat ~/.claude/settings.json", CLAUDE))
 
     def test_the_guidance_reaches_an_agent_that_cannot_prompt(self) -> None:
-        assert_refused(
-            bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "not a recognized read"
-        )
+        assert_refused(bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "not recognized as an authorized action")
 
 
 class TestAskReasonContract:
@@ -831,3 +979,7 @@ class TestAskReasonContract:
         assert "settings.json" in reason
         assert "enforcement" in reason.lower()
         assert "guardrail" in reason.lower()
+
+
+def assert_allowed(result: GateResult) -> None:
+    assert (result.exit_code, result.stdout, result.stderr) == (0, "", "")

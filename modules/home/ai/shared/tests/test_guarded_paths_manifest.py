@@ -6,12 +6,14 @@ and `block-sensitive-paths.py` both read at invocation.
 
 from __future__ import annotations
 
-import importlib.util
+import json
+import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
+from hermetic import load_hook
 import pytest
 import tomllib
 
@@ -21,34 +23,9 @@ MANIFEST = HOOKS_DIR / "guarded-paths.toml"
 _ACCEPTED_PREFIXES = ("~/", "<repo>/")
 
 
-def load_hook(name: str):
-    """Import a hook by location; its filename is not a valid identifier."""
-    spec = importlib.util.spec_from_file_location(name, HOOKS_DIR / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    if str(HOOKS_DIR) not in sys.path:
-        sys.path.insert(0, str(HOOKS_DIR))
-    spec.loader.exec_module(module)
-    return module
-
-
 def _all_path_entries(manifest: dict) -> list[str]:
-    """Every declared path string in the manifest, flattened.
-
-    An instruction-layer pair's second element is a fragment appended to the
-    first, not a path in its own right, so only the location half is collected.
-    """
-    entries: list[str] = []
-    gated = manifest["gated"]
-    entries += gated["deployed"] + gated["sources"]
-    entries += manifest["credentials"]["paths"]
-    entries += [
-        location for location, _layer in manifest["instruction-layers"]["layers"]
-    ]
-    entries += manifest["location-only"]["paths"]
-    entries += manifest["read-through"]["paths"]
-    entries += manifest["exec-through"]["paths"]
-    entries += manifest["secret-floor"]["paths"]
-    return entries
+    """Every path in the four policy classes."""
+    return [path for name in ("guarded", "block", "exec-through", "write-through") for path in manifest[name]["paths"]]
 
 
 class TestManifestShape:
@@ -60,17 +37,13 @@ class TestManifestShape:
     def test_every_section_is_present(self) -> None:
         with open(MANIFEST, "rb") as handle:
             manifest = tomllib.load(handle)
-        for section in (
-            "gated",
-            "credentials",
-            "instruction-layers",
-            "location-only",
-            "read-through",
+        assert set(manifest) == {
+            "guarded",
+            "block",
             "exec-through",
-            "secret-floor",
+            "write-through",
             "exceptions",
-        ):
-            assert section in manifest, f"manifest is missing [{section}]"
+        }
 
     def test_every_entry_uses_accepted_notation(self) -> None:
         with open(MANIFEST, "rb") as handle:
@@ -98,9 +71,7 @@ class TestManifestGuardsItself:
         result = subprocess.run(
             ["python3", str(HOOKS_DIR / "block-hook-tampering.py")],
             input=(
-                '{"tool_name":"Edit","tool_input":{"file_path":'
-                + f'"{MANIFEST}"'
-                + "},"
+                '{"tool_name":"Edit","tool_input":{"file_path":' + f'"{MANIFEST}"' + "},"
                 '"transcript_path":"/tmp/t.jsonl"}'
             ),
             capture_output=True,
@@ -120,11 +91,9 @@ class TestSensitivePathsCredentialCoverage:
     @pytest.fixture(scope="class")
     def credential_paths() -> list[str]:
         with open(MANIFEST, "rb") as handle:
-            return tomllib.load(handle)["credentials"]["paths"]
+            return tomllib.load(handle)["block"]["paths"]
 
-    def test_every_credential_path_is_zero_access(
-        self, credential_paths: list[str]
-    ) -> None:
+    def test_every_credential_path_is_zero_access(self, credential_paths: list[str]) -> None:
         hook = load_hook("block-sensitive-paths")
         for path in credential_paths:
             assert hook.should_block(path) is True, f"{path} is not zero-access"
@@ -136,7 +105,7 @@ class TestTemporaryManifestCopy:
     @pytest.fixture
     def substituted_manifest(self, tmp_path: Path) -> Path:
         original = tomllib.loads(MANIFEST.read_text())
-        original["credentials"]["paths"].append("~/.example/new-credential.json")
+        original["block"]["paths"].append("~/.example/new-credential.json")
         copy = tmp_path / "guarded-paths.toml"
         copy.write_text(_dump_minimal_toml(original))
         # A copy that does not parse would make every assertion below pass for
@@ -146,48 +115,47 @@ class TestTemporaryManifestCopy:
 
     def test_the_added_path_is_guarded(self, substituted_manifest: Path) -> None:
         hook = load_hook("block-hook-tampering")
-        _guarded, credentials, *_rest = hook.build_guarded(substituted_manifest)
-        assert credentials.contains("~/.example/new-credential.json") is True
+        policy = hook.load_policy(substituted_manifest)
+        assert policy.error is None
+        credentials = policy.classes["block"]
+        assert bool(credentials.contains("~/.example/new-credential.json")) is True
 
-    def test_an_unrelated_path_stays_unguarded(
-        self, substituted_manifest: Path
-    ) -> None:
+    def test_an_unrelated_path_stays_unguarded(self, substituted_manifest: Path) -> None:
         hook = load_hook("block-hook-tampering")
-        _guarded, credentials, *_rest = hook.build_guarded(substituted_manifest)
-        assert credentials.contains("~/.example/other-file.json") is False
+        policy = hook.load_policy(substituted_manifest)
+        assert policy.error is None
+        credentials = policy.classes["block"]
+        assert bool(credentials.contains("~/.example/other-file.json")) is False
 
 
 class TestReadAndExecAreSeparateClasses:
-    """A location declared read-through is not runnable unless it is also exec-through."""
+    """A guarded location is not runnable unless it is also exec-through."""
 
     @pytest.fixture
     def readable_only(self, tmp_path: Path) -> Path:
         original = tomllib.loads(MANIFEST.read_text())
-        original["read-through"]["paths"].append("~/.example/readable/")
+        original["guarded"]["paths"].append("~/.example/readable/")
         copy = tmp_path / "guarded-paths.toml"
         copy.write_text(_dump_minimal_toml(original))
         tomllib.loads(copy.read_text())
         return copy
 
-    def test_the_added_location_is_read_through(self, readable_only: Path) -> None:
+    def test_the_added_location_is_readable(self, readable_only: Path) -> None:
         hook = load_hook("block-hook-tampering")
-        *_rest, read_through, _exec_through = hook.build_guarded(readable_only)
-        assert read_through.contains("~/.example/readable/helper.sh") is True
+        policy = hook.load_policy(readable_only)
+        assert policy.error is None
+        assert policy.verdict("~/.example/readable/helper.sh", "read") == "undeclared"
 
     def test_the_added_location_is_not_exec_through(self, readable_only: Path) -> None:
         hook = load_hook("block-hook-tampering")
-        *_rest, _read_through, exec_through = hook.build_guarded(readable_only)
-        assert exec_through.contains("~/.example/readable/helper.sh") is False
+        policy = hook.load_policy(readable_only)
+        assert policy.error is None
+        assert policy.verdict("~/.example/readable/helper.sh", "run") == "guarded"
 
 
 def _quote(value: str) -> str:
     """A TOML basic string. An exception's `why` is prose and carries quotes."""
-    escaped = (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\t", "\\t")
-    )
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
     return f'"{escaped}"'
 
 
@@ -204,9 +172,7 @@ def _dump_minimal_toml(data: dict) -> str:
         lines.append(f"[{section}]")
         for key, val in value.items():
             if key == "layers":
-                pairs = ", ".join(
-                    "[" + ", ".join(_quote(item) for item in pair) + "]" for pair in val
-                )
+                pairs = ", ".join("[" + ", ".join(_quote(item) for item in pair) + "]" for pair in val)
                 lines.append(f"{key} = [{pairs}]")
             else:
                 items = ", ".join(_quote(item) for item in val)
@@ -215,7 +181,7 @@ def _dump_minimal_toml(data: dict) -> str:
 
 
 class TestManifestLoadFailure:
-    """A hook that cannot load its declarations proceeds, and says so.
+    """Manifest failures gate mutations and preserve independent sensitive rules.
 
     Run from a copy of the hooks directory: the live tamper hook is active on
     every tool call this suite runs under and must not be broken.
@@ -227,9 +193,47 @@ class TestManifestLoadFailure:
         shutil.copytree(HOOKS_DIR, copy)
         return copy
 
-    def _run(
-        self, hooks_copy: Path, hook_name: str, payload: str
-    ) -> subprocess.CompletedProcess:
+    @pytest.mark.parametrize("defect", ["absent", "unparsable", "missing-table"])
+    @pytest.mark.parametrize("agent", ["claude", "codex", "copilot"])
+    @pytest.mark.parametrize("tool", ["Read", "Write", "Bash"])
+    def test_failure_matches_tool_and_agent(self, hooks_copy, defect, agent, tool):
+        manifest = hooks_copy / "guarded-paths.toml"
+        if defect == "absent":
+            manifest.unlink()
+        elif defect == "unparsable":
+            manifest.write_text("invalid [ toml")
+        else:
+            data = tomllib.loads(manifest.read_text())
+            del data["block"]
+            manifest.write_text(_dump_minimal_toml(data))
+        result = subprocess.run(
+            [sys.executable, str(hooks_copy / "block-hook-tampering.py")],
+            input=json.dumps(
+                {
+                    "tool_name": tool,
+                    "tool_input": {
+                        "file_path": "/tmp/ordinary",
+                        "command": "echo ordinary",
+                    },
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            env={**os.environ, "AI_HOOK_AGENT": agent},
+        )
+
+        assert "guarded-paths.toml" in result.stdout + result.stderr
+        if tool == "Read":
+            assert result.returncode in (0, 1)
+        elif agent == "claude" or (agent == "copilot" and tool == "Write"):
+            assert result.returncode == 0
+            assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "ask"
+        else:
+            assert result.returncode == 2
+
+    def _run(self, hooks_copy: Path, hook_name: str, payload: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["python3", str(hooks_copy / f"{hook_name}.py")],
             input=payload,
@@ -239,9 +243,40 @@ class TestManifestLoadFailure:
             check=False,
         )
 
-    def test_tamper_hook_proceeds_and_reports_when_manifest_is_missing(
-        self, hooks_copy: Path
-    ) -> None:
+    def test_sensitive_block_list_survives_an_unrelated_missing_table(self, hooks_copy):
+        manifest = hooks_copy / "guarded-paths.toml"
+        data = tomllib.loads(manifest.read_text())
+        del data["exceptions"]
+        manifest.write_text(_dump_minimal_toml(data))
+        result = self._run(
+            hooks_copy,
+            "block-sensitive-paths",
+            json.dumps({"tool_name": "Read", "tool_input": {"file_path": "~/.codex/auth.json"}}),
+        )
+        assert result.returncode == 2
+        assert "guarded-paths.toml" in result.stderr
+
+    @pytest.mark.parametrize("tool", ["Read", "Write", "Bash"])
+    def test_sensitive_rules_survive_manifest_failure(self, hooks_copy, tool):
+        (hooks_copy / "guarded-paths.toml").unlink()
+        result = self._run(
+            hooks_copy,
+            "block-sensitive-paths",
+            json.dumps(
+                {
+                    "tool_name": tool,
+                    "tool_input": {
+                        "file_path": "/tmp/id_rsa",
+                        "command": "cat /tmp/id_rsa",
+                    },
+                }
+            ),
+        )
+        assert result.returncode == 2
+        assert "guarded-paths.toml" in result.stderr
+        assert "zero-access" in result.stderr
+
+    def test_tamper_hook_proceeds_and_reports_when_manifest_is_missing(self, hooks_copy: Path) -> None:
         (hooks_copy / "guarded-paths.toml").unlink()
         payload = (
             '{"tool_name":"Write","tool_input":{"file_path":"~/.claude/settings.json"},'
@@ -249,37 +284,27 @@ class TestManifestLoadFailure:
         )
         result = self._run(hooks_copy, "block-hook-tampering", payload)
         assert result.returncode in (0, 1)
-        assert "guarded-paths.toml" in result.stderr
-        assert "not checked" in result.stderr
+        assert "guarded-paths.toml" in result.stdout
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "ask"
 
-    def test_sensitive_paths_hook_proceeds_and_reports_when_manifest_is_missing(
-        self, hooks_copy: Path
-    ) -> None:
+    def test_sensitive_paths_hook_proceeds_and_reports_when_manifest_is_missing(self, hooks_copy: Path) -> None:
         (hooks_copy / "guarded-paths.toml").unlink()
         payload = '{"tool_name":"Read","tool_input":{"file_path":"/tmp/notes.txt"}}'
         result = self._run(hooks_copy, "block-sensitive-paths", payload)
         assert result.returncode in (0, 1)
         assert "guarded-paths.toml" in result.stderr
-        assert "not checked" in result.stderr
+        assert "strong rules" in result.stderr
 
-    def test_tamper_hook_stays_quiet_on_a_tool_it_never_judges(
-        self, hooks_copy: Path
-    ) -> None:
-        """The registration covers Read, so reporting a broken manifest there
-        would put a failure notice on every read of the session."""
+    def test_tamper_hook_stays_quiet_on_a_tool_it_never_judges(self, hooks_copy: Path) -> None:
+        """Unregistered tools do not load policy."""
         (hooks_copy / "guarded-paths.toml").unlink()
-        payload = (
-            '{"tool_name":"Read","tool_input":{"file_path":"/tmp/notes.txt"},'
-            '"transcript_path":"/tmp/t.jsonl"}'
-        )
+        payload = '{"tool_name":"Glob","tool_input":{"file_path":"/tmp/notes.txt"},"transcript_path":"/tmp/t.jsonl"}'
         result = self._run(hooks_copy, "block-hook-tampering", payload)
         assert result.returncode == 0
         assert result.stdout == ""
         assert result.stderr == ""
 
-    def test_tamper_hook_proceeds_and_reports_when_manifest_is_unparsable(
-        self, hooks_copy: Path
-    ) -> None:
+    def test_tamper_hook_proceeds_and_reports_when_manifest_is_unparsable(self, hooks_copy: Path) -> None:
         (hooks_copy / "guarded-paths.toml").write_text("not [ valid toml")
         payload = (
             '{"tool_name":"Write","tool_input":{"file_path":"~/.claude/settings.json"},'
@@ -287,15 +312,13 @@ class TestManifestLoadFailure:
         )
         result = self._run(hooks_copy, "block-hook-tampering", payload)
         assert result.returncode in (0, 1)
-        assert "guarded-paths.toml" in result.stderr
-        assert "not checked" in result.stderr
+        assert "guarded-paths.toml" in result.stdout
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "ask"
 
-    def test_sensitive_paths_hook_proceeds_and_reports_when_manifest_is_unparsable(
-        self, hooks_copy: Path
-    ) -> None:
+    def test_sensitive_paths_hook_proceeds_and_reports_when_manifest_is_unparsable(self, hooks_copy: Path) -> None:
         (hooks_copy / "guarded-paths.toml").write_text("not [ valid toml")
         payload = '{"tool_name":"Read","tool_input":{"file_path":"/tmp/notes.txt"}}'
         result = self._run(hooks_copy, "block-sensitive-paths", payload)
         assert result.returncode in (0, 1)
         assert "guarded-paths.toml" in result.stderr
-        assert "not checked" in result.stderr
+        assert "strong rules" in result.stderr

@@ -7,6 +7,53 @@
     "unreadable to its own maintainers.",
     "Paths are given as a tool call would supply them. `~` means the user's home."
   ],
+  "bash_cases_note": "Shared lexer cases. Pi incorporation and tests are paused by user direction.",
+  "bash_cases": [
+    {
+      "command": "grep -r secret .",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "grep -r secret .",
+      "blocked": true,
+      "exists": [
+        "secret"
+      ]
+    },
+    {
+      "command": "cat ./secret",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat ./secret",
+      "blocked": true,
+      "exists": [
+        "secret"
+      ]
+    },
+    {
+      "command": "cat '.env'",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat $'\\056env'",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat $(cat .env)",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat id_rsa",
+      "blocked": true,
+      "exists": []
+    }
+  ],
   "cases": [
     {
       "path": "~/.ssh/id_rsa",
@@ -197,7 +244,7 @@
     {
       "path": "~/.config/mcp-secrets.env",
       "blocked": true,
-      "why": "the rendered MCP API keys, declared in [credentials]; a *.env suffix matches no other rule here"
+      "why": "the rendered MCP API keys, declared in [block]; a *.env suffix matches no other rule here"
     },
     {
       "path": "~/.config/mcp-op-sync.env",

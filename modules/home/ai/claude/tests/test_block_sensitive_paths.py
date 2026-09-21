@@ -17,9 +17,7 @@ def write(path: str):
 
 
 def edit(path: str):
-    return run_hook(
-        HOOK, "Edit", {"file_path": path, "old_string": "a", "new_string": "b"}
-    )
+    return run_hook(HOOK, "Edit", {"file_path": path, "old_string": "a", "new_string": "b"})
 
 
 def bash(command: str):
@@ -54,11 +52,7 @@ class TestReadTool:
 
     def test_read_credentials_in_venv_allowed(self):
         """Package-dir exemption applies to Read just as it does to Write/Edit."""
-        assert_allowed(
-            read(
-                "/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"
-            )
-        )
+        assert_allowed(read("/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"))
 
     def test_read_normal_file_allowed(self):
         assert_allowed(read("/project/src/main.py"))
@@ -184,16 +178,10 @@ class TestShellHistory:
 
 class TestPackageDirExemption:
     def test_credentials_in_venv_allowed(self):
-        assert_allowed(
-            write(
-                "/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"
-            )
-        )
+        assert_allowed(write("/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"))
 
     def test_secret_in_venv_allowed(self):
-        assert_allowed(
-            write("/project/.venv/lib/python3.11/site-packages/my_lib/secret.py")
-        )
+        assert_allowed(write("/project/.venv/lib/python3.11/site-packages/my_lib/secret.py"))
 
     def test_credentials_in_node_modules_allowed(self):
         assert_allowed(write("/project/node_modules/@aws-sdk/credentials/index.js"))
@@ -207,9 +195,7 @@ class TestPackageDirExemption:
 
     def test_credentials_in_claude_tests_allowed(self):
         """claude/tests directory is exempt — symmetric with claude/hooks for hook test files."""
-        assert_allowed(
-            write("/repo/modules/home/ai/claude/tests/test_block_secrets.py")
-        )
+        assert_allowed(write("/repo/modules/home/ai/claude/tests/test_block_secrets.py"))
 
     def test_credentials_in_codex_hooks_allowed(self):
         """codex/hooks directory is exempt for name patterns."""
@@ -217,9 +203,7 @@ class TestPackageDirExemption:
 
     def test_credentials_in_codex_tests_allowed(self):
         """codex/tests directory is exempt — symmetric with codex/hooks for hook test files."""
-        assert_allowed(
-            write("/repo/modules/home/ai/codex/tests/test_codex_block_secrets.py")
-        )
+        assert_allowed(write("/repo/modules/home/ai/codex/tests/test_codex_block_secrets.py"))
 
     def test_pem_in_venv_still_blocked(self):
         """Extension-based patterns are NOT exempt — .pem is always blocked."""
@@ -328,9 +312,7 @@ class TestApplyPatch:
         assert_blocked(apply_patch(patch), "zero-access")
 
     def test_update_credentials_json_blocks(self):
-        patch = (
-            "*** Begin Patch\n*** Update File: app/credentials.json\n+{}\n*** End Patch"
-        )
+        patch = "*** Begin Patch\n*** Update File: app/credentials.json\n+{}\n*** End Patch"
         assert_blocked(apply_patch(patch), "zero-access")
 
     def test_move_to_ssh_key_blocks(self):
@@ -338,9 +320,7 @@ class TestApplyPatch:
         assert_blocked(apply_patch(patch), "zero-access")
 
     def test_update_normal_file_allowed(self):
-        patch = (
-            "*** Begin Patch\n*** Update File: src/main.py\n+print(1)\n*** End Patch"
-        )
+        patch = "*** Begin Patch\n*** Update File: src/main.py\n+print(1)\n*** End Patch"
         assert_allowed(apply_patch(patch))
 
     def test_empty_command_allowed(self):

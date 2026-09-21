@@ -1,35 +1,19 @@
-# Source of truth for guarded paths across hook implementations and conformance tests.
-# `~/` means the user's home; `<repo>/` means the checkout containing the path.
-# `*` matches one path segment. A trailing `/` includes all descendants.
+# Shared path policy. ~/ is the home; <repo>/ is any checkout containing the path.
+# A trailing / covers descendants. * matches within one component.
 
-# ask when the agent/tool supports it; refuse otherwise
-[gated]
-deployed = [
-  "~/.agents/skills/",
-  "~/.claude.json",
-  "~/.claude/settings.json",
-  "~/.claude/settings.local.json",
-  "~/.codex/AGENTS.md",
-  "~/.codex/config.toml",
-  "~/.codex/hooks.json",
-  "~/.codex/rules/",
-  "~/.codex/skills/",
-  # Named Codex profiles can widen base permissions and may not exist yet, so
-  # guard them by fragment.
-  "~/.codex/*.config.toml",
-  "~/.copilot/hooks/",
+# Reads proceed; writes and runs require approval unless a narrower class permits them.
+[guarded]
+paths = [
+  "~/.claude/",
+  "~/.codex/",
+  "~/.copilot/",
+  "~/.pi/agent/",
   "~/Library/Application Support/Code/User/prompts/global.instructions.md",
   "~/Library/Application Support/Code/User/prompts/shell.instructions.md",
   "~/Library/Application Support/Code/User/settings.json",
   "~/.config/Code/User/prompts/global.instructions.md",
   "~/.config/Code/User/prompts/shell.instructions.md",
   "~/.config/Code/User/settings.json",
-  # Guard only agent settings; ~/.pi also contains the module's npm prefix.
-  "~/.pi/agent/settings.json",
-  "~/.pi/agent/extensions/",
-  "~/.pi/agent/skills/",
-]
-sources = [
   "<repo>/users/*/home-manager/claude/settings.json",
   "<repo>/users/*/home-manager/claude/settings.darwin.json",
   "<repo>/users/*/home-manager/claude/settings.linux.json",
@@ -42,79 +26,46 @@ sources = [
   "<repo>/modules/home/ai/copilot/hooks/",
   "<repo>/modules/home/ai/pi/security/",
   "<repo>/users/*/home-manager/pi/",
-  # The deployed source of the VS Code edit-approval enforcement block.
   "<repo>/modules/home/apps/vscode/settings.json",
+  "<repo>/users/*/home-manager/vscode/settings.json",
+  "<repo>/modules/home/ai/claude/hooks/",
+  "<repo>/modules/home/ai/codex/hooks/",
+  "<repo>/modules/home/ai/shared/hooks/",
+  "<repo>/modules/home/ai/copilot/instructions/",
+  "~/.codex/*.config.toml",
 ]
 
-# block on every agent; zero-access reads; never asked
-[credentials]
+# Block reads, writes, and runs without an approval prompt.
+[block]
 paths = [
+  "~/.claude.json",
   "~/.claude/.credentials.json",
   "~/.codex/auth.json",
   "~/.pi/agent/auth.json",
-  # Home activation renders this MCP environment file from 1Password. Declare
-  # it explicitly because the `.env` heuristic does not match its suffix.
   "~/.config/mcp-secrets.env",
 ]
 
-# markdown carve-out: [location, layer] pairs
-[instruction-layers]
-layers = [
-  ["~/.claude/hooks/", "instructions/"],
-  ["~/.codex/hooks/", "instructions/"],
-  ["~/.copilot/instructions/", ""],
-  ["<repo>/modules/home/ai/claude/hooks/", "instructions/"],
-  ["<repo>/modules/home/ai/codex/hooks/", "instructions/"],
-  ["<repo>/modules/home/ai/copilot/instructions/", ""],
-  ["<repo>/modules/home/ai/shared/hooks/", "instructions/"],
-]
-
-[location-only] # judged by resolution alone, no text fragment
-paths = ["~/.claude/", "~/.codex/", "~/.copilot/"]
-
-# Permit Bash reads through utilities that cannot write or execute. The sandbox
-# is the remaining guard for reads under these paths.
-[read-through]
+# Permit existing script runs; other operations retain the guarded default.
+[exec-through]
 paths = [
-  # Allow ordinary reads under agent homes.
-  # Writes remain ask-gated, and credential reads remain blocked.
-  "~/.claude/",
-  "~/.codex/",
-  "~/.copilot/",
-  # Specifically permit reads under the skills subdirectories
   "~/.claude/skills/",
   "~/.codex/skills/",
   "~/.pi/agent/skills/",
   "~/.agents/skills/",
-  # Allow reads for reviewing tracked guardrail sources. Writes remain ask-gated,
-  # and credential reads remain blocked.
-  "<repo>/modules/home/ai/",
 ]
 
-# Permit existing scripts to run from these paths. Keep this separate from
-# read-through because script execution permits more than reading.
-[exec-through]
-paths = ["~/.claude/skills/", "~/.codex/skills/", "~/.pi/agent/skills/", "~/.agents/skills/"]
-
-# read-gating floor tests, beyond the credential paths above
-[secret-floor]
-paths = ["~/.config/sops-nix/secrets/example", "~/.local/state/sops-nix/secrets.d/1/example"]
-
-# deliberate loosenings, one table per exception
-[[exceptions]]
-surface = "vscode-edit-approvals"
-pattern = "**/Code/User/workspaceStorage/**"
-why = "VS Code's own per-workspace state churn; gating it prompts on every chat session"
+# Permit writes; runs retain the guarded default.
+[write-through]
+paths = [
+  "~/.claude/projects/",
+]
 
 [[exceptions]]
 surface = "sensitive-path-name-heuristic"
 pattern = "<repo>/scripts/mcp-secrets.sh"
-# This tracked renderer holds no secret; `[credentials]` blocks its output.
 why = "a tracked program named for the secret file it renders, holding none itself"
 
 [[exceptions]]
-surface = "codex-guarded-workspace"
-pattern = "~/.codex/*.config.toml"
-# Codex read grants accept exact paths and trailing `/**` only. Profile layers
-# may not exist yet, so other guardrails gate their edits.
-why = "Codex accepts no read-access glob, and a profile layer has no exact path until it exists"
+surface = "sensitive-path-nix-hook-wrapper"
+pattern = "<repo>/modules/home/ai/shared/hooks/block-secrets.py"
+why = "a Home Manager store symlink whose generated name and resolved source both identify this hook"

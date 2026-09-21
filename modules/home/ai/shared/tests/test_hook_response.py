@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from hook_response import (
     CLAUDE,
     CODEX,
@@ -19,6 +18,7 @@ from hook_response import (
     invoking_agent,
     respond,
 )
+import pytest
 
 
 def exit_code(
@@ -61,9 +61,7 @@ class TestAgentIdentification:
     def test_a_transcript_path_names_claude(self) -> None:
         """Claude Code is the only agent that sends one."""
         payload = {"tool_name": "Read", "transcript_path": "/tmp/transcript.jsonl"}
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py", payload) == (
-            CLAUDE
-        )
+        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py", payload) == (CLAUDE)
 
     def test_the_invocation_path_outranks_the_payload(self) -> None:
         payload = {"transcript_path": "/tmp/transcript.jsonl"}
@@ -111,9 +109,7 @@ class TestAsk:
         assert payload["permissionDecisionReason"] == "credential store"
 
     @pytest.mark.parametrize("tool_name", ["Write", "Edit"])
-    def test_ask_prompts_under_copilot_on_file_mutation_tools(
-        self, capsys, tool_name
-    ) -> None:
+    def test_ask_prompts_under_copilot_on_file_mutation_tools(self, capsys, tool_name) -> None:
         """The VS Code surface holds these calls on the wrapped JSON shape."""
         assert exit_code(Decision.ASK, COPILOT, "enforcement file", tool_name) == 0
         payload = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
@@ -130,9 +126,7 @@ class TestAsk:
 
     @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     @pytest.mark.parametrize("tool_name", [None, "Bash", "Write", "Edit"])
-    def test_ask_refuses_where_no_prompt_is_honored(
-        self, capsys, agent: str, tool_name
-    ) -> None:
+    def test_ask_refuses_where_no_prompt_is_honored(self, capsys, agent: str, tool_name) -> None:
         """Codex parses the prompt JSON and proceeds anyway, so stdout stays empty."""
         assert exit_code(Decision.ASK, agent, "why", tool_name) == 2
         captured = capsys.readouterr()

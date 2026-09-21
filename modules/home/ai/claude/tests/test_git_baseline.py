@@ -2,11 +2,11 @@
 
 import json
 import os
-import subprocess
 from pathlib import Path
+import subprocess
 
-import pytest
 from conftest import HookResult
+import pytest
 
 HOOK_PATH = Path(__file__).parents[2] / "shared" / "hooks" / "git-baseline.sh"
 
@@ -31,9 +31,7 @@ def _create_git_repo(path: Path) -> Path:
         capture_output=True,
     )
     (path / "file.txt").write_text("init")
-    subprocess.run(
-        ["git", "-C", str(path), "add", "."], check=True, capture_output=True
-    )
+    subprocess.run(["git", "-C", str(path), "add", "."], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "commit", "-m", "init"],
         check=True,
@@ -69,9 +67,7 @@ def _make_commit(repo: Path) -> str:
     counter_file = repo / ".counter"
     count = int(counter_file.read_text()) + 1 if counter_file.exists() else 1
     counter_file.write_text(str(count))
-    subprocess.run(
-        ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
-    )
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(repo), "commit", "-m", f"change {count}"],
         check=True,
@@ -208,9 +204,7 @@ class TestDriftWarning:
 class TestDriftWarningPersistence:
     """The warning repeats until an update advances the baseline; check never does."""
 
-    def test_warning_repeats_and_baseline_unchanged_between_checks(
-        self, git_repo: Path
-    ) -> None:
+    def test_warning_repeats_and_baseline_unchanged_between_checks(self, git_repo: Path) -> None:
         """check warns on every qualifying call and does not advance the baseline."""
         run_baseline("init", session_id="persist", cwd=git_repo)
         _make_commit(git_repo)
@@ -264,9 +258,5 @@ class TestFailSilent:
         """All stages exit 0 with no output when stdin is not valid JSON."""
         for stage in ("init", "check", "update"):
             result = run_baseline(stage, stdin_text="not-valid-json{{{")
-            assert result.exit_code == 0, (
-                f"Stage {stage!r}: expected exit 0, got {result.exit_code}"
-            )
-            assert result.stdout == "", (
-                f"Stage {stage!r}: expected no stdout, got {result.stdout!r}"
-            )
+            assert result.exit_code == 0, f"Stage {stage!r}: expected exit 0, got {result.exit_code}"
+            assert result.stdout == "", f"Stage {stage!r}: expected no stdout, got {result.stdout!r}"

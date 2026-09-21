@@ -30,12 +30,15 @@ A prompt that cannot be shown becomes a refusal.
 
 ## Layout
 
-- `hooks/` — the hooks.
-  `hook_response.py` encodes a decision per agent; `guarded_paths.py` decides whether a path is guarded.
+- `hooks/` — the hooks, and the modules they share.
+  A hyphenated file is a hook and runs; an underscored file is a module and is imported.
+  `hook_response.py` encodes a decision per agent.
+  `guarded_paths.py` decides whether a path is guarded.
+  `shell_words.py` lexes a Bash command, `bash_commands.py` classifies what the lexed words do, and `apply_patch.py` reads the paths an `apply_patch` body names.
 - `hooks/guarded-paths.toml` — the guarded surface.
   Every implementation reads it at invocation, and the conformance tests check the other surfaces against it.
 - `hooks/instructions/` — prompt text injected at session start.
-  Writable, unlike the rest of `hooks/`: markdown only, one level deep.
+  An edit asks, as for any other file under `hooks/`: prompt text shapes what the agent does with every other guardrail.
 - `tests/` — the suites, plus `guarded-path-cases.json` and `sensitive-path-cases.json`, which both languages read.
 - `.specs/` — the specs for this module.
 
@@ -43,9 +46,13 @@ A prompt that cannot be shown becomes a refusal.
 
 Declare a guarded path in `guarded-paths.toml`, not in a hook.
 A path spelled in code leaves the other implementations and platforms behind.
+The enforcement floor is the exception: harness permission locations and the guard's own footprint are mechanics that a manifest grant cannot override.
+Block outranks the floor; the floor requires approval for writes and runs, including exact grants, and does not restrict reads.
+Grants remain effective outside the floor, including on instruction text.
 
-Cover every manifest declaration in the permission lists, the sandbox lists, and the editor approval globs.
-A declaration no surface covers leaves one hook between an agent and that path.
+Cover every `[block]` declaration in the permission lists and the sandbox lists.
+A block path no surface refuses leaves one hook between an agent and a credential, and a credential read cannot be undone.
+The guarded class is not held to a floor: the surfaces cannot express an ask with a carve-out beneath it, and an unprompted edit there is recoverable.
 
 Declare a loosening in `[[exceptions]]`, with its surface, pattern, and reason.
 Nothing downstream distinguishes an undeclared loosening from an accident.
@@ -78,6 +85,24 @@ Sync replaces the matched requirement wholesale and deletes whatever the block o
 Changing behavior without changing a spec is drift, whether or not a test catches it.
 
 ## Validation
+
+The shared lexer assumes Bash.
+Pin Claude with `CLAUDE_CODE_SHELL=/run/current-system/sw/bin/bash`.
+Use absolute paths in Bash commands.
+Directory changes within a command are not tracked.
+Hard links, links inside a declared directory, and routes that present no path remain limits; the sandbox and agent permissions are the boundary.
+
+A recorder comparison on 2026-09-16 found these Bash/zsh differences:
+
+- An unmatched `*.absent` stays literal in Bash; zsh starts no command.
+- `=cat` stays literal in Bash; zsh expands it to the executable path.
+- `**/*.md` does not match a top-level `a.md` in default Bash; zsh matches it.
+- ANSI-C `\cA` and `\c?` produce control bytes in Bash; zsh passes `cA` and `c?`.
+  The differential property reproduced this mismatch.
+
+Quoted globs, matching `*.md`, brace expansion, ANSI-C octal escapes, home expansion, and backslash line continuation produced the same words in that sample.
+The lexer refuses every newline, including backslash continuation, before either hook classifies the command.
+The recorder reset `PATH` after shell startup because this host's zsh startup changes it.
 
 - `just apps test shared` — this module.
   `just apps test all` — every agent's suite.

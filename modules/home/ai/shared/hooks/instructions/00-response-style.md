@@ -1,5 +1,8 @@
 ## Response style
 
+Use absolute paths in Bash tool commands, especially after changing directories.
+The path checks do not track directory changes within a single command.
+
 Prefer plain language.
 Eschew mannered prose.
 Be direct.

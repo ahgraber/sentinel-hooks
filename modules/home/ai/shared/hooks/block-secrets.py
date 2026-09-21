@@ -12,6 +12,7 @@ import subprocess
 import sys
 from typing import NoReturn
 
+import apply_patch
 from guarded_paths import NAME_HEURISTIC_EXEMPT_RE, GuardedLocations
 from hook_response import UNKNOWN, Decision, invoking_agent, respond, supports_ask
 
@@ -19,10 +20,7 @@ SENSITIVE_TOOLS = {"Bash", "Write", "Edit", "apply_patch"}
 
 _AGENT = UNKNOWN
 
-_EXPOSURE_RISK = (
-    "Exposed credentials can enable unauthorized access, account takeover, or "
-    "data exfiltration."
-)
+_EXPOSURE_RISK = "Exposed credentials can enable unauthorized access, account takeover, or data exfiltration."
 
 NETWORK_CMD_RE = re.compile(
     r"\b(?:curl|curlie|wget|aria2c|xh|httpie|nc|ncat|netcat|ftp|sftp|scp|rsync|socat|ssh(?!-\w)|telnet)\b"
@@ -128,14 +126,7 @@ STRONG_CRED_FILE_RE = re.compile(
     re.IGNORECASE,
 )
 
-CREDENTIAL_DIRS = {
-    prefix: GuardedLocations([prefix])
-    for prefix in ("~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/")
-}
-
-PATCH_PATH_RE = re.compile(
-    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (?P<path>.+)$", re.MULTILINE
-)
+CREDENTIAL_DIRS = {prefix: GuardedLocations([prefix]) for prefix in ("~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/")}
 
 
 def scan_with_gitleaks(text: str) -> bool | None:
@@ -149,14 +140,16 @@ def scan_with_gitleaks(text: str) -> bool | None:
             timeout=8,
             check=False,
         )
-        return result.returncode == 1
     except FileNotFoundError:
         return None
     except Exception:  # noqa: BLE001
         return None
+    else:
+        return result.returncode == 1
 
 
 def builtin_has_secret(text: str) -> bool:
+    """Return whether text matches a built-in secret pattern."""
     return any(p.search(text) for p in BUILTIN_SECRET_RES)
 
 
@@ -172,33 +165,29 @@ def has_credential(text: str, *, deep: bool = False) -> bool:
 
 
 def block(message: str) -> NoReturn:
+    """Respond with a block decision."""
     respond(Decision.BLOCK, message, agent=_AGENT)
 
 
 def ask(reason: str) -> NoReturn:
+    """Respond with an ask decision, or block when the agent cannot prompt."""
     if supports_ask(_AGENT):
         respond(Decision.ASK, reason, agent=_AGENT)
 
     reason = reason.replace(
-        "Approve only if this access is intentional and the credentials will "
-        "not leave this session.",
-        "If this access is intentional, have the user perform it manually "
-        "outside the agent session.",
+        "Approve only if this access is intentional and the credentials will not leave this session.",
+        "If this access is intentional, have the user perform it manually outside the agent session.",
     )
     reason = reason.replace(
         "Approve only if you intentionally want the agent to access this material.",
-        "If this access is intentional, have the user perform it manually "
-        "outside the agent session.",
+        "If this access is intentional, have the user perform it manually outside the agent session.",
     )
     reason = reason.replace(
         "approve below. Otherwise deny and remove the credential before re-running.",
         "have the user perform the sensitive step manually outside the agent "
         "session. Otherwise remove the credential before re-running.",
     )
-    block(
-        "Blocked: this agent cannot show a confirmation prompt for this "
-        "action.\n" + reason
-    )
+    block("Blocked: this agent cannot show a confirmation prompt for this action.\n" + reason)
 
 
 def extract_apply_patch_paths(tool_input: dict) -> list[str]:
@@ -206,7 +195,7 @@ def extract_apply_patch_paths(tool_input: dict) -> list[str]:
     command = tool_input.get("command", "")
     if not isinstance(command, str):
         return []
-    return [m.group("path").strip() for m in PATCH_PATH_RE.finditer(command)]
+    return apply_patch.targets(command)
 
 
 def ask_if_sensitive_path(path: str) -> None:
@@ -243,6 +232,7 @@ def ask_if_sensitive_path(path: str) -> None:
 
 
 def main() -> None:
+    """Read the hook payload from stdin and respond to the tool call."""
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
@@ -263,11 +253,7 @@ def main() -> None:
     command = tool_input.get("command", "") if tool_name == "Bash" else ""
     has_network = bool(NETWORK_CMD_RE.search(command)) if command else False
     has_loopback = (
-        bool(
-            LOCAL_URL_RE.search(command)
-            or LOCAL_NC_RE.search(command)
-            or LOCAL_HOST_ARG_RE.search(command)
-        )
+        bool(LOCAL_URL_RE.search(command) or LOCAL_NC_RE.search(command) or LOCAL_HOST_ARG_RE.search(command))
         if command
         else False
     )
@@ -373,8 +359,7 @@ if __name__ == "__main__":
         if _current_tool_name in SENSITIVE_TOOLS:
             respond(
                 Decision.BLOCK,
-                "Blocked: block-secrets failed while checking a call that could "
-                "expose credentials.",
+                "Blocked: block-secrets failed while checking a call that could expose credentials.",
                 agent=_AGENT,
             )
         respond(

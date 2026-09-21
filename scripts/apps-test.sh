@@ -42,6 +42,8 @@ main() {
     die "expected exactly one app test target"
   fi
 
+  cd "${REPO_ROOT}"
+
   case "${1}" in
     shared | claude | codex | copilot)
       require_cmd uv

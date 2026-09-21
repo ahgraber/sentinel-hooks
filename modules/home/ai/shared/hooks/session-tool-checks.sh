@@ -25,6 +25,12 @@ recommend_tool gitleaks \
   "Install gitleaks with 'brew install gitleaks' or see https://github.com/gitleaks/gitleaks#installing.
   Without it, secret detection uses built-in patterns with less coverage."
 
+hook_dir="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd)"
+policy_status=0
+if command -v uv > /dev/null 2>&1; then
+  uv run --script "${hook_dir}/session-policy-checks.py" || policy_status=$?
+fi
+
 for ((i = 0; i < ${#required_tools[@]}; i += 2)); do
   name="${required_tools[i]}"
   hint="${required_tools[i + 1]}"
@@ -44,4 +50,4 @@ for ((i = 0; i < ${#recommended_tools[@]}; i += 2)); do
   fi
 done
 
-exit 0
+exit "${policy_status}"
