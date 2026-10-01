@@ -1,8 +1,6 @@
-"""The tamper-protection verdicts every implementation of the policy must agree on.
+"""The tamper-protection verdicts every surface that reaches a verdict must agree on.
 
-pi's security extension is a TypeScript port that cannot import
-`block-hook-tampering.py`; `index.test.mjs` asserts this same
-table, which is what keeps the two honest.
+`pi/tests/registration.test.mjs` judges Pi's hook runner against this same table.
 """
 
 from __future__ import annotations
@@ -38,6 +36,12 @@ def test_cases_are_loaded() -> None:
     assert len(CASES) > 20
     assert any(case["blocked"] for case in CASES)
     assert any(not case["blocked"] for case in CASES)
+
+
+def test_instruction_markdown_is_guarded() -> None:
+    instructions = [case for case in CASES if "/instructions/" in case["path"]]
+    assert instructions
+    assert all(case["blocked"] for case in instructions)
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["path"])

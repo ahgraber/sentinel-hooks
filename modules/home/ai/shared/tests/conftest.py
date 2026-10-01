@@ -1,4 +1,4 @@
-"""Make the shared hook modules and `conformance` importable under every runner,
+"""Make the shared hook modules and `verdict_conformance` importable under every runner,
 and supply the fixtures more than one module builds a case on.
 
 pytest adds a test file's directory to `sys.path` only under some import modes,

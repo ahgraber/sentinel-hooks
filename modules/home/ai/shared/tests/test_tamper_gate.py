@@ -43,18 +43,19 @@ class GateResult:
     stderr: str
 
 
-def run_gate(tool_name: str, tool_input: dict, agent: str, home: str | None = None) -> GateResult:
+def run_gate(
+    tool_name: str, tool_input: dict, agent: str, home: str | None = None, cwd: str | None = str(REPO_ROOT)
+) -> GateResult:
     """Run the hook as `agent` would invoke it: Claude Code by the transcript
     path its payloads carry, the others by the declaration their adapters set.
 
     `home` substitutes the home directory the hook expands `~` against, so a
-    case that needs files on disk can build them.
+    case that needs files on disk can build them. `cwd` is the working
+    directory the payload supplies; `None` omits it.
     """
-    payload: dict = {
-        "tool_name": tool_name,
-        "tool_input": tool_input,
-        "cwd": str(REPO_ROOT),
-    }
+    payload: dict = {"tool_name": tool_name, "tool_input": tool_input}
+    if cwd is not None:
+        payload["cwd"] = cwd
     env = {**os.environ}
     env.pop("AI_HOOK_AGENT", None)
     if home is not None:
@@ -84,8 +85,8 @@ def edit(path: str, agent: str) -> GateResult:
     return run_gate("Edit", {"file_path": path, "old_string": "a", "new_string": "b"}, agent)
 
 
-def bash(command: str, agent: str, home: str | None = None) -> GateResult:
-    return run_gate("Bash", {"command": command}, agent, home)
+def bash(command: str, agent: str, home: str | None = None, cwd: str | None = str(REPO_ROOT)) -> GateResult:
+    return run_gate("Bash", {"command": command}, agent, home, cwd)
 
 
 def patch(body: str, agent: str) -> GateResult:
@@ -534,7 +535,7 @@ class TestInstallingDeferredCodeTakesNoReadCarveOut:
 
 # Absolute, unlike the named-path cases above. An ancestor carries no
 # declaration fragment, so it is found by resolving it inside its repository,
-# and a relative spelling resolves against whatever directory the hook runs in.
+# and a relative spelling resolves against the directory the payload supplies.
 AI_MODULE = f"{REPO_ROOT}/modules/home/ai"
 
 DESTROYS_AN_ANCESTOR = [
@@ -583,6 +584,58 @@ class TestDestructiveOperationsOnAnAncestor:
     def test_reading_or_adding_beneath_an_ancestor_proceeds(self, command: str, agent: str) -> None:
         """Only taking the directory away is asked about, not working inside it."""
         result = bash(command, agent)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+
+# With no working directory in the payload, a relative operand may name any
+# directory, an ancestor of a declaration included.
+DESTROYS_A_RELATIVE_OPERAND = [
+    "rm -r modules/home/ai/pi",
+    "rm -rf build",
+    "mv modules /tmp/elsewhere",
+    "mv /tmp/replacement modules",
+    "rm -rf ..",
+    "ls && rm -rf .",
+]
+
+NAMES_EVERY_DESTROYED_OPERAND_ABSOLUTELY = [
+    "rm -rf /tmp/scratch",
+    "rm -rf ~/scratch",
+    "cat modules/home/ai/pi/default.nix",
+    "cp modules/home/ai/pi/default.nix /tmp/copy.nix",
+]
+
+
+class TestRelativeOperandWithoutAWorkingDirectory:
+    """A relative operand the payload gives no directory for cannot be judged, so it is refused."""
+
+    @pytest.mark.parametrize("command", DESTROYS_A_RELATIVE_OPERAND, ids=lambda c: c[:44])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_destroying_a_relative_operand_refuses_and_stops(self, command: str, agent: str) -> None:
+        """No prompt is offered: the user cannot judge a path the hook cannot place either."""
+        result = bash(command, agent, cwd=None)
+        assert_refused(result, "supplies no working directory")
+        assert "absolute path" in result.stderr
+        assert "Do NOT attempt to find alternative commands" in result.stderr
+
+    @pytest.mark.parametrize("command", NAMES_EVERY_DESTROYED_OPERAND_ABSOLUTELY, ids=lambda c: c[:44])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
+    def test_absolute_or_unharmed_operands_proceed(self, command: str, agent: str) -> None:
+        result = bash(command, agent, cwd=None)
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+    def test_an_absolute_ancestor_is_still_judged(self) -> None:
+        reason = ask_reason(bash(f"rm -rf {AI_MODULE}/pi", CLAUDE, cwd=None))
+        assert "remove, rename, or replace" in reason
+
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
+    def test_a_supplied_directory_decides_where_it_leads(self, agent: str) -> None:
+        """Resolved against a directory outside the repository, the same spelling is not an ancestor."""
+        result = bash("rm -r modules/home/ai/pi", agent, cwd="/tmp")
         assert result.exit_code == 0
         assert result.stdout == ""
         assert result.stderr == ""
@@ -644,13 +697,13 @@ class TestAgentHomeReadsProceed:
         assert_allowed(bash(command, CLAUDE))
 
 
-PI_SOURCE = "modules/home/ai/pi/security/shell-words.ts"
+PI_SOURCE = "modules/home/ai/pi/hooks/extension.ts"
 HOOK_SOURCE = "modules/home/ai/shared/hooks/block-secrets.py"
 
 MODULE_TREE_READS = [
     f"cat {PI_SOURCE}",
     f"head -40 {HOOK_SOURCE}",
-    f"grep -rn bashWriteTargets {PI_SOURCE}",
+    f"grep -rn registerHooks {PI_SOURCE}",
     "ls modules/home/ai/codex/rules/",
     "find modules/home/ai/copilot/hooks -name '*.md'",
     f"cat {PI_SOURCE} && echo --- && cat {HOOK_SOURCE}",

@@ -10,12 +10,7 @@ def bash(command: str):
     return run_hook(HOOK, "Bash", {"command": command})
 
 
-class TestToolScope:
-    def test_non_bash_tool_is_allowed(self):
-        result = run_hook(HOOK, "Read", {"command": "python script.py"})
-
-        assert_allowed(result)
-
+class TestInput:
     def test_missing_command_is_allowed(self):
         result = run_hook(HOOK, "Bash", {})
 

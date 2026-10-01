@@ -22,6 +22,7 @@ from typing import NoReturn
 import apply_patch
 from guarded_paths import (
     NAME_HEURISTIC_EXEMPT_RE,
+    TOOL_VOCABULARY,
     GuardedLocations,
     ManifestError,
     PathPolicy,
@@ -31,6 +32,8 @@ from guarded_paths import (
 )
 from hook_response import Decision, invoking_agent, respond
 import shell_words
+
+SENSITIVE_PATH_TOOLS = TOOL_VOCABULARY.group("sensitive-path")
 
 _EXPOSURE_RISK = (
     "Exposed credentials risk unauthorized access, account takeover, and data "
@@ -401,7 +404,7 @@ def main() -> None:
     tool_input = data.get("tool_input", {})
     cwd = data.get("cwd", "") or ""
 
-    if tool_name not in ("Bash", "Read", "Write", "Edit", "apply_patch"):
+    if tool_name not in SENSITIVE_PATH_TOOLS:
         sys.exit(0)
 
     if tool_name in ("Read", "Write", "Edit"):

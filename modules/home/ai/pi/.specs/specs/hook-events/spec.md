@@ -135,6 +135,7 @@ A turn that ends because the user interrupted it, or because the model call fail
 The extension SHALL run the `SessionStart` hooks when a session starts, resumes, or is replaced, with `source` naming which, and SHALL run the `SessionEnd` hooks when the session ends.
 
 A `SessionStart` hook's standard output on exit 0, or its `additionalContext`, reaches the model before its first response.
+The reason of a `SessionStart` exit 2 or `decision` `block` reaches the user as an error, and the session continues.
 A `SessionEnd` hook's outcome changes nothing, because the session is already ending.
 The `SessionStart` hooks run once for each start, even when Pi reports the same start more than once.
 
@@ -143,6 +144,12 @@ The `SessionStart` hooks run once for each start, even when Pi reports the same 
 - **GIVEN** a `SessionStart` hook that prints text and exits 0
 - **WHEN** a new session starts
 - **THEN** the hook saw `source` `startup`, and the model receives the text before its first response
+
+#### Scenario: StartBlocked
+
+- **GIVEN** a `SessionStart` hook that writes a reason to standard error and exits 2, and another that prints text
+- **WHEN** a new session starts
+- **THEN** the user sees the reason as an error, and the model receives the other hook's text before its first response
 
 #### Scenario: Resumed
 

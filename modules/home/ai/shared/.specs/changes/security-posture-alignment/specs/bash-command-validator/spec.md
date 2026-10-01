@@ -2,6 +2,11 @@
 
 ## REMOVED Requirements
 
+### Requirement: ToolScope
+
+Removed because: the hook evaluates the command of every call it receives, and each agent's registration selects which calls reach it.
+A `tool_name` test inside the hook spelled the shell tool a second time, beside the declared vocabulary, and held only for the agents that spell it `Bash`.
+
 ### Requirement: RedirectGrepToRipgrep
 
 Removed because: the rule was retired by `c7f3937` (2026-07-28), which replaced this requirement in the baseline with `ReviewHeredocsForBangHistory`, `RejectZshExpansionHazards`, and `RejectRipgrepRecursiveFlag`.

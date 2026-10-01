@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+import fnmatch
 import functools
 import glob
 import os
@@ -34,11 +35,112 @@ _REPO_PREFIX = "<repo>/"
 # Keep the manifest beside the module so deployed copies carry it. Callers can
 # override it for tests.
 MANIFEST_PATH = Path(__file__).parent / "guarded-paths.toml"
-EXCEPTION_SURFACES = frozenset({"sensitive-path-name-heuristic", "sensitive-path-nix-hook-wrapper"})
+TOOL_VOCABULARY_PATH = Path(__file__).parent / "tool-vocabulary.toml"
+# `capability-coverage` excuses an agent from running a hook; no hook reads it, only the assessment.
+EXCEPTION_SURFACES = frozenset(
+    {"sensitive-path-name-heuristic", "sensitive-path-nix-hook-wrapper", "capability-coverage"}
+)
 
 
 class ManifestError(Exception):
     """The manifest could not be read or parsed."""
+
+
+class ToolVocabularyError(Exception):
+    """The tool vocabulary could not be read, parsed, or validated."""
+
+
+@dataclass(frozen=True)
+class ToolVocabulary:
+    """Canonical tool groups and harness-specific spellings."""
+
+    groups: Mapping[str, frozenset[str]]
+    ask: Mapping[str, frozenset[str]]
+    mappings: Mapping[str, Mapping[str, str]]
+    passthrough: Mapping[str, frozenset[str]]
+
+    def group(self, name: str) -> frozenset[str]:
+        """Return the canonical tools in `name`."""
+        return self.groups[name]
+
+    def normalize(self, harness: str, spelling: str) -> str | None:
+        """Return the canonical name for a harness spelling, or `None`."""
+        mapping = self.mappings.get(harness)
+        return mapping.get(spelling) if mapping is not None else None
+
+    def is_passthrough(self, harness: str, spelling: str) -> bool:
+        """Return whether `harness` declares `spelling` as a tool no hook checks.
+
+        An entry is a name or an `fnmatch` pattern, matched case-sensitively.
+        """
+        return any(fnmatch.fnmatchcase(spelling, entry) for entry in self.passthrough.get(harness, ()))
+
+    def supports_ask(self, harness: str, tool_name: str) -> bool:
+        """Return whether `harness` honors an ask for the canonical tool."""
+        return tool_name in self.ask.get(harness, ())
+
+
+def _tool_sets(table: object, table_name: str) -> Mapping[str, frozenset[str]]:
+    if not isinstance(table, dict):
+        raise ToolVocabularyError(f"{table_name} must be a table")
+    result: dict[str, frozenset[str]] = {}
+    for name, values in table.items():
+        if not isinstance(name, str) or not isinstance(values, list):
+            raise ToolVocabularyError(f"{table_name} entries must map names to lists")
+        if not values or any(not isinstance(value, str) or not value for value in values):
+            raise ToolVocabularyError(f"{table_name}.{name} must contain nonempty strings")
+        result[name] = frozenset(values)
+    return MappingProxyType(result)
+
+
+def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabulary:
+    """Load and validate the declared tool vocabulary."""
+    try:
+        with open(path, "rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ToolVocabularyError(str(exc)) from exc
+
+    if set(data) != {"groups", "ask", "mappings", "passthrough"}:
+        raise ToolVocabularyError("expected groups, ask, mappings, and passthrough tables")
+
+    groups = _tool_sets(data["groups"], "groups")
+    ask = _tool_sets(data["ask"], "ask")
+    passthrough = _tool_sets(data["passthrough"], "passthrough")
+    raw_mappings = data["mappings"]
+    if not isinstance(raw_mappings, dict):
+        raise ToolVocabularyError("mappings must be a table")
+
+    mappings: dict[str, Mapping[str, str]] = {}
+    for harness, raw_mapping in raw_mappings.items():
+        if not isinstance(harness, str) or not isinstance(raw_mapping, dict):
+            raise ToolVocabularyError("mappings entries must be tables")
+        if any(
+            not isinstance(spelling, str) or not spelling or not isinstance(canonical, str) or not canonical
+            for spelling, canonical in raw_mapping.items()
+        ):
+            raise ToolVocabularyError(f"mappings.{harness} must map nonempty strings")
+        mappings[harness] = MappingProxyType(dict(raw_mapping))
+
+    canonical_tools = {canonical for mapping in mappings.values() for canonical in mapping.values()}
+    referenced_tools = {tool for tools in (*groups.values(), *ask.values()) for tool in tools}
+    if unknown := referenced_tools - canonical_tools:
+        raise ToolVocabularyError("unknown canonical tools: " + ", ".join(sorted(unknown)))
+
+    # A spelling that is both mapped and passthrough would be judged by whichever
+    # the adapter consults first, so the declaration refuses to say both.
+    for harness, entries in passthrough.items():
+        if harness not in mappings:
+            raise ToolVocabularyError(f"passthrough.{harness} names a harness with no mapping")
+        if overlap := sorted(
+            spelling for spelling in mappings[harness] if any(fnmatch.fnmatchcase(spelling, e) for e in entries)
+        ):
+            raise ToolVocabularyError(f"passthrough.{harness} covers mapped spellings: " + ", ".join(overlap))
+
+    return ToolVocabulary(groups, ask, MappingProxyType(mappings), passthrough)
+
+
+TOOL_VOCABULARY = load_tool_vocabulary()
 
 
 def load_manifest(path: Path | str = MANIFEST_PATH) -> dict:
@@ -387,12 +489,14 @@ HOOK_DIRECTORIES = (
     "~/.claude/hooks/",
     "~/.codex/hooks/",
     "~/.copilot/hooks/",
-    "~/.pi/agent/extensions/security/",
+    "~/.pi/agent/extensions/hooks/",
+    "~/.pi/agent/hooks/",
     "<repo>/modules/home/ai/shared/hooks/",
     "<repo>/modules/home/ai/claude/hooks/",
     "<repo>/modules/home/ai/codex/hooks/",
     "<repo>/modules/home/ai/copilot/hooks/",
     "<repo>/modules/home/ai/pi/security/",
+    "<repo>/modules/home/ai/pi/hooks/",
 )
 PERMISSION_FILES = (
     "~/.claude/settings.json",
@@ -403,6 +507,7 @@ PERMISSION_FILES = (
     "~/.codex/hooks.json",
     "~/.codex/rules/",
     "~/.pi/agent/settings.json",
+    "~/.pi/agent/hooks.json",
     "~/Library/Application Support/Code/User/settings.json",
     "~/.config/Code/User/settings.json",
     "<repo>/users/*/home-manager/claude/settings*.json",

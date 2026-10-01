@@ -19,7 +19,7 @@ from typing import NoReturn
 import apply_patch
 import bash_commands
 from bash_commands import offers_accepted_forms
-from guarded_paths import ManifestError, load_policy, spellings
+from guarded_paths import TOOL_VOCABULARY, ManifestError, load_policy, spellings
 from hook_response import Decision, Instruction, invoking_agent, respond, supports_ask
 import shell_words
 from shell_words import Word
@@ -29,7 +29,8 @@ from shell_words import Word
 POLICY = load_policy(invocation_path=sys.argv[0] if __name__ == "__main__" else None)
 GATED = "guarded"
 CREDENTIAL = "block"
-MUTATING_TOOLS = ("Write", "Edit", "apply_patch", "Bash")
+MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
+SENSITIVE_PATH_TOOLS = TOOL_VOCABULARY.group("sensitive-path")
 
 
 def _ask_reason(target: str, tool_name: str) -> str:
@@ -70,6 +71,15 @@ def _ancestor_refusal(target: str, tool_name: str) -> str:
         f"Blocked: {tool_name} would remove, rename, or replace '{target}', "
         "which holds agent enforcement. This agent cannot ask for the required "
         "approval."
+    )
+
+
+def _unanchored_refusal(operand: str, tool_name: str) -> str:
+    return (
+        f"Blocked: {tool_name} would remove, rename, or replace the relative path "
+        f"'{operand}', and this call supplies no working directory to resolve it "
+        "against, so whether it holds agent enforcement is unknown. Written as "
+        "an absolute path, it can be judged."
     )
 
 
@@ -180,6 +190,22 @@ def _destroyed_ancestor(reading: bash_commands.Reading, cwd: str | None) -> str 
     for candidate in candidates:
         if POLICY.guarded.encloses(candidate, cwd=cwd) or POLICY.classes[CREDENTIAL].encloses(candidate, cwd=cwd):
             return candidate
+    return None
+
+
+def _unanchored_operand(reading: bash_commands.Reading, cwd: str | None) -> str | None:
+    """Return a relative operand `reading` destroys when the call supplies no working directory.
+
+    Such an operand may name any directory, including an ancestor of a
+    declaration. It is refused rather than guessed at from its shape, because a
+    `*` in a declaration lets almost any word match one.
+    """
+    if cwd is not None:
+        return None
+    for segment in reading.segments:
+        for operand in segment.destroyed:
+            if not os.path.isabs(os.path.expanduser(operand)):
+                return operand
     return None
 
 
@@ -329,7 +355,7 @@ def main() -> None:
     cwd = data.get("cwd") or None
 
     # Unregistered tools do not use this policy.
-    if tool_name not in (*MUTATING_TOOLS, "Read"):
+    if tool_name not in SENSITIVE_PATH_TOOLS:
         sys.exit(0)
 
     if POLICY.error is not None:
@@ -390,6 +416,16 @@ def main() -> None:
                     prompt=_ancestor_reason(ancestor, tool_name),
                     refusal=_ancestor_refusal(ancestor, tool_name),
                 )
+
+            # TODO: this refusal ends with the stop instruction, so the agent
+            # reports to the user rather than restating the paths itself. If an
+            # agent that omits `cwd` makes it frequent, add a third refusal form
+            # to `hook-interface` `BlockAIGuidance` that tells the agent to
+            # restate every relative path absolutely and run again. That form is
+            # no more permissive, because the restated command is judged in full.
+            unanchored = _unanchored_operand(reading, cwd)
+            if unanchored is not None:
+                _block(_unanchored_refusal(unanchored, tool_name), agent)
 
     if POLICY and POLICY.findings:
         respond(Decision.WARN, "\n".join(POLICY.findings), agent=agent)

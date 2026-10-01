@@ -13,10 +13,10 @@ import sys
 from typing import NoReturn
 
 import apply_patch
-from guarded_paths import NAME_HEURISTIC_EXEMPT_RE, GuardedLocations
+from guarded_paths import NAME_HEURISTIC_EXEMPT_RE, TOOL_VOCABULARY, GuardedLocations
 from hook_response import UNKNOWN, Decision, invoking_agent, respond, supports_ask
 
-SENSITIVE_TOOLS = {"Bash", "Write", "Edit", "apply_patch"}
+SENSITIVE_TOOLS = TOOL_VOCABULARY.group("mutating")
 
 _AGENT = UNKNOWN
 

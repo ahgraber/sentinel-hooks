@@ -33,11 +33,6 @@ if ! jq -e . > /dev/null 2>&1 <<< "${input_json}"; then
   exit 1
 fi
 
-tool_name="$(jq -r '.tool_name // ""' <<< "${input_json}")"
-if [[ "${tool_name}" != "Bash" ]]; then
-  exit 0
-fi
-
 command_text="$(jq -r '.tool_input.command // ""' <<< "${input_json}")"
 if [[ -z "${command_text}" ]]; then
   exit 0

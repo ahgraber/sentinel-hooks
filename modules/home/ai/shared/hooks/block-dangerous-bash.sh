@@ -65,9 +65,6 @@ block() {
 # Fail closed because this hook handles only Bash.
 input_json="$(cat)" || exit 2
 
-tool_name="$(jq -re '.tool_name // empty' 2> /dev/null <<< "${input_json}")" || exit 2
-[[ "${tool_name}" == "Bash" ]] || exit 0
-
 command_text="$(jq -r '.tool_input.command // ""' 2> /dev/null <<< "${input_json}")" || exit 2
 [[ -n "${command_text}" ]] || exit 0
 
@@ -130,13 +127,13 @@ rule generic '\bperl\b[^;|&\n]*-e[^;|&\n]*socket' "${_MSG_REVERSE_SHELL}"
 rule generic '\bruby\b[^;|&\n]*-e[^;|&\n]*TCPSocket' "${_MSG_REVERSE_SHELL}"
 rule generic '\bphp\b[^;|&\n]*-r[^;|&\n]*fsockopen' "${_MSG_REVERSE_SHELL}"
 
-rule none '(curl|wget|fetch)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?|ruby)\b' "${_MSG_PIPE_TO_SHELL}"
+rule none '(curl|wget|fetch)\b[^|]*\|\s*(b?a?sh\b|zsh|python[0-9.]?|ruby)\b' "${_MSG_PIPE_TO_SHELL}"
 
-rule none 'base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh|python[0-9.]?)' "${_MSG_OBFUSCATED}"
-rule none '\|\s*base64\s+(-d|--decode)\b[^|]*\|\s*(ba?sh|zsh)' "${_MSG_OBFUSCATED}"
+rule none 'base64\s+(-d|--decode)\b[^|]*\|\s*(b?a?sh\b|zsh|python[0-9.]?)' "${_MSG_OBFUSCATED}"
+rule none '\|\s*base64\s+(-d|--decode)\b[^|]*\|\s*(b?a?sh\b|zsh)' "${_MSG_OBFUSCATED}"
 rule none '\beval\s*\$\(' "${_MSG_OBFUSCATED}"
 rule none '\beval\s*`' "${_MSG_OBFUSCATED}"
-rule none 'xxd\s+-r\b[^|]*\|\s*(ba?sh|zsh)' "${_MSG_OBFUSCATED}"
+rule none 'xxd\s+-r\b[^|]*\|\s*(b?a?sh\b|zsh)' "${_MSG_OBFUSCATED}"
 
 rule none '\bpbpaste\b' "${_MSG_CLIPBOARD}"
 rule none '\bxclip\b[^;|&\n]*(--output|-o)\b' "${_MSG_CLIPBOARD}"

@@ -15,8 +15,11 @@ from pathlib import Path
 import re
 import sys
 
+from guarded_paths import TOOL_VOCABULARY
 from hook_response import Decision, invoking_agent, respond, supports_ask
 import tomllib
+
+DESTRUCTIVE_OPS_TOOLS = TOOL_VOCABULARY.group("destructive-ops")
 
 
 def load_rules() -> list[dict]:
@@ -79,7 +82,7 @@ def main() -> None:
             "so the Bash command was never checked and is refused.",
         )
 
-    if data.get("tool_name") != "Bash":
+    if data.get("tool_name") not in DESTRUCTIVE_OPS_TOOLS:
         sys.exit(0)
 
     command = data.get("tool_input", {}).get("command", "")

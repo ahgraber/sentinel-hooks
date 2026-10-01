@@ -266,6 +266,16 @@ def test_unknown_exception_surface_is_a_manifest_failure(policy_world):
         guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
 
 
+def test_a_capability_coverage_exception_loads_and_changes_no_verdict(policy_world):
+    """The assessment reads it; no path verdict does."""
+    home, repo, manifest = policy_world
+    data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
+    data["block"]["paths"] = ["~/file"]
+    data["exceptions"] = [{"surface": "capability-coverage", "pattern": "~/file", "why": "test"}]
+    policy = guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
+    assert policy.verdict("~/file", "read") == "block"
+
+
 def test_real_manifest_validation_returns_diagnostics():
     assert guarded_paths.validate() == []
 

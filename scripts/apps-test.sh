@@ -16,7 +16,7 @@ Targets:
   claude   Run the Claude hook tests
   codex    Run the Codex hook tests
   copilot  Run the Copilot hook-adapter tests
-  pi       Run the Pi hooks-extension tests
+  pi       Run the Pi hook dispatcher, registration, and hooks-extension tests
 USAGE
 }
 
@@ -31,8 +31,9 @@ run_python_suite() {
 
 run_pi_suite() {
   echo "==> Testing pi"
+  uv run --with pytest --with hypothesis pytest -q "${REPO_ROOT}/modules/home/ai/pi/tests"
   # Quoted so node expands the glob, which it matches against every test file.
-  node --test "${REPO_ROOT}/modules/home/ai/pi/hooks/*.test.mjs"
+  node --test "${REPO_ROOT}/modules/home/ai/pi/hooks/*.test.mjs" "${REPO_ROOT}/modules/home/ai/pi/tests/*.test.mjs"
 }
 
 main() {
@@ -51,6 +52,7 @@ main() {
       run_python_suite "${1}"
       ;;
     pi)
+      require_cmd uv
       require_cmd node
       run_pi_suite
       ;;

@@ -1,4 +1,4 @@
-"""Encode shared hook decisions for Claude, Codex, and Copilot.
+"""Encode shared hook decisions for Claude, Codex, Copilot, and Pi.
 
 Unsupported warnings allow. Unsupported asks block. Prompt JSON is emitted only
 for agent and tool pairs known to honor it.
@@ -12,17 +12,25 @@ import os
 import sys
 from typing import NoReturn
 
+try:
+    from guarded_paths import TOOL_VOCABULARY
+except Exception:  # noqa: BLE001
+    # Only Copilot's ask support reads it. A hook that needs the vocabulary
+    # reports the failure itself, and still needs the instruction text below.
+    TOOL_VOCABULARY = None
+
 CLAUDE = "claude"
 CODEX = "codex"
 COPILOT = "copilot"
+PI = "pi"
 UNKNOWN = "unknown"
 
 _PATH_MARKERS = ((CLAUDE, "/.claude/"), (CODEX, "/.codex/"), (COPILOT, "/.copilot/"))
-_KNOWN_AGENTS = frozenset(agent for agent, _ in _PATH_MARKERS)
+# Pi's registration and its dispatcher name it through `AI_HOOK_AGENT`, not a path marker.
+_KNOWN_AGENTS = frozenset({*(agent for agent, _ in _PATH_MARKERS), PI})
 
-_WARN_CAPABLE = frozenset({CLAUDE})
-# Copilot honors ask responses for file tools only; other asks block.
-_COPILOT_ASK_TOOLS = frozenset({"Write", "Edit"})
+# Pi's hook runner shows a hook's stderr on exit 1 and lets the call proceed.
+_WARN_CAPABLE = frozenset({CLAUDE, PI})
 
 _REPORT_POINTS = """1. Your current task — what you were working on
 2. Your intended step — what you were trying to do and why
@@ -91,10 +99,11 @@ def supports_ask(agent: str, tool_name: str | None = None) -> bool:
 
     Without a tool, require support for every tool.
     """
-    if agent == CLAUDE:
+    # Pi's adapter decides per call whether a prompt can be shown, and refuses where none can.
+    if agent in (CLAUDE, PI):
         return True
     if agent == COPILOT:
-        return tool_name in _COPILOT_ASK_TOOLS
+        return tool_name is not None and TOOL_VOCABULARY.supports_ask(COPILOT, tool_name)
     return False
 
 
@@ -110,12 +119,15 @@ def respond(
     who = invoking_agent() if agent is None else agent
 
     if decision is Decision.ASK and supports_ask(who, tool_name):
+        # Pi's adapter refuses from this reason when it cannot show the prompt or the
+        # user declines, so the reason carries the instructions a refusal needs.
+        reason = f"{message}\n{_INSTRUCTION_TEXT[instruction]}" if who == PI else message
         json.dump(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "ask",
-                    "permissionDecisionReason": message,
+                    "permissionDecisionReason": reason,
                 }
             },
             sys.stdout,

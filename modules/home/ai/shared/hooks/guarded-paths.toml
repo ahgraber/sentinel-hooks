@@ -25,6 +25,7 @@ paths = [
   "<repo>/users/*/home-manager/codex/config.linux.toml",
   "<repo>/modules/home/ai/copilot/hooks/",
   "<repo>/modules/home/ai/pi/security/",
+  "<repo>/modules/home/ai/pi/hooks/",
   "<repo>/users/*/home-manager/pi/",
   "<repo>/modules/home/apps/vscode/settings.json",
   "<repo>/users/*/home-manager/vscode/settings.json",
@@ -69,3 +70,13 @@ why = "a tracked program named for the secret file it renders, holding none itse
 surface = "sensitive-path-nix-hook-wrapper"
 pattern = "<repo>/modules/home/ai/shared/hooks/block-secrets.py"
 why = "a Home Manager store symlink whose generated name and resolved source both identify this hook"
+
+[[exceptions]]
+surface = "capability-coverage"
+pattern = "copilot:refuse-unlisted-tools.py"
+why = "the Copilot adapter refuses a tool the vocabulary does not list before any hook runs"
+
+[[exceptions]]
+surface = "capability-coverage"
+pattern = "pi:refuse-unlisted-tools.py"
+why = "Pi's dispatcher refuses a tool the vocabulary does not list before any hook runs"

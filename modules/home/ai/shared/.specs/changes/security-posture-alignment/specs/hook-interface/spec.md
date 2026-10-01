@@ -36,6 +36,9 @@ A failure that prevents the hook from running at all — an interpreter that can
 At least one agent refuses the tool call on any such failure.
 The stated fail-open posture therefore does not hold uniformly for startup failures, and SHALL NOT be represented as if it did.
 
+A surface that runs several hooks in one process SHALL treat a hook that ends in an error it did not handle as a hook that gave no answer, and SHALL NOT read it as `Allow`.
+Run alone, that hook would have exited with a status its agent refuses or reports; bundled, its failure is the surface's to encode.
+
 #### Scenario: InternalErrorOnSensitiveTool
 
 - **GIVEN** an unhandled error occurs inside the hook
@@ -59,6 +62,12 @@ The stated fail-open posture therefore does not hold uniformly for startup failu
 - **GIVEN** a hook registered for both sensitive and read-only tools
 - **WHEN** it fails before the payload names a tool
 - **THEN** it reaches `Warn`
+
+#### Scenario: HookFailsInsideASharedProcess
+
+- **GIVEN** a surface that runs several hooks in one process, and one of them raises an error it does not handle
+- **WHEN** a tool call is intercepted
+- **THEN** the surface does not allow the call on that hook's account
 
 #### Scenario: HookCannotStart
 
@@ -176,6 +185,15 @@ The retry form is no more permissive than the stop form.
 Every command the hook accepts reads.
 None writes, and none runs a program the command leaves unnamed.
 An AI that intended to write therefore reaches the same four-point report by either route.
+
+Where the agent's adapter, rather than the hook, turns an `Ask` into a refusal, the `Ask` SHALL carry the instruction section in its reason.
+The hook cannot know whether that adapter will show the prompt, and a refusal the adapter builds from the reason is otherwise a refusal without the section.
+
+#### Scenario: AskAnAdapterMayRefuse
+
+- **GIVEN** a hook reaches `Ask` for an agent whose adapter decides per call whether a prompt can be shown
+- **WHEN** the adapter refuses the call, because no prompt can be shown or the user declines it
+- **THEN** the reason the AI receives carries the instruction section
 
 #### Scenario: BlockMessageFormat
 

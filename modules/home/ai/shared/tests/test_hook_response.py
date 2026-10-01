@@ -13,8 +13,12 @@ from hook_response import (
     CLAUDE,
     CODEX,
     COPILOT,
+    PI,
+    RETRY_INSTRUCTIONS,
+    STOP_INSTRUCTIONS,
     UNKNOWN,
     Decision,
+    Instruction,
     invoking_agent,
     respond,
 )
@@ -54,6 +58,11 @@ class TestAgentIdentification:
         monkeypatch.setenv("AI_HOOK_AGENT", "copilot")
         assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == COPILOT
 
+    def test_pi_is_named_only_by_its_adapter(self, monkeypatch) -> None:
+        """Validates: AdapterNamesARecognizedAgent."""
+        monkeypatch.setenv("AI_HOOK_AGENT", "pi")
+        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == PI
+
     def test_an_unrecognized_declaration_is_ignored(self, monkeypatch) -> None:
         monkeypatch.setenv("AI_HOOK_AGENT", "something-else")
         assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == UNKNOWN
@@ -88,8 +97,9 @@ class TestBlock:
 
 
 class TestWarn:
-    def test_warn_is_visible_where_an_agent_can_show_it(self, capsys) -> None:
-        assert exit_code(Decision.WARN, CLAUDE, "payload unreadable") == 1
+    @pytest.mark.parametrize("agent", [CLAUDE, PI])
+    def test_warn_is_visible_where_an_agent_can_show_it(self, capsys, agent: str) -> None:
+        assert exit_code(Decision.WARN, agent, "payload unreadable") == 1
         assert "payload unreadable" in capsys.readouterr().err
 
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
@@ -107,6 +117,43 @@ class TestAsk:
         payload = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
         assert payload["permissionDecision"] == "ask"
         assert payload["permissionDecisionReason"] == "credential store"
+
+    @pytest.mark.parametrize("tool_name", [None, "Bash", "Read", "Write", "Edit"])
+    def test_ask_reaches_the_pi_adapter_on_every_tool(self, capsys, tool_name) -> None:
+        """Validates: AdapterNamesARecognizedAgent. The adapter, not the hook, knows whether a UI is attached."""
+        assert exit_code(Decision.ASK, PI, "enforcement file", tool_name) == 0
+        payload = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+        assert payload["permissionDecision"] == "ask"
+
+    @pytest.mark.parametrize(
+        ("instruction", "text"), [(Instruction.STOP, STOP_INSTRUCTIONS), (Instruction.RETRY, RETRY_INSTRUCTIONS)]
+    )
+    def test_a_pi_ask_carries_the_instructions_its_adapter_may_refuse_with(self, capsys, instruction, text) -> None:
+        """Validates: AskAnAdapterMayRefuse. Pi's adapter refuses from this reason without a UI or on a decline."""
+        with pytest.raises(SystemExit):
+            respond(Decision.ASK, "enforcement file", agent=PI, tool_name="Write", instruction=instruction)
+        reason = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["permissionDecisionReason"]
+        assert reason == f"enforcement file\n{text}"
+
+    def test_a_claude_ask_carries_the_message_alone(self, capsys) -> None:
+        """Claude Code shows the reason in its own prompt and refuses with its own framing."""
+        with pytest.raises(SystemExit):
+            respond(Decision.ASK, "enforcement file", agent=CLAUDE, tool_name="Write")
+        reason = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["permissionDecisionReason"]
+        assert reason == "enforcement file"
+
+    @pytest.mark.parametrize("declared", [None, "something-else"])
+    def test_ask_refuses_where_the_adapter_names_no_known_agent(self, capsys, monkeypatch, declared) -> None:
+        """Validates: AdapterNamesNothingOrSomethingUnknown."""
+        monkeypatch.setattr("sys.argv", ["/repo/modules/home/ai/shared/hooks/x.py"])
+        if declared is None:
+            monkeypatch.delenv("AI_HOOK_AGENT", raising=False)
+        else:
+            monkeypatch.setenv("AI_HOOK_AGENT", declared)
+        with pytest.raises(SystemExit) as raised:
+            respond(Decision.ASK, "why", tool_name="Write")
+        assert raised.value.code == 2
+        assert capsys.readouterr().out == ""
 
     @pytest.mark.parametrize("tool_name", ["Write", "Edit"])
     def test_ask_prompts_under_copilot_on_file_mutation_tools(self, capsys, tool_name) -> None:

@@ -1,8 +1,8 @@
 {
   "$comment": [
-    "Tamper-protection verdicts every implementation of the policy must agree on.",
-    "block-hook-tampering.py is the Python one; pi's security extension is a",
-    "TypeScript port that cannot import it. Every agent carries every agent's set,",
+    "Tamper-protection verdicts every surface that reaches a verdict must agree on:",
+    "block-hook-tampering.py directly, and Pi's hook runner over its registration.",
+    "Every agent carries every agent's set,",
     "because an agent able to rewrite another's guardrails has removed a constraint",
     "that applies to itself the moment that agent runs.",
     "Paths are given as a tool call would supply them. `~` means the user's home."
@@ -54,9 +54,19 @@
       "why": "pi settings"
     },
     {
-      "path": "~/.pi/agent/extensions/security/index.ts",
+      "path": "~/.pi/agent/hooks/hook-dispatch.py",
       "blocked": true,
-      "why": "deployed pi security extension"
+      "why": "deployed pi hook dispatcher"
+    },
+    {
+      "path": "~/.pi/agent/hooks.json",
+      "blocked": true,
+      "why": "pi hook registration"
+    },
+    {
+      "path": "~/.pi/agent/extensions/hooks/extension.ts",
+      "blocked": true,
+      "why": "deployed pi hook runner"
     },
     {
       "path": "~/.pi/agent/extensions/sandbox.json",
@@ -84,9 +94,14 @@
       "why": "repository source of Copilot enforcement"
     },
     {
-      "path": "modules/home/ai/pi/security/index.ts",
+      "path": "modules/home/ai/pi/security/hooks.json",
       "blocked": true,
-      "why": "repository source of the pi extension"
+      "why": "repository source of the pi hook registration"
+    },
+    {
+      "path": "modules/home/ai/pi/hooks/extension.ts",
+      "blocked": true,
+      "why": "repository source of the pi hook runner"
     },
     {
       "path": "users/testuser/home-manager/claude/settings.darwin.json",
@@ -176,8 +191,7 @@
     {
       "path": "~/.claude/projects/demo/memory/note.txt",
       "blocked": false,
-      "pi_blocked": true,
-      "why": "memory is write-through; the temporary Pi port has no directory write-through outcome"
+      "why": "memory is write-through"
     }
   ]
 }

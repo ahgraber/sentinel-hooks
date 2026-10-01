@@ -1,0 +1,231 @@
+# Canonical tool names and each harness's spelling of them.
+
+[groups]
+mutating = ["Bash", "Write", "Edit", "apply_patch"]
+sensitive-path = ["Bash", "Read", "Write", "Edit", "apply_patch"]
+destructive-ops = ["Bash"]
+shell = ["Bash"]
+
+[ask]
+copilot = ["Write", "Edit"]
+
+[mappings.claude]
+Bash = "Bash"
+Read = "Read"
+Write = "Write"
+Edit = "Edit"
+
+[mappings.codex]
+Bash = "Bash"
+Read = "Read"
+Write = "Write"
+Edit = "Edit"
+apply_patch = "apply_patch"
+
+# Read from VS Code 1.139.1 with the Copilot extension 0.67.0.
+[mappings.copilot]
+Bash = "Bash"
+runInTerminal = "Bash"
+run_in_terminal = "Bash"
+terminal = "Bash"
+Read = "Read"
+readFile = "Read"
+read_file = "Read"
+Write = "Write"
+create_file = "Write"
+createFile = "Write"
+Edit = "Edit"
+editFiles = "Edit"
+replace_string_in_file = "Edit"
+insert_edit_into_file = "Edit"
+delete_file = "Edit"
+rename_file = "Edit"
+apply_patch = "apply_patch"
+multi_replace_string_in_file = "Edit"
+edit_notebook_file = "Edit"
+create_directory = "Write"
+# The text is typed into a running terminal, so it is judged as a command.
+send_to_terminal = "Bash"
+
+# Read from Pi 0.86.1.
+[mappings.pi]
+bash = "Bash"
+read = "Read"
+write = "Write"
+edit = "Edit"
+# Reads file contents, and nothing else in Pi refuses a credential path to it.
+# The dispatcher turns its `path` into the `file_path` a Read is judged by.
+grep = "Read"
+
+# Tools each harness emits that no hook checks. A name that is neither mapped nor
+# listed here is refused: by the adapter for Copilot and Pi, and by
+# `refuse-unlisted-tools.py` for Claude Code and Codex, which have no adapter. An
+# entry may be an `fnmatch` pattern, which also admits every later tool its name
+# matches.
+[passthrough]
+# Read from Claude Code 2.1.284. Refused on purpose:
+# - `PowerShell`: the shell hooks read a command as Bash, as for Pi's `powershell`.
+#   It is opt-in off Windows and not enabled here.
+# - `Monitor`: it runs a shell command in the background, and the shell hooks are
+#   registered for `Bash` alone, so none would judge it. Bash with
+#   `run_in_background` runs the same command under every hook. The cost is
+#   friction: Claude cannot react to each output line as it arrives, or watch a
+#   WebSocket, and a session that reaches for Monitor is refused until it retries
+#   with Bash.
+# - `SendUserFile`: it sends a file's contents off the machine to the user's device,
+#   through Anthropic's servers, and no hook or sandbox checks the path it names.
+#   The cost falls on Remote Control sessions, which cannot deliver a generated
+#   report or screenshot.
+# - `Artifact`: it publishes a file as a claude.ai page that a public link can share.
+# Claude Code's hooks receive its own spellings, so a Claude mapping to another name
+# would reach no hook; a tool the hooks cannot judge as it is stays here or refused.
+claude = [
+  "Glob",                          # Claude applies `Read` deny rules to it
+  "Grep",                          # Claude applies `Read` deny rules to it
+  "NotebookEdit",                  # Claude applies `Edit` rules to it
+  "LSP",
+  "WebFetch",
+  "WebSearch",
+  "TaskOutput",
+  "TaskCreate",
+  "TaskGet",
+  "TaskUpdate",
+  "TaskList",
+  "TaskStop",
+  "TodoWrite",
+  "Agent",                         # a subagent's own tool calls reach the hooks
+  "Workflow",
+  "Skill",
+  "SendMessage",
+  "SubagentHandback",
+  "ListAgents",
+  "AskUserQuestion",
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "ToolSearch",
+  "CronList",
+  "CronDelete",
+  # Scheduling. A prompt scheduled in the session fires as an ordinary turn whose
+  # tool calls every hook judges.
+  # Worktrees. Creating one under `.claude/worktrees/` does not prompt.
+  "EnterWorktree",
+  # With `remove` and `discard_changes`, deletes the worktree, its branch, and its
+  # uncommitted work without a prompt; no hook sees it, though the shell equivalent
+  # reaches the destructive-operations hook.
+  "ExitWorktree",
+  "ScheduleWakeup",                # paces a self-paced `/loop`
+  # Can keep a task across sessions in the project's `.claude/scheduled_tasks.json`,
+  # a write no hook sees.
+  "CronCreate",
+  # Creates claude.ai Routines, which run in the cloud on a fresh clone with no
+  # hook, sandbox, or permission prompt.
+  "RemoteTrigger",
+  "ListMcpResourcesTool",
+  "ReadMcpResourceTool",
+  "ReadMcpResourceDirTool",
+  "StructuredOutput",
+  "SendUserMessage",
+  "PushNotification",              # sends text the model writes, as its replies already do
+  "ReportFindings",
+  "mcp__*",                        # Claude Code names each MCP tool `mcp__<server>__<tool>`
+]
+# Read from Codex 0.157.0. `write_stdin` and code-mode `exec` run code without
+# firing PreToolUse, so no entry here reaches them.
+codex = [
+  "spawn_agent",                   # a subagent's own tool calls reach the hooks
+  "send_input",
+  "send_message",
+  "wait_agent",
+  "close_agent",
+  "resume_agent",
+  "interrupt_agent",
+  "followup_task",
+  "list_agents",
+  "update_plan",
+  "view_image",
+  "request_user_input",
+  "request_permissions",
+  "tool_search",
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
+  "get_context_remaining",
+  "new_context",
+  "sleep",
+  "curr_time",
+  "wait_for_environment",
+  "list_available_plugins_to_install",
+  # Installs nothing itself: it shows the user a form, and the client installs the
+  # plugin only if the user accepts. An installed plugin's MCP tools then pass
+  # through `mcp__*` like any other.
+  "request_plugin_install",
+  "mcp__*",                        # Codex names each MCP tool `mcp__<server>__<tool>`
+]
+# Read from VS Code 1.139.1 with the Copilot extension 0.67.0. A tool in neither
+# table, such as the `edit_files` placeholder, is refused.
+copilot = [
+  "read_project_structure",
+  "list_dir",
+  "file_search",
+  "grep_search",
+  "semantic_search",
+  "search_workspace_symbols",
+  "get_changed_files",
+  "get_errors",
+  "get_vscode_api",
+  "test_search",
+  "testFailure",
+  "tool_search",
+  "view_image",
+  "read_notebook_cell_output",
+  "copilot_getNotebookSummary",
+  "fetch_webpage",
+  "github_repo",
+  "github_text_search",
+  "get_terminal_output",
+  "terminal_selection",
+  "terminal_last_command",
+  "get_task_output",
+  "kill_terminal",
+  "manage_todo_list",
+  "memory",                        # writes only to Copilot's own memory files
+  "resolve_memory_file_uri",
+  "session_store_sql",
+  "skill",
+  "switch_agent",
+  "vscode_askQuestions",
+  "vscode_get_confirmation",
+  "vscode_get_confirmation_with_options",
+  "vscode_get_terminal_confirmation",
+  "vscode_reviewPlan",
+  "runSubagent",
+  "search_subagent",
+  "explore_subagent",
+  "execution_subagent",
+  "open_browser_page",
+  "navigate_page",
+  "read_page",
+  "screenshot_page",
+  "click_element",
+  "hover_element",
+  "drag_element",
+  "type_in_page",
+  "handle_dialog",
+  "run_task",                      # less secure unchecked: runs a shell command from tasks.json
+  "create_and_run_task",           # less secure unchecked: writes tasks.json and runs its command
+  "run_notebook_cell",             # less secure unchecked: runs cell code in a kernel
+  "run_playwright_code",           # less secure unchecked: runs JavaScript against the browser
+  "run_vscode_command",            # less secure unchecked: runs any editor command
+  "runTests",                      # less secure unchecked: runs the workspace test suite
+  "install_extension",             # less secure unchecked: installs code the editor runs
+  "create_new_jupyter_notebook",   # less secure unchecked: writes a file the adapter cannot locate
+  "create_new_workspace",          # less secure unchecked: writes project files the adapter cannot locate
+  "mcp_*",                         # the editor names each MCP tool `mcp_<server>_<tool>`
+]
+# `find` and `ls` are Pi's read-only built-ins that list names. `mcp` is pi-mcp-adapter's
+# proxy tool; it registers no direct tools unless `directTools` is set. `subagent`
+# starts a Pi process that loads this extension, so the child's calls are checked.
+# `powershell`, Pi's optional Windows shell, is in neither table and so is refused:
+# the shell hooks read a command as Bash.
+# Read from Pi 0.86.1, pi-mcp-adapter 2.6.1, pi-subagents 0.24.3, and pi-intercom 0.6.0.
+pi = ["find", "ls", "mcp", "subagent", "intercom", "contact_supervisor"]

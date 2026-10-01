@@ -515,7 +515,7 @@ Hard-link identity remains an unimplemented optimization, and the stated hard-li
   Load the new manifest sections, preserve credential blocking, run the Pi suite, and report affected table cases without silent exclusions.
   It does not waive failures on the shared Python hooks.
   **Follow-up task:** migrate Pi onto the shared hooks, verify the deferred outcomes, and remove the temporary exception.
-  **Approved by:** user **Recorded:** 2026-09-15
+  **Approved by:** user **Recorded:** 2026-09-15 **Closed:** 2026-09-26, by `security-posture-alignment`: Pi runs the shared hooks through its hook runner, which reaches the direct outcome on both verdict tables and on cases for each class outcome, symlink precedence, and lexer form; the `pi_blocked` record is removed.
 
 - **Finding:** the Codex and Copilot suites fail `test_bash_touching_repo_hook_blocks`, because their `_AI_BLOCK_CHECKS` block contract requires `do not attempt` in every exit 2 and the retry instruction form omits it.
   **Stage:** verify **Reason:** the defect is in `security-posture-alignment`'s per-agent test helpers, not in any code this change's structural payoff touches; the shared suite that covers that payoff is green at 1,494 passed.

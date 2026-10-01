@@ -48,8 +48,6 @@ case "${stage}" in
       2> /dev/null || exit 0
     ;;
   update)
-    tool_name="$(jq -r '.tool_name // empty' 2> /dev/null <<< "${input_json}")" || exit 0
-    [[ "${tool_name}" == "Bash" ]] || exit 0
     head_sha="$(git -C "${cwd}" rev-parse HEAD 2> /dev/null)" || exit 0
     printf '%s' "${head_sha}" > "${baseline}" || exit 0
     ;;

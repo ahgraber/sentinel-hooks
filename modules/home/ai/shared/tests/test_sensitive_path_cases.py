@@ -1,8 +1,6 @@
-"""The zero-access verdicts every implementation of the policy must agree on.
+"""The zero-access verdicts every surface that reaches a verdict must agree on.
 
-pi's security extension is a TypeScript port that cannot import
-`block-sensitive-paths.py`; `index.test.mjs` asserts this
-same table, which is what keeps the two honest.
+`pi/tests/registration.test.mjs` judges Pi's hook runner against this same table.
 """
 
 from __future__ import annotations

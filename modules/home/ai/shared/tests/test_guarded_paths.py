@@ -109,9 +109,6 @@ class TestSpellingIndependence:
     def test_a_symlinked_home_directory_does_not_defeat_it(self, tmp_path: Path) -> None:
         """Both spellings of home must be judged, since a path written through a
         symlinked home resolves somewhere the declarations do not name.
-
-        `index.test.mjs` pins the same case for the
-        TypeScript port, which cannot import this.
         """
         root = Path(os.path.realpath(tmp_path))
         real_home = root / "real-home"

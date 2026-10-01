@@ -20,6 +20,11 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SHARED_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "ai" / "shared" / "hooks"
+if str(SHARED_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_HOOKS_DIR))
+
+from guarded_paths import TOOL_VOCABULARY  # noqa: E402
+from hook_response import STOP_INSTRUCTIONS  # noqa: E402
 
 # The shared hooks infer the agent from their invocation path, which this adapter bypasses.
 HOOK_ENV = {**os.environ, "AI_HOOK_AGENT": "copilot"}
@@ -37,38 +42,6 @@ SCRIPT_PATHS = {
     "stop-precommit.sh": SHARED_HOOKS_DIR / "stop-precommit.sh",
 }
 
-TERMINAL_TOOLS = {
-    "Bash": "Bash",
-    "runInTerminal": "Bash",
-    "run_in_terminal": "Bash",
-    "terminal": "Bash",
-}
-
-READ_TOOLS = {
-    "Read": "Read",
-    "readFile": "Read",
-    "read_file": "Read",
-}
-
-WRITE_TOOLS = {
-    "Write": "Write",
-    "create_file": "Write",
-    "createFile": "Write",
-}
-
-EDIT_TOOLS = {
-    "Edit": "Edit",
-    "editFiles": "Edit",
-    "replace_string_in_file": "Edit",
-    "insert_edit_into_file": "Edit",
-    "delete_file": "Edit",
-    "rename_file": "Edit",
-}
-
-PATCH_TOOLS = {
-    "apply_patch": "apply_patch",
-}
-
 # Hooks that judge one path per call, so a multi-path edit must be fanned out.
 # `block-hook-tampering.py` is absent deliberately: it judges the whole set and
 # answers with the most restrictive class in it, which fanning out would defeat.
@@ -76,6 +49,26 @@ MULTI_PATH_TARGETS = {
     "block-sensitive-paths.py",
     "block-secrets.py",
 }
+
+
+# VS Code runs every registered hook on every call and ignores `matcher`, so the
+# adapter selects the calls a tool-specific hook receives. Each key is the hook and
+# its arguments; each value names a declared tool group. A hook not listed here
+# receives every call.
+HOOK_SCOPES: dict[tuple[str, ...], str] = {
+    ("block-dangerous-bash.sh",): "shell",
+    ("bash-command-validator.sh",): "shell",
+    ("git-baseline.sh", "check"): "mutating",
+    ("git-baseline.sh", "update"): "shell",
+}
+
+
+class UnmappedToolError(ValueError):
+    """A tool call has no mapping to the shared hook vocabulary."""
+
+    def __init__(self, tool_name: object) -> None:
+        self.tool_name = tool_name
+        super().__init__(f"Unmapped Copilot tool: {tool_name!r}")
 
 
 def _copy_dict(value: object) -> dict:
@@ -101,7 +94,7 @@ def _extract_first_path(tool_input: dict) -> str:
 def _extract_all_paths(tool_input: dict) -> list[str]:
     paths: list[str] = []
 
-    for key in ("file_path", "filePath", "path"):
+    for key in ("file_path", "filePath", "path", "dirPath"):
         value = tool_input.get(key)
         if isinstance(value, str) and value:
             paths.append(value)
@@ -110,6 +103,14 @@ def _extract_all_paths(tool_input: dict) -> list[str]:
         value = tool_input.get(key)
         if isinstance(value, list):
             paths.extend(item for item in value if isinstance(item, str) and item)
+
+    # `multi_replace_string_in_file` names one file per replacement.
+    replacements = tool_input.get("replacements")
+    if isinstance(replacements, list):
+        for item in replacements:
+            value = item.get("filePath") if isinstance(item, dict) else None
+            if isinstance(value, str) and value:
+                paths.append(value)
 
     seen: set[str] = set()
     unique_paths: list[str] = []
@@ -124,22 +125,21 @@ def _extract_all_paths(tool_input: dict) -> list[str]:
 def normalize_payload(raw_data: dict) -> dict:
     """Remap a VS Code tool name and input into Claude Code's shape."""
     data = deepcopy(raw_data)
-    tool_name = data.get("tool_name")
-    if not isinstance(tool_name, str):
-        tool_name = ""
-    tool_input = _copy_dict(data.get("tool_input"))
-
-    mapped_name = (
-        TERMINAL_TOOLS.get(tool_name)
-        or READ_TOOLS.get(tool_name)
-        or WRITE_TOOLS.get(tool_name)
-        or EDIT_TOOLS.get(tool_name)
-        or PATCH_TOOLS.get(tool_name)
-        or tool_name
-    )
-
-    if mapped_name == tool_name and not isinstance(tool_input, dict):
+    if "tool_name" not in data:
         return data
+
+    tool_name = data["tool_name"]
+    if not isinstance(tool_name, str) or not tool_name:
+        raise UnmappedToolError(tool_name)
+
+    mapped_name = TOOL_VOCABULARY.normalize("copilot", tool_name)
+    if mapped_name is None:
+        # A declared passthrough tool reaches the hooks under its own name, which none of them gates.
+        if TOOL_VOCABULARY.is_passthrough("copilot", tool_name):
+            return data
+        raise UnmappedToolError(tool_name)
+
+    tool_input = _copy_dict(data.get("tool_input"))
 
     normalized_input = deepcopy(tool_input)
 
@@ -248,8 +248,18 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         raw_data = {}
 
-    normalized = normalize_payload(raw_data)
+    try:
+        normalized = normalize_payload(raw_data)
+    except UnmappedToolError as error:
+        sys.stderr.write(
+            f"GitHub Copilot refused tool {error.tool_name!r} because it has no declared mapping "
+            f"to the shared security hooks.\n{STOP_INSTRUCTIONS}"
+        )
+        return 2
     tool_name = normalized.get("tool_name")
+    scope = HOOK_SCOPES.get((script_name, *script_args))
+    if scope is not None and tool_name not in TOOL_VOCABULARY.group(scope):
+        return 0
     tool_input = _copy_dict(normalized.get("tool_input"))
     file_paths = tool_input.get("file_paths")
 

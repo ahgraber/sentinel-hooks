@@ -284,7 +284,11 @@ Gating every command naming a prefix of a declaration reaches `modules/`, the ho
 A removal, a rename, or a replacement is a write under `guarded-path-declarations` `PrecedenceIsOneRule`; this gate reaches the ancestor that rule finds no declaration for.
 
 An ancestor carries no declaration fragment, so it is found by resolving the path rather than by matching text.
-A relative spelling resolves against the working directory the tool call supplies, and where none is supplied the word is unresolvable and gates, per `path-matching` `TextMatchingIsForTextThatMayHoldNoPath`.
+A relative spelling resolves against the working directory the tool call supplies, and where none is supplied the word is unresolvable, per `path-matching` `TextMatchingIsForTextThatMayHoldNoPath`.
+The system SHALL refuse a removal, rename, or replacement of such a word, with the stop instruction, on every agent.
+It cannot be judged by its text: a `*` in a declaration matches almost any word, so judging its shape would refuse ordinary commands.
+It is not put to the user either, because the user has no more to place it by than the hook.
+The refusal SHALL say that an absolute path can be judged.
 
 #### Scenario: AnAncestorIsRemoved
 
@@ -309,6 +313,18 @@ A relative spelling resolves against the working directory the tool call supplie
 - **GIVEN** a directory whose name begins with an ancestor's name but is not that directory
 - **WHEN** a command removes it
 - **THEN** the hook exits 0
+
+#### Scenario: ARelativeOperandWithNoWorkingDirectory
+
+- **GIVEN** a tool call that supplies no working directory
+- **WHEN** its command removes, renames, or replaces a relative path
+- **THEN** the hook refuses it with the stop instruction on every agent, and the refusal says an absolute path can be judged
+
+#### Scenario: AnAbsoluteOperandWithNoWorkingDirectory
+
+- **GIVEN** a tool call that supplies no working directory
+- **WHEN** its command removes an absolute path
+- **THEN** the path is judged as it would be with a working directory
 
 ### Requirement: APatchIsJudgedByTheFilesItNames
 

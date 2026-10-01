@@ -3,9 +3,9 @@
 ## What runs here
 
 `hooks/` holds the hooks Claude Code, Codex, Copilot, and Pi run on every tool call.
-The first three call these files through an adapter.
-Pi reimplements them in TypeScript under `../pi/security/`.
-Each agent registers them itself, in `users/*/home-manager/claude/settings.json`, `users/*/home-manager/codex/hooks.json`, `../copilot/hooks/`, and the Pi extension.
+Claude Code, Codex, and Copilot run them through their native hook mechanisms, Copilot through an adapter.
+Pi runs them through a hook runner, the extension in `../pi/hooks/`, which gives Pi the same mechanism and holds no policy.
+Each agent registers them itself, in `users/*/home-manager/claude/settings.json`, `users/*/home-manager/codex/hooks.json`, `../copilot/hooks/`, and `../pi/security/hooks.json`.
 
 Editing a hook changes what every agent may do, including the one making the edit.
 
@@ -27,6 +27,7 @@ An agent that can weaken another agent's guardrails has weakened its own.
 
 **Degradation grants no more than the full encoding would.**
 A prompt that cannot be shown becomes a refusal.
+`.specs/WHEN-CODEX-CAN-ASK.md` lists the decisions made around that limit, to revisit when an agent gains a prompt.
 
 ## Layout
 
@@ -36,10 +37,13 @@ A prompt that cannot be shown becomes a refusal.
   `guarded_paths.py` decides whether a path is guarded.
   `shell_words.py` lexes a Bash command, `bash_commands.py` classifies what the lexed words do, and `apply_patch.py` reads the paths an `apply_patch` body names.
 - `hooks/guarded-paths.toml` — the guarded surface.
-  Every implementation reads it at invocation, and the conformance tests check the other surfaces against it.
+  Every implementation reads it at invocation.
 - `hooks/instructions/` — prompt text injected at session start.
   An edit asks, as for any other file under `hooks/`: prompt text shapes what the agent does with every other guardrail.
-- `tests/` — the suites, plus `guarded-path-cases.json` and `sensitive-path-cases.json`, which both languages read.
+- `tests/` — the suites, plus `guarded-path-cases.json` and `sensitive-path-cases.json`, the verdict tables every surface that reaches a verdict is judged against.
+  No test reads an agent's configuration file.
+- `skills/` — skills agents working in this repository use, linked into its `.claude/skills/` and `.agents/skills/` at activation by `skills.nix`.
+  `skills/assess-agent-configuration/` is the recipe that judges every agent's configuration against the configuration-floor specs, run on request; each run writes a dated record to `.specs/assessments/`.
 - `.specs/` — the specs for this module.
 
 ## Rules
@@ -51,17 +55,25 @@ Block outranks the floor; the floor requires approval for writes and runs, inclu
 Grants remain effective outside the floor, including on instruction text.
 
 Cover every `[block]` declaration in the permission lists and the sandbox lists.
+The sandbox lists are each agent's OS layer: Claude's and Codex's own sandboxes, the editor's agent sandbox for Copilot, and Pi's sandbox extension, whose file this repository writes from `users/<name>/home-manager/pi/sandbox.json`.
 A block path no surface refuses leaves one hook between an agent and a credential, and a credential read cannot be undone.
 The guarded class is not held to a floor: the surfaces cannot express an ask with a carve-out beneath it, and an unprompted edit there is recoverable.
+The assessment, not a test, judges that coverage, because the surfaces' keys are the vendors' and move between releases; run it after changing a configuration or the block class.
 
 Declare a loosening in `[[exceptions]]`, with its surface, pattern, and reason.
 Nothing downstream distinguishes an undeclared loosening from an accident.
 
+List every tool an agent can call in `hooks/tool-vocabulary.toml`, as a mapping onto a checked tool or as passthrough.
+A tool in neither is refused: by the adapter for Copilot and Pi, and by `refuse-unlisted-tools.py` for Claude Code and Codex, which register it for every tool call.
+A vendor update that adds a tool is refused until someone lists it, which is how the new tool reaches the user.
+Keep that hook's group last in each Codex `hooks.json`: Codex records a hook's trust by its position, so a group inserted earlier untrusts every hook after it.
+
 Read `hook-interface` before changing an error path.
 It states whether each hook fails open or closed, and why.
 
-Change Pi in the same change.
-It is a separate implementation, judged against the shared verdict tables rather than by reading its source.
+Keep policy out of the agents' extensions and adapters.
+An extension that runs these hooks for an agent is held to the removal test in `EveryAgentImplementsEveryCapability`: with the hooks and their registration removed, it refuses no tool call for what the call does.
+Pi's suite judges its runner over the verdict tables against a direct invocation of the same hooks, not a second implementation.
 
 ## Specs
 
@@ -106,7 +118,7 @@ The recorder reset `PATH` after shell startup because this host's zsh startup ch
 
 - `just apps test shared` — this module.
   `just apps test all` — every agent's suite.
-- `nix build .#checks.<system>.shared-hook-tests` — the same suite under the flake.
+- `nix build .#checks.<system>.shared-hook-tests` and `.#checks.<system>.pi-hook-tests` — the shared and Pi suites under the flake.
 - `prek run --files <paths>` — scope it to what you touched.
 
 Run the shared suite for any hook change, and the Pi suite for anything the verdict tables cover.

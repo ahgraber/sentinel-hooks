@@ -58,7 +58,7 @@ Preventing the next one is a matter of instruction rather than of test, so it li
   No test in the hooks package reads an agent's configuration: the package works with any configuration, and a test over one pins the package to one vendor's keys and one repository's layout.
   The four tests that do so today, `test_secret_floor_declarations.py`, `test_guardrail_declarations.py`, `test_network_declarations.py`, and `test_reviewer_policy.py`, retire into the assessment.
 - A conformance test asserting the hooks package carries an implementation for every capability in this specs root.
-- Migrating the Pi extension onto the shared hooks through an adapter, and deleting its TypeScript reimplementation of the policy.
+- Migrating the Pi extension onto the shared hooks through a hook runner, the Pi extension `pi-hook-runner` built for it in `modules/home/ai/pi/`, and deleting its TypeScript reimplementation of the policy.
   Parity otherwise means porting `git-baseline-drift`, the class model with its per-hop precedence and enforcement floor, the shared lexer with its word kinds, the admitted-utility set, the ancestor gate, and the fail-closed error path, each of which the other three agents got by editing one file.
   Adapting closes all of them at once and stops the next capability opening another.
 - `hook-interface`: the obligation on a surface consuming a hook's outcome to decode the whole encoding rather than the exit status, to run every hook, and to combine their decisions restrictively; and the obligation on an adapter to name a recognized agent.

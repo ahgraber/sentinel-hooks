@@ -106,7 +106,13 @@ So the domain list is declared before the sandbox is switched on, or every termi
 That list is also the editor's side of `NetworkReachIsUniformPerUser`.
 
 Two places where the documentation and the 1.136.1 build disagree are recorded so a later reader does not resolve them the wrong way: the documentation gives `allowNetwork` a default of `true` and the build gives it `false`; the change declares it, so neither default applies.
+The 1.139.1 build gives it `true`, which is the default moving between releases that `ExperimentControlledDefaultsAreDeclared` anticipates.
 The hooks reference says a `PreToolUse` `ask` "requires user confirmation" with no tool excepted, while `hook_response.py` records from measurement that the terminal tool does not honor it; the task list carries a re-measurement.
+
+The 1.139.1 build no longer reads `chat.assistedPermissions.enabled` or `chat.experimental.autoApprovals.enabled`; it migrates both away.
+Their place is `chat.defaultConfiguration`, an object whose `approvals` is `manual`, `assisted` ("evaluates risk before running tools"), or `allowAll`, and whose `mode` is `interactive`, `plan`, or `autopilot`, so the floor names that setting's values instead.
+`chat.permissions.default` is still read beside it.
+`chat.useHooks` defaults to true and is a preview setting an organization policy can turn off, so it is declared and named among the bypasses.
 
 **Alternatives considered:**
 
@@ -175,7 +181,8 @@ The sandbox is what holds under a session-level bypass, which is the previous de
 
 ### Decision: ParityJudgedByVerdictTables
 
-**Chosen:** conformance runs both implementations over `guarded-path-cases.json` and `sensitive-path-cases.json` and compares outcomes.
+**Chosen:** conformance runs every surface that reaches a verdict over `guarded-path-cases.json` and `sensitive-path-cases.json` and compares outcomes.
+On Pi that surface is the runner with Pi's registration, compared with a direct invocation of the same hooks.
 
 **Rationale:** this is what already catches Pi drift.
 The archived `guardrail-ask-gate` change retired the literal-scraping comparisons for the same reason: a pattern that looks right and does not match is the failure the check exists to catch, and source comparison cannot see it.
@@ -204,48 +211,151 @@ The refusal matters more than the declaration.
 The hooks allow any tool outside the vocabulary, and must: Claude also sends Glob, Grep, Task, and WebFetch, which no hook judges.
 So no hook can separate a tool it does not gate from a tool it should gate but does not recognize, and only the adapter — which knows its own harness's tool set — can tell the difference.
 
+The adapter learns that difference from the declaration too: a `[passthrough]` table lists, per harness, the tools it emits that no hook checks.
+A refusal with only the mappings to consult refuses every read, search, and MCP call, because the mappings hold gated tools alone.
+In the Copilot 0.64.1 build that is most of the tools the editor offers, and in Pi it is `grep`, `find`, `ls`, and every extension tool.
+An entry may be an `fnmatch` pattern.
+The editor names an MCP tool `mcp_<server>_<tool>`, so the set grows whenever a server is configured, and naming each tool would turn every new server into a refusal until someone edits the file.
+The cost is that a pattern admits a later tool that writes.
+MCP tools are unchecked on every agent today, so the pattern admits nothing the hooks judged before.
+The loader refuses a declaration that lists a spelling as passthrough and also maps it, directly or through a pattern.
+
+A Copilot tool that writes or runs code is mapped onto a gated name where the hooks can read its input: `multi_replace_string_in_file`, `edit_notebook_file`, `create_directory`, and `send_to_terminal`.
+The editor's code runners (`run_task`, `create_and_run_task`, `run_notebook_cell`, `run_playwright_code`, `run_vscode_command`, `runTests`, `install_extension`) and its two project generators carry input no hook can read, and are declared passthrough, each with a comment saying it is less secure unchecked.
+They ran unchecked before this change, and refusing them would take tools from Copilot users that no hook could have judged anyway.
+The `edit_files` placeholder is in neither table, so it is refused.
+Each table names the harness build it was read from, because the tool set is the vendor's and moves between releases.
+
+The three shell hooks read no tool name.
+`block-dangerous-bash.sh`, `bash-command-validator.sh`, and `git-baseline.sh update` judge every call they receive, and each agent's registration selects the calls: a `matcher` on Claude, Codex, and Pi, and the adapter on Copilot, because VS Code runs every registered hook on every call and ignores `matcher`.
+The adapter's `HOOK_SCOPES` keys each tool-specific hook to a declared group, `shell` for the three shell hooks and `mutating` for `git-baseline.sh check`, so the shell tool's spellings stay in the declaration and a Pi payload reaches the shell hooks unchanged.
+A harness that runs every hook on every call and has no adapter to select calls runs the shell hooks on reads and passthrough tools.
+Two of them allow a call with no `command`; `git-baseline.sh update` would record HEAD after any call, including one a passthrough runner made.
+
 **Alternatives considered:**
 
 - Case-fold `tool_name` in the shared hooks: makes each hook accept another harness's spelling, which is the coupling this removes, and it is redundant once each boundary normalizes.
 - Leave the vocabulary in code and add a cross-implementation literal comparison: retired once already, for the reason in `ParityJudgedByVerdictTables`.
 - A sixth table in `guarded-paths.toml`: `OnlyPolicyTablesExist` forbids it, and amending that requirement to admit a non-path table gives up the property that the manifest reads as policy.
+- Exact names only in `[passthrough]`: the refusal holds for every tool, and each configured MCP server is refused until its tools are listed.
+- Refuse only an unmapped built-in tool and forward extension tools: weakens the requirement, and neither harness was shown to mark which of its tools are built in.
 
-### Decision: PiAdaptsRatherThanReimplements
+### Decision: HarnessesWithoutAnAdapterRefuseThroughAHook
 
-**Chosen:** the Pi extension dispatches to the shared hooks through an adapter, and its TypeScript reimplementation of the policy is deleted.
+**Chosen:** Claude Code and Codex, which send their tool names to the hooks directly, register one more shared hook, `refuse-unlisted-tools.py`, for every tool call.
+It refuses a tool its harness's vocabulary table neither maps nor lists as passthrough, which is the refusal an adapter makes for Copilot and Pi.
+Each harness gains a `[passthrough]` list read from its installed build.
+Copilot and Pi do not register the hook; their adapters already refuse, and a `capability-coverage` exception records why for each.
+
+**Rationale:** Claude Code 2.1.284 fires `PreToolUse` for every tool, and six of its tools that write or run code were judged by no hook: `NotebookEdit`, `PowerShell`, `Monitor`, `EnterWorktree`, `ExitWorktree`, and `CronCreate`.
+Codex 0.157.0 has no such tool today, so for Codex the hook is the notice that an update added one.
+A refusal names the tool, so each new vendor tool reaches the user, who maps it, lists it as passthrough, or leaves it refused.
+That friction is accepted on each vendor update.
+
+The hook is a new file registered on its own, not an existing hook re-registered for every tool.
+The shell hooks read no tool name, so running them on every call would run them on reads and passthrough tools, for the reason the decision above gives.
+
+The hook refuses every call when the vocabulary cannot be read, which locks Claude and Codex out until the file is repaired by hand.
+The manifest's failure proceeds because the sandbox and the permission lists keep enforcing without it; no other layer knows which tools exist, so proceeding here would let every unlisted tool through exactly when the list is gone.
+`hook_response.py` imports the vocabulary for Copilot's ask support only, so it tolerates a failed load, and the refusal still carries the stop instruction.
+
+MCP tools pass through by the pattern `mcp__*`, so the hook adds no MCP protection; exact names were rejected above because each configured server would be refused until listed.
+Codex's `write_stdin` and code-mode `exec` run code without firing `PreToolUse`, so neither this hook nor any other judges them; the Codex sandbox is what confines them.
+
+The hooks do not convert tool names; the boundary does, per the case-folding alternative above, and Claude Code and Codex have no boundary.
+So for these two harnesses a mapping counts as listed only when it maps a tool to its own name, and the hook refuses a mapping to another name rather than let it pass as judged.
+Judging a Claude or Codex tool under another name would take three changes per tool: a name conversion in each Python hook, a translation of its input fields, and a matcher edit in every settings file, because Claude's matchers are exact lists and Codex's are anchored.
+
+`NotebookEdit`, `Glob`, and `Grep` are passthrough on Claude Code for that reason, with Claude's own permission layer as their check.
+Its documentation says `Edit` rules apply to `NotebookEdit`, and `Read` rules to `Grep` and `Glob` as a best effort; the Claude settings ask on the guarded hook paths and deny every credential path.
+
+Pi's `grep` is mapped onto `Read`, because it reads file contents and nothing else in Pi refuses a credential path to it; the dispatcher already turns its `path` into the `file_path` a `Read` is judged by.
+Pi's `find` and `ls`, Claude's `Glob`, and Copilot's `file_search` and `list_dir` list names, not contents, and stay passthrough.
+Two content reads remain unjudged: Copilot's `grep_search`, whose input holds a query and a glob but no path, and any search aimed at a directory that holds a credential, because a read beneath a declared ancestor is not gated.
+
+**Alternatives considered:**
+
+- Convert tool names in every Python hook: reverses the boundary decision, and each mapped tool still needs its fields translated and every settings file's matcher edited.
+- Refuse only at the adapters, and have the assessment compare every harness's tool set against the vocabulary: a new tool that writes runs unjudged until the next assessment.
+- Proceed and report when the vocabulary cannot be read, as the manifest does: removes the lockout and removes the refusal while the file is broken.
+
+### Decision: PiRunsTheSharedHooksThroughAHookRunner
+
+**Chosen:** Pi runs the shared hooks through a hook runner, an extension that gives Pi the registered-hook mechanism Claude Code, Codex, and Copilot provide natively.
+The runner reads registrations in the shape of Claude Code's `hooks` setting and holds no policy.
+Its TypeScript reimplementation of the policy is deleted.
+The runner is a capability of Pi's harness, specified in `modules/home/ai/pi/.specs/specs/` (`hook-registration`, `hook-execution`, `hook-events`) and deployed as `~/.pi/agent/extensions/hooks/`; this change specifies the registration that uses it and what the shared side owes it.
 
 **Rationale:** the north star says onboarding an agent means expressing this posture in that agent's vocabulary, not writing a new one.
 Pi wrote a new one, and the cost shows up as this change's own work: parity is otherwise satisfied by porting `git-baseline-drift`, then the class model and its precedence, then the enforcement floor, then the shared lexer, then the admitted-utility set, then the ancestor gate, then the fail-closed error path — one port per capability change, each of which the other three agents got by editing one file.
 Every future capability carries the same tax, and `VerdictSurfacesAgree` exists to catch the divergence the tax produces.
 
+The line between the runner and the deleted extension is the one `EveryAgentImplementsEveryCapability` draws.
+The runner runs what a registration names and carries each hook's outcome to Pi; with the hooks removed, it refuses nothing for what a call does.
+The deleted extension held its own patterns, path lists, and tool-name checks, which is a second copy of the policy.
+
 Feasibility was measured against a live `pi` rather than argued.
 Pi awaits a `tool_call` handler across a subprocess boundary and honors the verdict it returns; a handler that blocks stops the tool, and the same handler returning an allow lets it run.
-One dispatcher running all four hooks under `uv run --script` costs about 31-44ms per tool call, against 84-117ms for the deployed one-subprocess-per-hook shape that Claude already pays.
+One dispatcher running the four Python hooks under `uv run --script` costs about 31-44ms per tool call, against 84-117ms for the deployed one-subprocess-per-hook shape that Claude already pays.
 No hook needs changing: each is `main()` over stdin JSON exiting through `hook_response.respond()`.
+
+Four properties of the runner's contract shape what the shared side builds.
+A hook receives Pi's own tool names and input, such as `bash` and `path`, and a matcher compares tool names without regard to case.
+Exit 2 blocks; on any other status a JSON reply decides, and a hook that exits 1 with no reply lets the call proceed with a warning to the user.
+A `PreToolUse` hook that times out, cannot start, is ended by a signal, or writes a reply that does not parse refuses the call, with a reason naming the hook.
+An ask becomes Pi's confirm dialog, and a refusal where Pi shows no user interface.
+
+The shared side owes the runner two things.
+The dispatcher must fail closed: a hook that raises an error it does not handle counts as a refusal, and any error in the dispatcher itself ends in exit 2 with the stop form of `AI INSTRUCTIONS`, never in exit 1, which the runner lets through.
+That applies on reads too, where a hook's own handled error warns; an error that escapes a hook is a hook that gave no answer, which the runner refuses as well.
+Because the runner shows a hook's standard error on exit 1 and lets the call proceed, Pi can express `Warn`, and `hook_response.py` encodes it for Pi as it does for Claude; the dispatcher reads exit 1 as a warning and an escaped error as a failure, so the two stay apart.
+`hook-dispatch.py` is registered as one PreToolUse entry that runs the four Python hooks in one process; it maps Pi's tool names through `tool-vocabulary.toml` and refuses a name that is neither mapped nor passthrough, so the declaration keeps one reader and the runner knows no tool names.
+The three shell hooks read no tool name, so the runner passes Pi's payload to them unchanged, a `bash` matcher selects their calls, and they keep their own processes.
+
+`pi/security/` is Pi's counterpart of `copilot/hooks/`: it holds the registration, `hooks.json`, deployed as `~/.pi/agent/hooks.json`, and `hook-dispatch.py`, and nothing else once the TypeScript extension is deleted.
+The dispatcher's cases are pytest cases in `pi/tests/`, as Copilot's adapter cases are in `copilot/tests/`, and `scripts/apps-test.sh pi` runs them beside the runner's suite.
+Until the deletion lands, the directory holds both the old extension and the new registration.
+
+Pi runs the shared classifier, so every property the generated cases hold of it, of the lexer, and of the matcher holds on Pi without a copy.
+What Pi adds is the dispatcher's mapping of its tool names and `path` onto the declared vocabulary, and one generated property covers it: for any declared location, spelling, and file tool, the dispatcher reaches the same decision from Pi's call as from the same Claude call.
+The verdict tables arbitrate the runner end to end, in `pi/tests/registration.test.mjs`.
+
+A community runner was assessed and not adopted.
+Of four published Claude-hooks extensions for Pi, three turn an ask or a refusal into an allow, and the closest, `pi-code`, reads hooks only from Claude's settings, allows a malformed reply or a hook killed by a signal, and lets a trusted project disable the user's hooks.
+It is also about 20,000 lines with a large dependency tree, placed in the path that decides whether a tool call runs.
 
 **Alternatives considered:**
 
 - Keep the reimplementation and port each capability as it lands: the status quo, and the reason four ports sit in this change's task list.
 - Keep it and adopt a third-party shell lexer so the two implementations tokenize alike: narrows one class of divergence in the current capability and leaves the tax on every later one.
 - Adapt but keep the TypeScript as a fallback when the dispatcher fails: two policies again, and the fallback runs precisely when something is already wrong.
+- Let a crashed hook inside the dispatcher reach `Ask` where `ErrorHandlingByDamagePotential` permits it and `Block` elsewhere: gives a dialog in place of a refusal for three of the four hooks, at the cost of a per-hook table in the dispatcher kept in step with the hooks.
+- A Pi-specific adapter inside the security extension that spawns each hook itself: holds the event wiring and the tool-name mapping in TypeScript, which is Pi's registration written as code and a second reader of the vocabulary.
+- Adopt `pi-code` or another published runner: rejected on the grounds above; its combination and process-handling design is reused under its MIT license.
+- Port the three shell hooks to Python so one process runs everything: the closing task in `guarded-path-classes` already weighs a single-binary rewrite, and this change does not decide it.
 
 ### Decision: TheAdapterOwnsDegradationAndItsOwnFailures
 
-**Chosen:** the shared layer declares Pi able to express `Ask`, and the Pi adapter decides per call whether a prompt can be shown.
+**Chosen:** the shared layer declares Pi able to express `Ask`, and Pi's hook runner decides per call whether a prompt can be shown.
 
 **Rationale:** Pi prompts through `ctx.ui.confirm`, which is available whenever a UI is attached and is uniform across tools — measured over RPC on `bash`, `write`, and `read`, where approve ran the tool, decline blocked it, and cancel blocked it.
 So the tool is not the variable; `ctx.hasUI` is, and it is a per-session property no Python hook can observe.
-`supports_ask` is a static table over agent and tool, so it cannot carry the answer, and the adapter is the only layer that can.
+`supports_ask` is a static table over agent and tool, so it cannot carry the answer, and the runner is the only layer that can.
 
-The adapter also owns its own failures.
-Pi blocks a tool whose handler throws, so the direction is already safe, but the agent then sees the raw exception text with no refusal framing and nothing telling it not to route around the block.
-A refusal the agent cannot read as a refusal invites the workaround the posture forbids.
+The runner builds a refusal from the ask's reason when it cannot show the prompt or the user declines it, so for Pi the ask's reason carries the `AI INSTRUCTIONS` section that `BlockAIGuidance` requires on a refusal.
+`hook_response.respond()` appends it when the agent is Pi.
+The section also appears in Pi's confirm dialog, under the message; the runner holds no policy, so it cannot add the section itself.
+
+The runner also owns its own failures.
+A `PreToolUse` hook that gives no answer refuses the call with a reason naming the hook and what went wrong, and Pi blocks a tool whose handler throws, so no failure the runner sees lets a call through.
 
 **Alternatives considered:**
 
 - Pass `ctx.hasUI` into the hooks as an environment variable: makes a static capability table dynamic for one agent, and every hook would have to honor it.
 - Declare Pi unable to express `Ask`: every guardrail gate becomes a refusal on an agent that can perfectly well ask, which is degradation with nothing forcing it.
 - Rely on Pi's implicit block when the handler throws: fail-closed but unexplained, so the refusal does not carry `AI_INSTRUCTIONS`.
+- Have the runner append refusal wording when it turns an ask into a refusal: puts this repository's policy text into a runner that holds none.
+- Leave the ask reason as the message alone: Pi's refusals from an ask would be the only refusals without the instruction section.
 
 ### Decision: TheHooksAreAPackageIndependentOfAnyAgentConfiguration
 
@@ -281,16 +391,28 @@ The hook refuses the block class on its own, and that is what the package promis
 
 ### Decision: CapabilityCoverageIsCheckedFromTheSpecsRoot
 
-**Chosen:** the coverage test enumerates the capability directories in `.specs/specs/` and asserts the hooks package carries an implementation for each, with declared exceptions honored.
+**Chosen:** the coverage test enumerates the capability directories in `.specs/specs/` and holds one table, capability to kind and package artifact.
+It asserts three things: every directory has a row, every artifact a row names exists (in `hooks/`, or in `tests/` for the conformance kind), and every hook in `hooks/` (a hyphenated file, per the module's naming rule) is named by some row.
+A capability of the configuration kind has a row and no artifact.
 Whether a given agent's configuration registers every hook is a question for the assessment, per the previous decision.
-A mechanism capability the shared hooks implement is carried by every agent that dispatches to them; a posture capability such as `guarded-surface` is evidenced by the verdicts those hooks reach, not by a module of its own.
 
-**Rationale:** deriving the expected set from the specs root means adding a capability automatically extends the check, which is the property `AddedPathReachesEveryConsumer` already gives the manifest.
-A hand-maintained list of capabilities is the second authoring surface this module keeps eliminating.
+**Rationale:** not every capability is a hook.
+After sync the specs root holds nine enforcement capabilities, four mechanism capabilities implemented by imported modules, one posture capability implemented by the manifest, one configuration capability with no package artifact, and one conformance capability, this one, which the coverage and verdict-table tests implement.
+A check that maps every capability to a hook fails on seven of sixteen and says nothing true about them.
+
+The table is in the test rather than derived, because the kind is not derivable.
+A spec's text does not say whether it is implemented by a hook, a module, or the manifest, and a marker in a delta spec does not survive sync, which merges requirements and drops the preamble.
+The table is not the hand-written agent-to-capability table the alternative below rejects: it holds one row per capability regardless of agent, and a capability with no row fails the check.
+Adding a capability therefore still extends the check; what it adds is the obligation to say how the capability is implemented, which is the fact the check exists to record.
+
+The reverse direction is the half a derived check could not give.
+A hook that no capability claims is behavior with no requirement, and the specs root cannot enumerate what it does not know about.
 
 **Alternatives considered:**
 
-- A hand-written table of agent-to-capability: goes stale the first time a capability is added.
+- A hand-written table of agent-to-capability: goes stale the first time a capability is added, and its agent side is configuration, which the assessment judges.
+- Map every capability to a hook: the task as first written, and false for seven of sixteen.
+- Declare the kind in each spec: the delta preamble does not reach the baseline through sync, so the marker would have to be added to the baseline by hand, which is the edit `AGENTS.md` forbids.
 
 ### Decision: RipgrepIsAdmittedWithItsConfigurationRefused
 

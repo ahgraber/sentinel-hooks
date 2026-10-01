@@ -1,13 +1,9 @@
 {
   "$comment": [
-    "Zero-access path verdicts, asserted by every implementation of the policy.",
-    "block-sensitive-paths.py is the Python one; pi's security extension is a",
-    "TypeScript port that cannot import it. Nothing but a shared table of cases",
-    "keeps the two honest — the last drift between them made a guardrail source",
-    "unreadable to its own maintainers.",
+    "Zero-access path verdicts every surface that reaches a verdict must agree on:",
+    "block-sensitive-paths.py directly, and Pi's hook runner over its registration.",
     "Paths are given as a tool call would supply them. `~` means the user's home."
   ],
-  "bash_cases_note": "Shared lexer cases. Pi incorporation and tests are paused by user direction.",
   "bash_cases": [
     {
       "command": "grep -r secret .",
