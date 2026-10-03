@@ -60,7 +60,7 @@ def _unrecognized_refusal(target: str, tool_name: str, syntax: str) -> str:
 def _ancestor_reason(target: str, tool_name: str) -> str:
     """Build the prompt for a destructive operation on the path to a guarded location."""
     return (
-        f"This {tool_name} call would remove, rename, or replace '{target}', "
+        f"This {tool_name} call would remove, rename, replace, or change the permissions of '{target}', "
         "which holds agent enforcement. Approve only if you intend to remove "
         "the directory and its guardrails."
     )
@@ -68,7 +68,7 @@ def _ancestor_reason(target: str, tool_name: str) -> str:
 
 def _ancestor_refusal(target: str, tool_name: str) -> str:
     return (
-        f"Blocked: {tool_name} would remove, rename, or replace '{target}', "
+        f"Blocked: {tool_name} would remove, rename, replace, or change the permissions of '{target}', "
         "which holds agent enforcement. This agent cannot ask for the required "
         "approval."
     )
@@ -76,10 +76,10 @@ def _ancestor_refusal(target: str, tool_name: str) -> str:
 
 def _unanchored_refusal(operand: str, tool_name: str) -> str:
     return (
-        f"Blocked: {tool_name} would remove, rename, or replace the relative path "
-        f"'{operand}', and this call supplies no working directory to resolve it "
-        "against, so whether it holds agent enforcement is unknown. Written as "
-        "an absolute path, it can be judged."
+        f"Blocked: {tool_name} would remove, rename, replace, or change the permissions of the relative path "
+        f"'{operand}', and this call supplies no working directory, or an earlier "
+        "`cd` names one the hook cannot resolve, so whether it holds agent "
+        "enforcement is unknown. Written as an absolute path, it can be judged."
     )
 
 
@@ -188,21 +188,27 @@ def _destroyed_ancestor(reading: bash_commands.Reading, cwd: str | None) -> str 
     else:
         candidates = [operand for segment in reading.segments for operand in segment.destroyed]
     for candidate in candidates:
-        if POLICY.guarded.encloses(candidate, cwd=cwd) or POLICY.classes[CREDENTIAL].encloses(candidate, cwd=cwd):
+        if (
+            POLICY.guarded.encloses(candidate, cwd=cwd)
+            or POLICY.classes[CREDENTIAL].encloses(candidate, cwd=cwd)
+            # Reached through a `cd`, the declaration itself names no fragment the word rules see.
+            # The lexer has expanded every `~` it should, so the join keeps the rest literal.
+            or protected_class(os.path.join(cwd or "", candidate)) is not None
+        ):
             return candidate
     return None
 
 
 def _unanchored_operand(reading: bash_commands.Reading, cwd: str | None) -> str | None:
-    """Return a relative operand `reading` destroys when the call supplies no working directory.
+    """Return a relative operand `reading` destroys when its directory is unknown.
 
     Such an operand may name any directory, including an ancestor of a
     declaration. It is refused rather than guessed at from its shape, because a
     `*` in a declaration lets almost any word match one.
     """
-    if cwd is not None:
-        return None
     for segment in reading.segments:
+        if cwd is not None and segment.anchored:
+            continue
         for operand in segment.destroyed:
             if not os.path.isabs(os.path.expanduser(operand)):
                 return operand

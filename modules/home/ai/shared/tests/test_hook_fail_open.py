@@ -2,10 +2,9 @@
 
 `hook-interface` `ErrorHandlingByDamagePotential` picks the direction from the
 tool named in the payload, not from the hook, and the three hooks here land
-differently: the Bash-only hook refuses, the tamper hook gates the four tools it
-covers and lets a read through, and the sensitive-path hook lets the call
-proceed. The asymmetry is the point, so each direction is asserted rather than
-assumed.
+differently: the Bash-only hook refuses, and the tamper and sensitive-path hooks
+gate the tools that can modify state and let a read through. Each direction is
+asserted rather than assumed.
 
 Without these, the blind `except Exception` handlers are unreachable from the
 suite: a defect that made every check raise would leave each hook taking its
@@ -25,6 +24,7 @@ HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 
 TAMPERING = "block-hook-tampering.py"
 SENSITIVE = "block-sensitive-paths.py"
+SECRETS = "block-secrets.py"
 DESTRUCTIVE = "block-destructive-ops.py"
 
 # A string where the hook expects a mapping. Every hook reaches for `.get` on
@@ -53,17 +53,42 @@ def run_hook(hook: str, payload: dict | None = None, *, raw: str | None = None) 
     return HookResult(result.returncode, result.stdout, result.stderr)
 
 
-class TestUnexpectedErrorFailsOpen:
-    """A hook covering read-only tools lets the call through when it breaks."""
+class TestSensitivePathHookFollowsTheNamedTool:
+    """The sensitive-path hook covers reads and mutations, so the named tool picks the direction."""
 
-    def test_an_error_inside_the_judgment_allows_the_call(self) -> None:
+    def test_an_error_judging_a_mutation_refuses_where_no_prompt_is_shown(self) -> None:
         result = run_hook(SENSITIVE, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT})
 
-        assert result.exit_code == 0, (
-            f"{SENSITIVE} refused a call it failed to judge; the tool mix here "
-            f"is read-only as well as sensitive.\nstderr: {result.stderr}"
-        )
-        assert result.stdout == "", "an Allow writes nothing to stdout"
+        assert result.exit_code == 2, result.stderr
+        assert "block-sensitive-paths failed" in result.stderr
+
+    def test_an_error_judging_a_read_proceeds_with_a_warning(self) -> None:
+        result = run_hook(SENSITIVE, {"tool_name": "Read", "tool_input": MALFORMED_TOOL_INPUT})
+
+        assert result.exit_code == 0, result.stderr
+        assert "proceed unchecked" in result.stdout + result.stderr
+
+    def test_an_unparsable_payload_proceeds_with_a_warning(self) -> None:
+        result = run_hook(SENSITIVE, raw="{not json")
+
+        assert result.exit_code == 0, result.stderr
+        assert "was not checked" in result.stdout + result.stderr
+
+
+class TestSecretHookFollowsTheNamedTool:
+    """An error inside the secret hook's judgment refuses a mutation and lets a read through."""
+
+    def test_an_error_judging_a_mutation_refuses(self) -> None:
+        result = run_hook(SECRETS, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT})
+
+        assert result.exit_code == 2, result.stderr
+        assert "block-secrets failed" in result.stderr
+
+    def test_an_error_judging_a_read_proceeds_with_a_warning(self) -> None:
+        result = run_hook(SECRETS, {"tool_name": "Read", "tool_input": MALFORMED_TOOL_INPUT})
+
+        assert result.exit_code == 0, result.stderr
+        assert "was not checked" in result.stdout + result.stderr
 
 
 class TestTamperHookGatesWhatItCannotJudge:

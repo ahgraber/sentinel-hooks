@@ -162,15 +162,17 @@ Guarded paths are declared `ask` rather than `deny` so the prompt can reach the 
 - [x] Refuse a removal, rename, or replacement of a relative path when the payload supplies no working directory, with the stop instruction on every agent, and add `TestRelativeOperandWithoutAWorkingDirectory` — evidence for `ARelativeOperandWithNoWorkingDirectory` and `AnAbsoluteOperandWithNoWorkingDirectory`.
   The hook let such an operand through, because `encloses` cannot resolve it.
   Judging it by shape was rejected: the `*` in `<repo>/users/*/home-manager/` lets almost any single word match, so `rm -rf build` would refuse.
-- [ ] Gate a mode, owner, flag, or ACL change on an ancestor: `chmod` (with `+a`), `chown`, `chgrp`, `chflags`, `xattr`, and `setfacl`, naming the operands after the mode or owner.
+- [x] Gate a mode, owner, flag, or ACL change on an ancestor: `chmod` (with `+a`), `chown`, `chgrp`, `chflags`, `xattr`, and `setfacl`, naming the operands after the mode or owner.
   Probed 2026-09-30: `chmod 000 modules/home/ai` passed every hook on Claude and Codex, and a hook under a mode-000 directory then stopped running.
-- [ ] Gate the other programs found to destroy or overwrite a declared tree through an ancestor: `find … -delete`, `trash`, `tar -x … -C`, `unzip -d`, `ditto`, `git checkout <rev> -- <path>`, `git restore --source=… <path>`, and `git stash push -- <path>`.
+- [x] Gate the other programs found to destroy or overwrite a declared tree through an ancestor: `find … -delete`, `trash`, `tar -x … -C`, `unzip -d`, `ditto`, `git checkout <rev> -- <path>`, `git restore --source=… <path>`, and `git stash push -- <path>`.
   Probed 2026-09-30: each passed every hook on Claude and Codex.
-- [ ] Add each command above to `TestDestructiveOperationsOnAnAncestor` as a gate case on every agent.
-- [ ] Add a tree property test: generate a small tree and a declaration set, run each generated command on a copy in a temporary directory, and fail when a hook allows a command that changed a declared file.
+- [x] Add each command above to `TestDestructiveOperationsOnAnAncestor` as a gate case on every agent.
+- [x] Add a tree property test: generate a small tree and a declaration set, run each generated command on a copy in a temporary directory, and fail when a hook allows a command that changed a declared file.
   `TestDestructiveOperationsOnAnAncestor` builds its cases from the same program lists the hook reads, so it cannot find a missing program; the tree is an independent oracle.
-- [ ] Record in `path-matching` `StatedLimits`, or the `hook-tampering-blocking` ancestor requirement, that a program missing from the gate's lists passes on an ancestor.
-- [ ] Record in `design.md` Risks that a directly executed shell hook under an unreadable directory exits 126, which Claude treats as a non-blocking error.
+- [x] Resolve a relative operand after a `cd` against the directory it entered, and refuse one after a `cd` the hook cannot resolve.
+  The tree property test found `cd modules/home/ai/shared && rm -rf hooks` allowed: the classifier resolved the operand against the payload's directory.
+- [x] Record in `path-matching` `StatedLimits`, or the `hook-tampering-blocking` ancestor requirement, that a program missing from the gate's lists passes on an ancestor.
+- [x] Record in `design.md` Risks that a directly executed shell hook under an unreadable directory exits 126, which Claude treats as a non-blocking error.
 
 **The decision, recorded:** gate only an operation that takes the ancestor away.
 Gating every command naming a prefix of a declaration reaches `modules/`, `~`, and the repository root, which would prompt on ordinary work.
@@ -195,7 +197,7 @@ The hook's own verdict has fewer.
 - [x] Investigate whether every spelling of one guarded path reaches one verdict.
   Probed 2026-09-30: about 60 spellings, including letter case and the Unicode letters APFS folds (`ſ` to `s`, the Kelvin sign to `k`), each reached one verdict on Claude and Codex.
   No property test is added.
-- [ ] Add `~/.claude/ſettings.json` and a Kelvin-sign spelling to `TestLetterCase`, so the fold the probe confirmed is held by a test.
+- [x] Add `~/.claude/ſettings.json` and a Kelvin-sign spelling to `TestLetterCase`, so the fold the probe confirmed is held by a test.
 - [x] Investigate whether an agent that cannot show a prompt is ever allowed more than one that can.
   Probed 2026-09-30 over 285 payloads on Codex, Copilot, and an unknown agent: none was more permissive than Claude.
   It holds by construction, because every ask passes through `respond` and `supports_ask`.
@@ -445,21 +447,35 @@ The decision is `HarnessesWithoutAnAdapterRefuseThroughAHook`.
 `tool-vocabulary.toml` and `guarded-paths.toml` declare names and paths in arrays, with any reason in a comment that no reader checks.
 No spec pins either file's shape, so the change is to the files, their loaders, and their tests.
 
-- [ ] Declare `[[refused]]` records in `tool-vocabulary.toml`, each with a required `harness`, `tool`, and `reason`, for every tool refused on purpose: Claude Code's `PowerShell`, `Monitor`, `SendUserFile`, and `Artifact`, Pi's `powershell`, and Copilot's `edit_files`.
-- [ ] Declare each `[passthrough]` entry as a record with a required `harness`, `tool`, and `reason`, taking the reason from the existing comment where one exists.
-- [ ] Have the vocabulary loader refuse a record with no reason, and a tool declared in more than one of mapped, passthrough, and refused.
-- [ ] Update every reader of the passthrough list: `refuse-unlisted-tools.py`, the Copilot adapter, the Pi dispatcher, their tests, and the assessment skill and its references.
-- [ ] Declare each path in `guarded-paths.toml` `[guarded]`, `[block]`, `[exec-through]`, and `[write-through]` as a record with a required `path` and `reason`, and rename `why` to `reason` in `[[exceptions]]`.
-- [ ] Update the manifest loader in `guarded_paths.py`, `test_guarded_paths_manifest.py`, every test that writes a manifest, and every document that quotes the manifest's shape.
-- [ ] Record the format in `design.md`: one record per entry, a required `reason`, and the same field names in every policy table.
+- [x] Declare refused records in `tool-vocabulary.toml`, one table per harness, each record with a required `tool` and `reason`, for every tool refused on purpose: Claude Code's `PowerShell`, `Monitor`, `SendUserFile`, and `Artifact`, Pi's `powershell`, and Copilot's `edit_files`.
+- [x] Declare each passthrough entry as a record with a required `tool` and `reason`, one table per harness, taking the reason from the existing comment where one exists.
+- [x] Have the vocabulary loader refuse a record with no reason, and a tool declared in more than one of mapped, passthrough, and refused.
+- [x] Update every reader of the passthrough list: `refuse-unlisted-tools.py`, the Copilot adapter, the Pi dispatcher, their tests, and the assessment skill and its references.
+- [x] Declare each path in `guarded-paths.toml` `[guarded]`, `[block]`, `[exec-through]`, and `[write-through]` as a record with a required `path` and `reason`, and rename `why` to `reason` in `[[exceptions]]`.
+- [x] Update the manifest loader in `guarded_paths.py`, `test_guarded_paths_manifest.py`, every test that writes a manifest, and every document that quotes the manifest's shape.
+- [x] Record the format in `design.md`: one record per entry, a required `reason`, and the same field names in every policy table.
 
 ## Close the open verify findings
 
-- [ ] Derive `_FILE_TOOLS` in `pi/security/hook-dispatch.py` from the tool vocabulary, and add the Pi dispatcher and the Copilot adapter to the files `test_shared_hooks_hold_no_private_tool_vocabulary` reads — evidence for `ToolVocabularyIsDeclared`.
-- [ ] Reword `ExplanationContract` so an `Ask` that an adapter may refuse carries the AI instruction, as `AskAnAdapterMayRefuse` requires.
-- [ ] Correct `proposal.md` § Approach to name every requirement the deltas modify.
-- [ ] Turn `.verify/probe-exception-link.log` into a test of the `sensitive-path-nix-hook-wrapper` link exception.
-- [ ] Reword `HarnessGainsATool` so conformance fails on a tool that is neither mapped, passthrough, nor refused.
+- [x] Replace `_FILE_TOOLS` in `pi/security/hook-dispatch.py` and the Copilot adapter's two literal sets with a declared `file` group, and add the Pi dispatcher and the Copilot adapter to the files `test_shared_hooks_hold_no_private_tool_vocabulary` reads — evidence for `ToolVocabularyIsDeclared`.
+- [x] Reword `ExplanationContract` so an `Ask` that an adapter may refuse carries the AI instruction, as `AskAnAdapterMayRefuse` requires.
+- [x] Correct `proposal.md` § Approach to name every requirement the deltas modify.
+- [x] Turn `.verify/probe-exception-link.log` into `test_exception_does_not_travel_along_a_link` — evidence for `ExceptionDoesNotTravelAlongALink`.
+- [x] Reword `HarnessGainsATool` so conformance fails on a tool that is neither mapped, passthrough, nor refused.
+
+## Close the 2026-10-01 verify findings
+
+`.verify/report.md` records the run.
+
+- [x] Refuse a long option that abbreviates a refused one, since GNU utilities accept an unambiguous prefix: `sort --out=<path>` wrote a guarded file.
+- [x] Read a `trap --` body as installed code: the classifier took `--` for the list form, and bash installs the body after it.
+- [x] Take the destination of `cp`, `install`, and `ln` from `-t` or `--target-directory` when one is given.
+- [x] Anchor a name-heuristic exception to the declared path inside a repository root, so `/tmp/unrelated/scripts/mcp-secrets.sh` is not excused.
+- [x] Make `block-sensitive-paths.py` fail closed on an internal error for a sensitive tool, and have `block-secrets.py` warn on unparsable input that names no tool, per `ErrorHandlingByDamagePotential`; update the two tests that pin the old directions.
+- [x] Add tests for the runtime-error branches of `block-secrets.py`.
+- [x] Narrow `DriftWarning` for Pi, whose runner delivers the warning in the result of the call that ran.
+- [x] Record the end-of-turn selection limits: a file staged in a repository with no commits and then deleted, and a filename holding a newline.
+- [x] Correct the wording the run found overstated: `GateResponse` for an Ask an adapter may refuse, the Pi passthrough route, the model-compliance scenarios, the runner-availability condition in `RunsAtEndOfTurn`, and three stale statements in `design.md`.
 
 ## Organization
 
@@ -480,14 +496,39 @@ No spec pins either file's shape, so the change is to the files, their loaders, 
 Each check needs the deployed hooks to point at this branch.
 Run `just nix switch home` from the worktree with `GIT_ROOT` unset or set to the worktree: the recipe falls back to its own checkout only when `GIT_ROOT` is unset, and the deployed links then point into the worktree.
 Every open agent session runs this branch's hooks until the switch from `~/.nixconfig` after the merge.
+A linked file that git ignores is absent from a worktree and fails evaluation: link `modules/home/apps/zed/settings.json` to the main checkout's copy first.
 
-- [ ] Confirm in a live VS Code session that a Copilot subagent's tool calls reach the hooks, since the subagent tools are declared passthrough on that assumption.
-  Not run: the user declined on 2026-09-27, after the terminal-ask probe could not be controlled, so the passthrough declaration rests on the assumption alone.
-- [ ] Verify against a live VS Code agent session that a command reaching a guarded path is refused by the sandbox and that no unsandboxed retry is offered, then record the observed behavior in the verify record.
-- [ ] Verify against a live `pi` session that a read of `~/.config/mcp-secrets.env` is refused by the sandbox with the hooks disabled, so the layer is shown to deny on its own.
-- [ ] Trust the new Codex hook on the first Codex session after `just nix switch home`.
-- [ ] Confirm in a live `pi` session that Pi's `grep` tool names its search root `path`, as the dispatcher's mapping onto `Read` assumes.
-- [ ] Confirm in a live Claude Code session and a live Codex session that `refuse-unlisted-tools.py` refuses a tool no vocabulary table lists and lets a passthrough tool proceed.
+- [x] Deploy Pi's shared hooks to `~/.pi/agent/shared-hooks/`.
+  Pi 1.0 reads `~/.pi/agent/hooks/` as its retired hooks directory and stops at startup until a key is pressed; found by the first live Pi session.
+- [x] Apply the 2026-10-02 assessment's tool decisions to `tool-vocabulary.toml`: refuse Claude's `ArtifactComments`, `ArtifactData`, and `ArtifactCheck`; pass through Codex's namespaced agent and clock tools and its two async tools; pass through Pi 1.0's `mcp__*`, `mcpScript`, `tool_search`, `codemode`, and the pi-subagents tools.
+  Codex names a namespaced tool by joining namespace and name, so the bare `spawn_agent` never matched and a live Codex session was refused `collaborationspawn_agent`.
+- [x] Show live that a subagent's or a script's tool calls reach the hooks before passing their launcher through.
+  2026-10-03: a Codex subagent's `python3 -c` was refused by the command validator; a Pi `codemode` script's `bash` call was refused by the same rule; a Pi `mcpScript` script's `bash` call returned `native_tool`.
+- [x] Enable Pi's `grep`, `find`, and `ls` with `defaultTools` in mithras's Pi settings, and pass Codex's `image_genimagegen` through.
+- [x] Move the hooks extension from `pi/hooks/` to `pi/extensions/hooks/`, so the source mirrors `~/.pi/agent/extensions/hooks/` and `hooks` no longer names three things.
+- [x] Drop `pi-mcp-adapter` for every user, so Pi's built-in MCP support sends each MCP call through the tool pipeline the hooks judge.
+  2026-10-03: `pi mcp list` showed all five servers connected under the built-in support.
+- [x] Check only the files a turn changed at end of turn: `git-baseline.sh init` records a working-tree snapshot, and `stop-precommit.sh` checks the files that differ from it, or every uncommitted file without one.
+  A Pi turn that changed nothing had linted every uncommitted file in the worktree.
+- [x] Drop the Pi 0.x package install: Pi 1.0 installs the packages `settings.json` lists into `~/.pi/agent/npm`, so the wrapper's `NPM_CONFIG_PREFIX` and the `~/.pi/npm` activation install served nothing.
+- [x] Confirm Codex asks to trust the new hook on its first session, and runs a shell call and a passthrough tool with it trusted.
+  2026-10-02, Codex with `gpt-5.6-sol`: trusted, `git status` and the plan update ran.
+- [x] Confirm in a live VS Code session that a Copilot subagent's tool calls reach the hooks, since the subagent tools are declared passthrough on that assumption.
+  Invalid on 2026-10-03: the local model reported `1` for `python3 -c 'print(1)'`, but its transcript holds no `run_in_terminal` call for it, from the main agent or a subagent.
+  The transcript shows VS Code sends `run_in_terminal` with a `command` field, which the adapter refuses for this command when run by hand.
+  Rerun with a model that calls the tool, and read the hook trace log for the validator's refusal.
+  2026-10-03, with a stronger model: the main agent's `python3 -c 'print(1)'` was refused by the command validator before Python ran, and the sandbox probe's request to run outside the sandbox was skipped.
+  Through a subagent, the same command was denied by the command validator before execution, so the subagent tools stay passthrough.
+- [x] Verify against a live VS Code agent session that a command reaching a guarded path is refused by the sandbox and that no unsandboxed retry is offered, then record the observed behavior in the verify record.
+  2026-10-03: `bash /tmp/sandbox-probe.sh`, running `grep -c` over `~/.config/mcp-secrets.env` where the hooks cannot see the path, ended `Operation not permitted`, exit 2, with no unsandboxed retry offered.
+- [x] Verify against a live `pi` session that a read of `~/.config/mcp-secrets.env` is refused by the sandbox with the hooks disabled, so the layer is shown to deny on its own.
+  2026-10-03: the same probe, run through Pi's `bash` with the hooks unable to see the path, ended `Operation not permitted`, exit 2.
+- [x] Trust the new Codex hook on the first Codex session after `just nix switch home`.
+- [x] Confirm in a live `pi` session that Pi's `grep` tool names its search root `path`, as the dispatcher's mapping onto `Read` assumes.
+  2026-10-03: with `grep` enabled, a `grep` over the MCP secrets file was refused by both hooks as a `Read` of the resolved path.
+- [x] Confirm in a live Claude Code session and a live Codex session that `refuse-unlisted-tools.py` refuses a tool no vocabulary table lists and lets a passthrough tool proceed.
+  2026-10-03: Codex was refused `collaborationspawn_agent` while it was unlisted, and ran it once listed; Claude Code ran `ToolSearch`, a passthrough tool.
+  Claude Code 2.1.284 offers no unlisted tool, so its refusal is shown by tests, and by Pi's dispatcher refusing `mcpScript` live.
 
 ## Merge and activate
 

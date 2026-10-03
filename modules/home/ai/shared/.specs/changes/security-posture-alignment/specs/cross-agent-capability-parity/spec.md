@@ -130,7 +130,8 @@ Invoking the shared implementation satisfies a capability only where the payload
 
 The passthrough list is what lets the refusal hold without refusing every read, search, and MCP call a harness makes.
 It records that a person decided no hook checks the tool, which an unmapped name does not.
-A spelling SHALL NOT be both mapped and passthrough, so no adapter decides between the two.
+A tool refused on purpose SHALL be declared refused with its reason, so conformance reports only a tool in no table.
+A spelling SHALL sit in at most one of the mapped, passthrough, and refused tables, so no reader decides between them.
 
 A passthrough entry MAY be a name pattern, for a harness whose tool names are generated, such as the MCP tools an editor names after the server that provides them.
 A pattern admits every later tool its name matches, including one that writes, so it trades the refusal for that family against an edit per new tool.
@@ -139,7 +140,7 @@ A pattern admits every later tool its name matches, including one that writes, s
 
 - **GIVEN** a tool the declaration lists as passthrough for the harness, by name or by pattern
 - **WHEN** the adapter normalizes the payload
-- **THEN** the call reaches the shared implementation under its own name, and no hook gates it
+- **THEN** the call proceeds, and no hook gates it
 
 #### Scenario: SpellingMappedAndPassthrough
 
@@ -163,7 +164,7 @@ A pattern admits every later tool its name matches, including one that writes, s
 
 - **GIVEN** a harness whose tool set has grown since its mapping was written
 - **WHEN** conformance checks that mapping against the harness's declared tool set
-- **THEN** conformance fails on the tool that is neither mapped nor listed as passthrough
+- **THEN** conformance fails on the tool that is not mapped or listed as passthrough or refused
 
 ### Requirement: ToolVocabularyIsDeclared
 

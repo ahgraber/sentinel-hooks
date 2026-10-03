@@ -86,7 +86,7 @@ Every block or ask response SHALL include an explanation that contains:
 1. **What the operation does** — a plain-language description of the matched command's or path's purpose and effect (e.g., "reads your SSH private key into Claude's context", "pipes your AWS credentials to a remote host")
 2. **Why it is dangerous or suspicious** — the specific security risk this operation poses (e.g., "a private key in context can be incorporated into a subsequent command or network call without further confirmation", "credential files piped to remote hosts expose authentication material to third parties")
 
-For `ask` responses, the explanation addresses the user only.
+For `ask` responses, the explanation addresses the user only, except where an adapter may refuse the `Ask`: there it also carries the instruction section, per `AskAnAdapterMayRefuse`.
 
 For `block` responses (exit 2), the stderr message SHALL contain two sections:
 
@@ -211,7 +211,7 @@ The hook cannot know whether that adapter will show the prompt, and a refusal th
 
 - **GIVEN** the AI receives a block response carrying the stop form
 - **WHEN** the AI processes the tool result
-- **THEN** it does NOT attempt alternative commands, equivalent operations, or any other substitutes for the blocked action
+- **THEN** the instruction directs it not to attempt alternative commands, equivalent operations, or any other substitutes for the blocked action
 
 #### Scenario: AIRunsAnAcceptedCommand
 
@@ -229,7 +229,7 @@ The hook cannot know whether that adapter will show the prompt, and a refusal th
 
 - **GIVEN** the AI receives a block response with an AI instruction section
 - **WHEN** the AI presents the block to the user
-- **THEN** its response includes: (1) what ongoing task it was performing, (2) what step it intended to take, (3) what was blocked and why, and (4) what the user could do manually and why they might want to
+- **THEN** the instruction directs its response to include: (1) what ongoing task it was performing, (2) what step it intended to take, (3) what was blocked and why, and (4) what the user could do manually and why they might want to
 
 ## ADDED Requirements
 

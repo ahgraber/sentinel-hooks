@@ -149,7 +149,7 @@ def normalize_payload(raw_data: dict) -> dict:
             command = tool_input.get("text")
         normalized_input = {"command": command or ""}
 
-    elif mapped_name in {"Read", "Write", "Edit"}:
+    elif mapped_name in TOOL_VOCABULARY.group("file"):
         paths = _extract_all_paths(tool_input)
         normalized_input = dict(tool_input)
         if paths:
@@ -265,7 +265,7 @@ def main() -> int:
 
     if (
         script_name in MULTI_PATH_TARGETS
-        and tool_name in {"Read", "Write", "Edit"}
+        and tool_name in TOOL_VOCABULARY.group("file")
         and isinstance(file_paths, list)
         and len(file_paths) > 1
     ):

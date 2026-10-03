@@ -36,7 +36,6 @@ PYTHON_HOOKS = (
 )
 
 _RANK = {"allow": 0, "warn": 0, "ask": 1, "block": 2}
-_FILE_TOOLS = {"Read", "Write", "Edit"}
 
 
 class HookCrashError(Exception):
@@ -112,7 +111,7 @@ def normalize(payload: dict) -> dict | None:
 
     tool_input = dict(payload.get("tool_input") or {})
     path = tool_input.get("path")
-    if mapped in _FILE_TOOLS and isinstance(path, str) and path:
+    if mapped in TOOL_VOCABULARY.group("file") and isinstance(path, str) and path:
         # Pi resolves a relative `path` against the session's working directory.
         cwd = payload.get("cwd") or os.getcwd()
         tool_input["file_path"] = str(Path(cwd, os.path.expanduser(path)))

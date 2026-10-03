@@ -15,6 +15,8 @@ import pytest
 
 CASES_FILE = Path(__file__).parent / "sensitive-path-cases.json"
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
+# A relative case is a repository path, judged as a hook judges one from the checkout root.
+REPO_ROOT = next(parent for parent in HOOKS_DIR.resolve().parents if (parent / "flake.nix").is_file())
 
 
 def load_should_block():
@@ -43,7 +45,7 @@ def test_cases_are_loaded() -> None:
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["path"])
 def test_verdict_matches_the_shared_table(case: dict) -> None:
     path = os.path.expanduser(case["path"])
-    assert should_block(path) is case["blocked"], case["why"]
+    assert should_block(path, cwd=str(REPO_ROOT)) is case["blocked"], case["why"]
 
 
 @pytest.mark.parametrize("case", json.loads(CASES_FILE.read_text())["bash_cases"])

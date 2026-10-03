@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Detect unexpected HEAD changes during a turn.
 # Usage: git-baseline.sh <init|check|update>
-#   init: UserPromptSubmit records HEAD at turn start
+#   init: UserPromptSubmit records HEAD and a working-tree snapshot at turn start;
+#         stop-precommit.sh compares the snapshot with the tree at turn end
 #   check: PreToolUse warns if HEAD moved since the last checkpoint
 #   update: PostToolUse(Bash) advances the baseline after agent-run commands
 # Always exits 0; this hook only reports drift.
@@ -31,10 +32,24 @@ if [[ -z "${GIT_DIR:-}" ]]; then
 fi
 readonly baseline="${GIT_DIR}/agent-baseline-${safe_id}"
 
+# Write the working tree, untracked files included, as a tree object through a
+# copy of the index, so the real index is untouched. stop-precommit.sh repeats this.
+snapshot_tree() {
+  local index
+  index="$(mktemp)" || return 1
+  if [[ -f "${GIT_DIR}/index" ]]; then cp "${GIT_DIR}/index" "${index}"; else rm -f "${index}"; fi
+  GIT_INDEX_FILE="${index}" git -C "${cwd}" add -A 2> /dev/null \
+    && GIT_INDEX_FILE="${index}" git -C "${cwd}" write-tree 2> /dev/null
+  local status=$?
+  rm -f "${index}"
+  return "${status}"
+}
+
 case "${stage}" in
   init)
     head_sha="$(git -C "${cwd}" rev-parse HEAD 2> /dev/null)" || exit 0
     printf '%s' "${head_sha}" > "${baseline}" || exit 0
+    tree="$(snapshot_tree)" && printf '%s' "${tree}" > "${GIT_DIR}/agent-snapshot-${safe_id}"
     ;;
   check)
     [[ -f "${baseline}" ]] || exit 0

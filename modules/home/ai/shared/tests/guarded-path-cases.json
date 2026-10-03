@@ -54,7 +54,7 @@
       "why": "pi settings"
     },
     {
-      "path": "~/.pi/agent/hooks/hook-dispatch.py",
+      "path": "~/.pi/agent/shared-hooks/hook-dispatch.py",
       "blocked": true,
       "why": "deployed pi hook dispatcher"
     },
@@ -99,7 +99,7 @@
       "why": "repository source of the pi hook registration"
     },
     {
-      "path": "modules/home/ai/pi/hooks/extension.ts",
+      "path": "modules/home/ai/pi/extensions/hooks/extension.ts",
       "blocked": true,
       "why": "repository source of the pi hook runner"
     },
@@ -184,9 +184,9 @@
       "why": "same, for a repository-source spelling that sits in no repository"
     },
     {
-      "path": "~/.pi/npm/lib/node_modules/pkg/index.js",
-      "blocked": false,
-      "why": "the npm prefix outside the agent home is not guarded"
+      "path": "~/.pi/agent/npm/node_modules/pkg/index.js",
+      "blocked": true,
+      "why": "Pi keeps its npm packages in the agent home, and a package runs as extension code"
     },
     {
       "path": "~/.claude/projects/demo/memory/note.txt",

@@ -88,9 +88,9 @@ class TestUnlistedToolsAreRefused:
     def test_a_mapping_to_another_name_is_refused(self, hooks_copy: Path) -> None:
         """The hooks judge the name Claude sends, so a converted name would be judged by none."""
         vocabulary = hooks_copy / "tool-vocabulary.toml"
-        text = vocabulary.read_text().replace("[mappings.claude]\n", '[mappings.claude]\nMonitor = "Bash"\n')
+        text = vocabulary.read_text().replace("[mappings.claude]\n", '[mappings.claude]\nNovelTool = "Bash"\n')
         vocabulary.write_text(text)
-        assert_refused(run_hook("Monitor", "claude", hooks_copy), "'Monitor' is mapped to 'Bash'", "no adapter")
+        assert_refused(run_hook("NovelTool", "claude", hooks_copy), "'NovelTool' is mapped to 'Bash'", "no adapter")
 
 
 class TestUnreadableVocabularyRefusesEveryCall:
@@ -107,7 +107,9 @@ class TestUnreadableVocabularyRefusesEveryCall:
 
     def test_an_invalid_vocabulary_names_the_error(self, hooks_copy: Path) -> None:
         (hooks_copy / "tool-vocabulary.toml").write_text("[groups]\n")
-        assert_refused(run_hook("Read", "claude", hooks_copy), "expected groups, ask, mappings, and passthrough")
+        assert_refused(
+            run_hook("Read", "claude", hooks_copy), "expected groups, ask, mappings, passthrough, and refused"
+        )
 
 
 def test_an_unparsable_payload_warns_and_proceeds() -> None:

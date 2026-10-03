@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 
+from guarded_paths import ManifestError, load_manifest
 from hermetic import load_hook
 import pytest
 import tomllib
@@ -46,12 +47,16 @@ class TestManifestShape:
         }
 
     def test_every_entry_uses_accepted_notation(self) -> None:
-        with open(MANIFEST, "rb") as handle:
-            manifest = tomllib.load(handle)
-        for entry in _all_path_entries(manifest):
+        for entry in _all_path_entries(load_manifest(MANIFEST)):
             assert entry.startswith(_ACCEPTED_PREFIXES) or "*" in entry, (
                 f"'{entry}' uses neither ~/, <repo>/, nor glob notation"
             )
+
+    def test_a_path_with_no_reason_does_not_load(self, tmp_path: Path) -> None:
+        manifest = tmp_path / "guarded-paths.toml"
+        manifest.write_text(MANIFEST.read_text().replace('reason = "Codex\'s stored credentials"', ""))
+        with pytest.raises(ManifestError, match="`path`, `reason`"):
+            load_manifest(manifest)
 
     def test_exceptions_name_a_surface_and_a_pattern(self) -> None:
         with open(MANIFEST, "rb") as handle:
@@ -59,7 +64,7 @@ class TestManifestShape:
         for exception in manifest["exceptions"]:
             assert exception["surface"]
             assert exception["pattern"]
-            assert exception["why"]
+            assert exception["reason"]
 
 
 class TestManifestGuardsItself:
@@ -90,8 +95,7 @@ class TestSensitivePathsCredentialCoverage:
     @staticmethod
     @pytest.fixture(scope="class")
     def credential_paths() -> list[str]:
-        with open(MANIFEST, "rb") as handle:
-            return tomllib.load(handle)["block"]["paths"]
+        return load_manifest(MANIFEST)["block"]["paths"]
 
     def test_every_credential_path_is_zero_access(self, credential_paths: list[str]) -> None:
         hook = load_hook("block-sensitive-paths")
@@ -104,7 +108,7 @@ class TestTemporaryManifestCopy:
 
     @pytest.fixture
     def substituted_manifest(self, tmp_path: Path) -> Path:
-        original = tomllib.loads(MANIFEST.read_text())
+        original = load_manifest(MANIFEST)
         original["block"]["paths"].append("~/.example/new-credential.json")
         copy = tmp_path / "guarded-paths.toml"
         copy.write_text(_dump_minimal_toml(original))
@@ -133,7 +137,7 @@ class TestReadAndExecAreSeparateClasses:
 
     @pytest.fixture
     def readable_only(self, tmp_path: Path) -> Path:
-        original = tomllib.loads(MANIFEST.read_text())
+        original = load_manifest(MANIFEST)
         original["guarded"]["paths"].append("~/.example/readable/")
         copy = tmp_path / "guarded-paths.toml"
         copy.write_text(_dump_minimal_toml(original))
@@ -160,23 +164,17 @@ def _quote(value: str) -> str:
 
 
 def _dump_minimal_toml(data: dict) -> str:
-    """Serialize the subset of TOML this manifest uses. No stdlib TOML writer exists."""
+    """Serialize a loaded manifest back to its record form. No stdlib TOML writer exists."""
     lines = []
     for section, value in data.items():
         if section == "exceptions":
             for table in value:
                 lines.append("[[exceptions]]")
-                for key, val in table.items():
-                    lines.append(f"{key} = {_quote(val)}")
+                lines.extend(f"{key} = {_quote(val)}" for key, val in table.items())
             continue
         lines.append(f"[{section}]")
-        for key, val in value.items():
-            if key == "layers":
-                pairs = ", ".join("[" + ", ".join(_quote(item) for item in pair) + "]" for pair in val)
-                lines.append(f"{key} = [{pairs}]")
-            else:
-                items = ", ".join(_quote(item) for item in val)
-                lines.append(f"{key} = [{items}]")
+        for path in value["paths"]:
+            lines += [f"[[{section}.paths]]", f"path = {_quote(path)}", 'reason = "test"']
     return "\n".join(lines) + "\n"
 
 
@@ -203,7 +201,7 @@ class TestManifestLoadFailure:
         elif defect == "unparsable":
             manifest.write_text("invalid [ toml")
         else:
-            data = tomllib.loads(manifest.read_text())
+            data = load_manifest(manifest)
             del data["block"]
             manifest.write_text(_dump_minimal_toml(data))
         result = subprocess.run(
@@ -245,7 +243,7 @@ class TestManifestLoadFailure:
 
     def test_sensitive_block_list_survives_an_unrelated_missing_table(self, hooks_copy):
         manifest = hooks_copy / "guarded-paths.toml"
-        data = tomllib.loads(manifest.read_text())
+        data = load_manifest(manifest)
         del data["exceptions"]
         manifest.write_text(_dump_minimal_toml(data))
         result = self._run(

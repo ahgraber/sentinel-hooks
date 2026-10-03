@@ -112,7 +112,7 @@ Preventing the next one is a matter of instruction rather than of test, so it li
 
 New capabilities where the posture has none, and no MODIFIED block over a requirement `guarded-path-classes` also modifies.
 That change is merged and live but not yet synced, and `sdd-sync` replaces a matched requirement wholesale, so two deltas over one requirement would have the second sync discard the first.
-This change modifies `ErrorHandlingByDamagePotential` in `hook-interface` and `FailureMode` in `hook-tampering-blocking`, neither of which `guarded-path-classes` touches; its other deltas add or remove.
+This change modifies `ErrorHandlingByDamagePotential`, `ExplanationContract`, and `BlockAIGuidance` in `hook-interface`, `FailureMode` and `GateResponse` in `hook-tampering-blocking`, and `DriftWarning` in `git-baseline-drift`, none of which `guarded-path-classes` touches; its other deltas add or remove.
 The removal records name three requirements the baseline already lacks, so they rewrite nothing.
 
 The floor is expressed as a prohibition on named values rather than as an assertion of current ones.

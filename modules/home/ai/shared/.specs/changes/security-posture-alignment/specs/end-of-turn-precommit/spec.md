@@ -7,6 +7,7 @@
 Serves: existing-guarantees-are-recorded
 
 The system SHALL run the repository's pre-commit configuration over the files a turn changed, once the agent has finished the turn.
+The run needs `prek` or `pre-commit` on the path; where neither is installed, the turn ends with no run and no message.
 
 Running per edit fires autofixers mid-sequence, which removes an import or a binding before the first use of it lands, and never sees a file written by a shell command rather than by a file tool.
 
@@ -20,9 +21,25 @@ Running per edit fires autofixers mid-sequence, which removes an import or a bin
 
 Serves: existing-guarantees-are-recorded
 
-The system SHALL select the files the working tree presents as changed, whatever their tracking state, and SHALL exclude files the run cannot act on.
+The system SHALL select the files the turn changed: each file whose content differs between the working tree at the turn's start and at its end, whatever its tracking state.
+It SHALL exclude files the run cannot act on.
+Where no snapshot of the turn's start exists, it SHALL select every file the working tree presents as changed.
+A file changed before the turn is not the turn's to fix, and checking it can block a turn on work the agent did not do.
+Two cases fall outside the selection: in a repository with no commits, a file staged and then deleted is still selected, and a filename holding a newline is not read correctly.
 
 A file's tracking state does not determine whether a linter should see it; whether the file exists and is not ignored does.
+
+#### Scenario: FileChangedBeforeTheTurn
+
+- **GIVEN** a file was modified before the turn started and the turn did not change it
+- **WHEN** the turn ends
+- **THEN** the file does not reach the runner
+
+#### Scenario: TurnThatChangesNothing
+
+- **GIVEN** the working tree holds uncommitted changes from before the turn, and the turn changes no file
+- **WHEN** the turn ends
+- **THEN** the runner does not run
 
 #### Scenario: ModifiedTrackedFile
 

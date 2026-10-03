@@ -157,3 +157,24 @@ def test_renderer_is_readable(surface):
     _, repo, _ = surface
     sensitive = load_hook("block-sensitive-paths")
     assert not sensitive.should_block(str(repo / "scripts/mcp-secrets.sh"))
+
+
+def test_exception_does_not_travel_along_a_link(surface, tmp_path):
+    """The exception covers the spelling it names; a link named for secrets is judged by its own name."""
+    _, repo, _ = surface
+    renderer = repo / "scripts/mcp-secrets.sh"
+    renderer.parent.mkdir(parents=True, exist_ok=True)
+    renderer.touch()
+    (tmp_path / "deploy-secrets.sh").symlink_to(renderer)
+    (tmp_path / "plainname.sh").symlink_to(renderer)
+    sensitive = load_hook("block-sensitive-paths")
+    assert sensitive.should_block(str(tmp_path / "deploy-secrets.sh"))
+    assert not sensitive.should_block(str(tmp_path / "plainname.sh"))
+
+
+def test_exception_covers_the_declared_file_alone(tmp_path):
+    """A file outside any checkout that shares the declared name and tail is not excused."""
+    elsewhere = tmp_path / "unrelated/scripts/mcp-secrets.sh"
+    elsewhere.parent.mkdir(parents=True)
+    elsewhere.touch()
+    assert load_hook("block-sensitive-paths").should_block(str(elsewhere))

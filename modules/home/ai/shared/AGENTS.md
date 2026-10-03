@@ -4,7 +4,7 @@
 
 `hooks/` holds the hooks Claude Code, Codex, Copilot, and Pi run on every tool call.
 Claude Code, Codex, and Copilot run them through their native hook mechanisms, Copilot through an adapter.
-Pi runs them through a hook runner, the extension in `../pi/hooks/`, which gives Pi the same mechanism and holds no policy.
+Pi runs them through a hook runner, the extension in `../pi/extensions/hooks/`, which gives Pi the same mechanism and holds no policy.
 Each agent registers them itself, in `users/*/home-manager/claude/settings.json`, `users/*/home-manager/codex/hooks.json`, `../copilot/hooks/`, and `../pi/security/hooks.json`.
 
 Editing a hook changes what every agent may do, including the one making the edit.
@@ -63,8 +63,8 @@ The assessment, not a test, judges that coverage, because the surfaces' keys are
 Declare a loosening in `[[exceptions]]`, with its surface, pattern, and reason.
 Nothing downstream distinguishes an undeclared loosening from an accident.
 
-List every tool an agent can call in `hooks/tool-vocabulary.toml`, as a mapping onto a checked tool or as passthrough.
-A tool in neither is refused: by the adapter for Copilot and Pi, and by `refuse-unlisted-tools.py` for Claude Code and Codex, which register it for every tool call.
+List every tool an agent can call in `hooks/tool-vocabulary.toml`: as a mapping onto a checked tool, as passthrough, or as refused, each record with its reason.
+A tool in none is refused as well: by the adapter for Copilot and Pi, and by `refuse-unlisted-tools.py` for Claude Code and Codex, which register it for every tool call.
 A vendor update that adds a tool is refused until someone lists it, which is how the new tool reaches the user.
 Keep that hook's group last in each Codex `hooks.json`: Codex records a hook's trust by its position, so a group inserted earlier untrusts every hook after it.
 

@@ -27,7 +27,7 @@ The two cite each other: `guarded-path-classes` rests its load-failure posture o
 
 ### Decision: NoModifiedBlockOverARequirementAnotherChangeModifies
 
-**Chosen:** three new capability specs; MODIFIED blocks over `ErrorHandlingByDamagePotential` and `FailureMode` alone, which `guarded-path-classes` does not touch; ADDED blocks over `hook-interface`, `hook-tampering-blocking`, and `sensitive-path-blocking`; and a REMOVED-only delta over `bash-command-validator`.
+**Chosen:** four new capability specs; MODIFIED blocks over `ErrorHandlingByDamagePotential`, `ExplanationContract`, `BlockAIGuidance`, `FailureMode`, `GateResponse`, and `DriftWarning`, none of which `guarded-path-classes` touches; ADDED blocks over `hook-interface`, `hook-tampering-blocking`, and `sensitive-path-blocking`; and REMOVED-only deltas over `bash-command-validator` and `dangerous-bash-blocking`.
 
 **Rationale:** `sdd-sync` replaces a matched baseline requirement wholesale from a MODIFIED block.
 Two unsynced changes carrying MODIFIED blocks for the same requirement would have the second sync silently discard the first.
@@ -239,6 +239,22 @@ Two of them allow a call with no `command`; `git-baseline.sh update` would recor
 - A sixth table in `guarded-paths.toml`: `OnlyPolicyTablesExist` forbids it, and amending that requirement to admit a non-path table gives up the property that the manifest reads as policy.
 - Exact names only in `[passthrough]`: the refusal holds for every tool, and each configured MCP server is refused until its tools are listed.
 - Refuse only an unmapped built-in tool and forward extension tools: weakens the requirement, and neither harness was shown to mark which of its tools are built in.
+
+### Decision: EveryPolicyTableEntryIsARecord
+
+**Chosen:** `guarded-paths.toml` and the passthrough and refused tables of `tool-vocabulary.toml` declare one record per entry, each with a required `reason`, in the shape `block-destructive-ops-patterns.toml` already uses.
+A class or harness is a table holding a description or source and its records.
+A tool sits in one of mapped, passthrough, and refused at most.
+
+**Rationale:** a reason in a comment is read by no loader, so an entry with none loads and a stale one goes unnoticed.
+A required field makes the loader refuse an unexplained entry.
+The refused table separates a tool refused on purpose from a new one, so the assessment reports only the second.
+`load_manifest` reduces the records to the path lists `PathPolicy` reads, so no consumer of the policy changes.
+
+**Alternatives considered:**
+
+- Keep reasons in comments and have the assessing agent read them: each run repeats a judgment, and a refused tool reads the same as a new one until someone reads the prose.
+- A flat `[[refused]]` list with a `harness` field: one shape for every harness, but the source build each table was read from has no table to sit on.
 
 ### Decision: HarnessesWithoutAnAdapterRefuseThroughAHook
 
@@ -480,7 +496,7 @@ This closed all six reproductions and broke none of six ordinary reads: `cat`, `
 
 Function definitions are a weaker variant.
 `f() { rm -rf ~/.claude/skills; }` already gates, because a function body is lexed word by word and the path is its own word.
-A body naming nothing guarded still escapes, which is a smaller surface and is not addressed here.
+A definition naming nothing guarded is still judged as installing code, so it withdraws the read carve-out from the command around it.
 
 **Alternatives considered:**
 
@@ -528,7 +544,7 @@ It refuses a named class of command, so every call it judges is one it was regis
 The declarations themselves are posture, recorded in `guarded-surface` `AgentCredentialsAreBlocked` and `NameHeuristicExceptionIsDeclared`; this change carries the mechanism each rests on.
 
 **Rationale:** the rendered file holds the API keys the MCP servers start with, and nothing declared it.
-`DOTENV_RE` wants `.env` at a path boundary, so a `*.env` suffix matches it and no other strong rule; the whole of its protection was the guess that a name carrying "secrets" holds some.
+`DOTENV_RE` wants `.env` at a path boundary, so a `*.env` suffix reaches no strong rule; the whole of its protection was the guess that a name carrying "secrets" holds some.
 No deny glob in any Claude settings file or Codex configuration covered it either — the `**/.env` rules match a file named `.env`, not one ending in it.
 A single heuristic layer under a live credential contradicts the posture that layers are independent, and it made the file's safety depend on its name, so renaming to fix the script's false positive would have removed the protection from the secret.
 
@@ -652,3 +668,7 @@ That is where the remaining divergence lives: an adapter holds no policy, so its
 - **Pi's class behavior depends on another change.**
   `guarded-path-classes` defines the class model and is merged but not yet synced.
   Mitigation: the migration gives Pi whatever the shared hooks implement at the time it runs, so the class outcomes arrive with the adapter rather than needing their own Pi tasks, and the temporary exception that change recorded is removed when the adapter passes the deferred cases.
+- **A hook under an unreadable directory stops running.**
+  A shell hook run directly exits 126 when a directory above it loses its execute bit, and Claude reads 126 as a non-blocking error, so that hook stops judging.
+  A hook run through `uv run --script` exits 2 instead, which every agent reads as a refusal, so the session stops rather than proceeding unjudged.
+  Mitigation: the ancestor gate asks before a mode change reaches that directory.

@@ -86,6 +86,8 @@ def test_declared_passthrough_tool_reaches_shared_hooks_unchanged(monkeypatch) -
     received: list[dict] = []
 
     class DeclaredVocabulary:
+        group = staticmethod(adapter.TOOL_VOCABULARY.group)
+
         @staticmethod
         def normalize(_harness: str, _spelling: str) -> str | None:
             return None
@@ -113,6 +115,8 @@ def test_declared_tool_mapping_reaches_shared_gate(monkeypatch, capsys) -> None:
     adapter = load_adapter()
 
     class DeclaredVocabulary:
+        group = staticmethod(adapter.TOOL_VOCABULARY.group)
+
         @staticmethod
         def normalize(harness: str, spelling: str) -> str | None:
             assert harness == "copilot"

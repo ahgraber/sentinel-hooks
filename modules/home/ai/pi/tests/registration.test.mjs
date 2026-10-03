@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { registerHooks } from "../hooks/extension.ts"
+import { registerHooks } from "../extensions/hooks/extension.ts"
 
 const AI_DIR = resolve(import.meta.dirname, "..", "..")
 const SHARED_HOOKS = join(AI_DIR, "shared", "hooks")
@@ -25,7 +25,7 @@ let project
 /** Link the registration, the shared hooks, and the dispatcher where `pi/default.nix` deploys them. */
 async function deploy(home, { hooks = true } = {}) {
   const agentDir = join(home, ".pi", "agent")
-  const hooksDir = join(agentDir, "hooks")
+  const hooksDir = join(agentDir, "shared-hooks")
   await mkdir(hooksDir, { recursive: true })
   if (!hooks) return agentDir
   await symlink(join(AI_DIR, "pi", "security", "hooks.json"), join(agentDir, "hooks.json"))
@@ -354,10 +354,14 @@ async function repository(config, { commit = true } = {}) {
   }
 }
 
-/** End one turn, or `turns` in a row, and return what the runner sent back to the agent. */
-async function endTurns(turns = 1) {
+/**
+ * End one turn, or `turns` in a row, and return what the runner sent back to the agent.
+ * `during` changes files after the prompt, which is when the turn-start snapshot is taken.
+ */
+async function endTurns(turns = 1, during = async () => {}) {
   const { emit, sent } = await started()
   await emit("input", { text: "hello", source: "interactive" })
+  await during()
   for (let turn = 0; turn < turns; turn += 1) {
     await emit("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] })
     await emit("agent_settled")
@@ -370,8 +374,8 @@ const REJECTED = /reject-target[\s\S]*re-read those files/
 const END_OF_TURN = [
   {
     scenario: "PassingRunIsSilent",
-    setup: async () => {
-      await repository(PASSING)
+    setup: () => repository(PASSING),
+    during: async () => {
       await writeFile(join(project, "tracked.txt"), "changed\n")
       await writeFile(join(project, "untracked.txt"), "new\n")
     },
@@ -379,24 +383,24 @@ const END_OF_TURN = [
   },
   {
     scenario: "ModifiedTrackedFile",
-    setup: async () => {
-      await repository(rejecting("tracked.txt"))
+    setup: () => repository(rejecting("tracked.txt")),
+    during: async () => {
       await writeFile(join(project, "tracked.txt"), "changed\n")
     },
     blocked: true,
   },
   {
     scenario: "UntrackedFile",
-    setup: async () => {
-      await repository(rejecting("untracked.txt"))
+    setup: () => repository(rejecting("untracked.txt")),
+    during: async () => {
       await writeFile(join(project, "untracked.txt"), "new\n")
     },
     blocked: true,
   },
   {
     scenario: "StagedFile",
-    setup: async () => {
-      await repository(rejecting("staged.txt"))
+    setup: () => repository(rejecting("staged.txt")),
+    during: async () => {
       await writeFile(join(project, "staged.txt"), "staged\n")
       git("add", "staged.txt")
     },
@@ -404,8 +408,8 @@ const END_OF_TURN = [
   },
   {
     scenario: "IgnoredFile",
-    setup: async () => {
-      await repository(rejecting("ignored.txt"))
+    setup: () => repository(rejecting("ignored.txt")),
+    during: async () => {
       await writeFile(join(project, ".gitignore"), "ignored.txt\n")
       await writeFile(join(project, "ignored.txt"), "noise\n")
     },
@@ -413,16 +417,16 @@ const END_OF_TURN = [
   },
   {
     scenario: "DeletedFile",
-    setup: async () => {
-      await repository(PASSING)
+    setup: () => repository(PASSING),
+    during: async () => {
       await rm(join(project, "tracked.txt"))
     },
     blocked: false,
   },
   {
     scenario: "RepositoryWithNoCommits",
-    setup: async () => {
-      await repository(rejecting("staged.txt"), { commit: false })
+    setup: () => repository(rejecting("staged.txt"), { commit: false }),
+    during: async () => {
       await writeFile(join(project, "staged.txt"), "staged\n")
       git("add", "staged.txt")
     },
@@ -431,27 +435,35 @@ const END_OF_TURN = [
   { scenario: "OutsideARepository", setup: async () => {}, blocked: false },
   {
     scenario: "NoPreCommitConfiguration",
-    setup: async () => {
-      await repository(undefined)
+    setup: () => repository(undefined),
+    during: async () => {
       await writeFile(join(project, "tracked.txt"), "changed\n")
     },
     blocked: false,
   },
   { scenario: "NoChangedFiles", setup: () => repository(rejecting("tracked.txt")), blocked: false },
   {
-    scenario: "FailingRunBlocks",
+    scenario: "FileChangedBeforeTheTurn",
     setup: async () => {
       await repository(rejecting("tracked.txt"))
+      await writeFile(join(project, "tracked.txt"), "changed before the turn\n")
+    },
+    blocked: false,
+  },
+  {
+    scenario: "FailingRunBlocks",
+    setup: () => repository(rejecting("tracked.txt")),
+    during: async () => {
       await writeFile(join(project, "tracked.txt"), "changed\n")
     },
     blocked: true,
   },
 ]
 
-for (const { scenario, setup, blocked } of END_OF_TURN) {
+for (const { scenario, setup, during, blocked } of END_OF_TURN) {
   test(`end-of-turn-precommit ${scenario} holds through the runner`, async () => {
     await setup()
-    const sent = await endTurns()
+    const sent = await endTurns(1, during)
     if (blocked) {
       assert.equal(sent.length, 1)
       assert.match(sent[0], REJECTED)
@@ -463,8 +475,7 @@ for (const { scenario, setup, blocked } of END_OF_TURN) {
 
 test("end-of-turn-precommit SecondPassAfterABlock holds through the runner", async () => {
   await repository(rejecting("tracked.txt"))
-  await writeFile(join(project, "tracked.txt"), "changed\n")
-  const sent = await endTurns(2)
+  const sent = await endTurns(2, () => writeFile(join(project, "tracked.txt"), "changed\n"))
   assert.equal(sent.length, 1)
   assert.match(sent[0], REJECTED)
 })

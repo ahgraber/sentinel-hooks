@@ -98,6 +98,15 @@ class TestLetterCase:
 
         assert HOOK.is_protected_path(target) is folds_case(os.path.expanduser("~"))
 
+    # LONG S folds to `s` and KELVIN SIGN to `k` on a case-folding volume. Elsewhere
+    # the hook may still match them, which guards a file that is not the declared one.
+    @pytest.mark.parametrize("spelling", ["~/.claude/\u017fettings.json", "~/.claude/hoo\u212as/x.py"])
+    def test_unicode_case_fold_of_a_deployed_location(self, spelling: str) -> None:
+        if not folds_case(os.path.expanduser("~")):
+            pytest.skip("home is on a case-sensitive volume")
+
+        assert HOOK.is_protected_path(os.path.expanduser(spelling)) is True
+
 
 class TestAttachedOperands:
     """A guarded location reached through a link that hides its name."""

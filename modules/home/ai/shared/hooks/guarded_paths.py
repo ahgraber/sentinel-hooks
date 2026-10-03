@@ -58,6 +58,7 @@ class ToolVocabulary:
     ask: Mapping[str, frozenset[str]]
     mappings: Mapping[str, Mapping[str, str]]
     passthrough: Mapping[str, frozenset[str]]
+    refused: Mapping[str, frozenset[str]]
 
     def group(self, name: str) -> frozenset[str]:
         """Return the canonical tools in `name`."""
@@ -93,6 +94,25 @@ def _tool_sets(table: object, table_name: str) -> Mapping[str, frozenset[str]]:
     return MappingProxyType(result)
 
 
+def _tool_records(table: object, table_name: str) -> Mapping[str, frozenset[str]]:
+    """Read `[<table>.<harness>]` tables, each holding `[[...tools]]` records with a `tool` and a `reason`."""
+    if not isinstance(table, dict):
+        raise ToolVocabularyError(f"{table_name} must be a table")
+    result: dict[str, frozenset[str]] = {}
+    for harness, body in table.items():
+        if not isinstance(body, dict) or not isinstance(body.get("tools"), list) or not body["tools"]:
+            raise ToolVocabularyError(f"{table_name}.{harness} must hold a nonempty `tools` list")
+        if set(body) - {"source", "tools"}:
+            raise ToolVocabularyError(f"{table_name}.{harness} holds keys other than `source` and `tools`")
+        for entry in body["tools"]:
+            if not isinstance(entry, dict) or set(entry) != {"tool", "reason"}:
+                raise ToolVocabularyError(f"each {table_name}.{harness} record needs exactly `tool` and `reason`")
+            if any(not isinstance(entry[key], str) or not entry[key].strip() for key in ("tool", "reason")):
+                raise ToolVocabularyError(f"{table_name}.{harness} records need a nonempty `tool` and `reason`")
+        result[harness] = frozenset(entry["tool"] for entry in body["tools"])
+    return MappingProxyType(result)
+
+
 def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabulary:
     """Load and validate the declared tool vocabulary."""
     try:
@@ -101,12 +121,13 @@ def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabul
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ToolVocabularyError(str(exc)) from exc
 
-    if set(data) != {"groups", "ask", "mappings", "passthrough"}:
-        raise ToolVocabularyError("expected groups, ask, mappings, and passthrough tables")
+    if set(data) != {"groups", "ask", "mappings", "passthrough", "refused"}:
+        raise ToolVocabularyError("expected groups, ask, mappings, passthrough, and refused tables")
 
     groups = _tool_sets(data["groups"], "groups")
     ask = _tool_sets(data["ask"], "ask")
-    passthrough = _tool_sets(data["passthrough"], "passthrough")
+    passthrough = _tool_records(data["passthrough"], "passthrough")
+    refused = _tool_records(data["refused"], "refused")
     raw_mappings = data["mappings"]
     if not isinstance(raw_mappings, dict):
         raise ToolVocabularyError("mappings must be a table")
@@ -127,29 +148,62 @@ def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabul
     if unknown := referenced_tools - canonical_tools:
         raise ToolVocabularyError("unknown canonical tools: " + ", ".join(sorted(unknown)))
 
-    # A spelling that is both mapped and passthrough would be judged by whichever
-    # the adapter consults first, so the declaration refuses to say both.
-    for harness, entries in passthrough.items():
-        if harness not in mappings:
-            raise ToolVocabularyError(f"passthrough.{harness} names a harness with no mapping")
-        if overlap := sorted(
-            spelling for spelling in mappings[harness] if any(fnmatch.fnmatchcase(spelling, e) for e in entries)
-        ):
-            raise ToolVocabularyError(f"passthrough.{harness} covers mapped spellings: " + ", ".join(overlap))
+    # A spelling in two tables would be judged by whichever a reader consults
+    # first, so the declaration refuses to say both.
+    for table_name, table in (("passthrough", passthrough), ("refused", refused)):
+        for harness, entries in table.items():
+            if harness not in mappings:
+                raise ToolVocabularyError(f"{table_name}.{harness} names a harness with no mapping")
+            if overlap := sorted(
+                spelling for spelling in mappings[harness] if any(fnmatch.fnmatchcase(spelling, e) for e in entries)
+            ):
+                raise ToolVocabularyError(f"{table_name}.{harness} covers mapped spellings: " + ", ".join(overlap))
+    for harness, entries in refused.items():
+        patterns = passthrough.get(harness, frozenset())
+        if overlap := sorted(tool for tool in entries if any(fnmatch.fnmatchcase(tool, p) for p in patterns)):
+            raise ToolVocabularyError(f"refused.{harness} names passthrough tools: " + ", ".join(overlap))
 
-    return ToolVocabulary(groups, ask, MappingProxyType(mappings), passthrough)
+    return ToolVocabulary(groups, ask, MappingProxyType(mappings), passthrough, refused)
 
 
 TOOL_VOCABULARY = load_tool_vocabulary()
 
 
 def load_manifest(path: Path | str = MANIFEST_PATH) -> dict:
-    """Parse the manifest at `path`; raise `ManifestError` on read or parse failure."""
+    """Parse the manifest at `path` into path lists per class; raise `ManifestError` on any failure."""
     try:
         with open(path, "rb") as handle:
-            return tomllib.load(handle)
+            raw = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ManifestError(str(exc)) from exc
+    return _from_records(raw)
+
+
+def _require_record(entry: object, keys: set[str], where: str) -> dict:
+    if not isinstance(entry, dict) or set(entry) != keys:
+        raise ManifestError(f"each {where} record needs exactly " + ", ".join(f"`{key}`" for key in sorted(keys)))
+    if any(not isinstance(value, str) or not value.strip() for value in entry.values()):
+        raise ManifestError(f"each {where} record needs nonempty " + ", ".join(f"`{key}`" for key in sorted(keys)))
+    return entry
+
+
+def _from_records(raw: dict) -> dict:
+    """Reduce each class's `[[<class>.paths]]` records to its paths, checking every record states a reason."""
+    manifest = dict(raw)
+    for name in ("guarded", "block", "exec-through", "write-through"):
+        table = raw.get(name)
+        if not isinstance(table, dict):
+            continue
+        if set(table) - {"description", "paths"}:
+            raise ManifestError(f"{name} holds keys other than `description` and `paths`")
+        records = table.get("paths", [])
+        if not isinstance(records, list):
+            raise ManifestError(f"{name}.paths must be a list of records")
+        manifest[name] = {"paths": [_require_record(r, {"path", "reason"}, f"{name}.paths")["path"] for r in records]}
+    if isinstance(raw.get("exceptions"), list):
+        for exception in raw["exceptions"]:
+            _require_record(exception, {"surface", "pattern", "reason"}, "exceptions")
+    return manifest
 
 
 def expand(path: str) -> str:
@@ -490,13 +544,13 @@ HOOK_DIRECTORIES = (
     "~/.codex/hooks/",
     "~/.copilot/hooks/",
     "~/.pi/agent/extensions/hooks/",
-    "~/.pi/agent/hooks/",
+    "~/.pi/agent/shared-hooks/",
     "<repo>/modules/home/ai/shared/hooks/",
     "<repo>/modules/home/ai/claude/hooks/",
     "<repo>/modules/home/ai/codex/hooks/",
     "<repo>/modules/home/ai/copilot/hooks/",
     "<repo>/modules/home/ai/pi/security/",
-    "<repo>/modules/home/ai/pi/hooks/",
+    "<repo>/modules/home/ai/pi/extensions/hooks/",
 )
 PERMISSION_FILES = (
     "~/.claude/settings.json",
@@ -610,8 +664,8 @@ def _validate_manifest_shape(manifest: dict, names: tuple[str, ...]) -> dict[str
     for exception in manifest["exceptions"]:
         if not isinstance(exception, dict) or exception.get("surface") not in EXCEPTION_SURFACES:
             raise TypeError("unknown exception surface")
-        if any(not isinstance(exception.get(key), str) or not exception[key] for key in ("pattern", "why")):
-            raise TypeError("exception pattern and why must be nonempty strings")
+        if any(not isinstance(exception.get(key), str) or not exception[key] for key in ("pattern", "reason")):
+            raise TypeError("exception pattern and reason must be nonempty strings")
     if any(not isinstance(path, str) for paths in entries.values() for path in paths):
         raise TypeError("path declarations must be strings")
     return entries

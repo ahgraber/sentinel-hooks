@@ -202,6 +202,80 @@ class TestChangedFileSet:
         assert "reject-target" in result.stderr
 
 
+BASELINE_PATH = HOOK_PATH.parent / "git-baseline.sh"
+SESSION = "turn-scope-session"
+
+
+def _start_turn(repo: Path) -> None:
+    """Record the turn-start snapshot the way UserPromptSubmit does."""
+    payload = {"hook_event_name": "UserPromptSubmit", "session_id": SESSION, "cwd": str(repo)}
+    subprocess.run(["bash", str(BASELINE_PATH), "init"], input=json.dumps(payload), text=True, check=True, timeout=60)
+
+
+def _end_turn(repo: Path) -> HookResult:
+    payload = {"hook_event_name": "Stop", "stop_hook_active": False, "session_id": SESSION, "cwd": str(repo)}
+    result = subprocess.run(
+        ["bash", str(HOOK_PATH)], input=json.dumps(payload), capture_output=True, text=True, check=False, timeout=120
+    )
+    return HookResult(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
+
+
+@requires_runner
+class TestTurnScope:
+    """With a turn-start snapshot, only the files the turn changed reach the runner."""
+
+    def test_a_file_changed_before_the_turn_is_not_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
+        (repo / "tracked.txt").write_text("changed before the turn\n")
+        _start_turn(repo)
+
+        _assert_silent(_end_turn(repo))
+
+    def test_a_file_changed_during_the_turn_is_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
+        _start_turn(repo)
+        (repo / "tracked.txt").write_text("changed during the turn\n")
+
+        result = _end_turn(repo)
+
+        assert result.exit_code == 2
+        assert "reject-target" in result.stderr
+
+    def test_a_file_edited_again_during_the_turn_is_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
+        (repo / "tracked.txt").write_text("changed before the turn\n")
+        _start_turn(repo)
+        (repo / "tracked.txt").write_text("changed again during the turn\n")
+
+        assert _end_turn(repo).exit_code == 2
+
+    def test_a_file_created_during_the_turn_is_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("untracked.txt"))
+        _start_turn(repo)
+        (repo / "untracked.txt").write_text("new\n")
+
+        assert _end_turn(repo).exit_code == 2
+
+    def test_a_turn_that_changes_nothing_runs_nothing(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
+        (repo / "tracked.txt").write_text("changed before the turn\n")
+        (repo / "untracked.txt").write_text("new before the turn\n")
+        _start_turn(repo)
+
+        _assert_silent(_end_turn(repo))
+
+    def test_the_real_index_is_unchanged(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", PASSING_CONFIG)
+        (repo / "untracked.txt").write_text("new\n")
+        _start_turn(repo)
+        _end_turn(repo)
+
+        status = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"], capture_output=True, text=True, check=True
+        ).stdout
+        assert "?? untracked.txt" in status
+
+
 @requires_runner
 class TestFailureContract:
     def test_failure_blocks_the_stop_and_explains_itself(self, tmp_path):

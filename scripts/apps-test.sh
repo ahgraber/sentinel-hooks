@@ -33,7 +33,7 @@ run_pi_suite() {
   echo "==> Testing pi"
   uv run --with pytest --with hypothesis pytest -q "${REPO_ROOT}/modules/home/ai/pi/tests"
   # Quoted so node expands the glob, which it matches against every test file.
-  node --test "${REPO_ROOT}/modules/home/ai/pi/hooks/*.test.mjs" "${REPO_ROOT}/modules/home/ai/pi/tests/*.test.mjs"
+  node --test "${REPO_ROOT}/modules/home/ai/pi/extensions/hooks/*.test.mjs" "${REPO_ROOT}/modules/home/ai/pi/tests/*.test.mjs"
 }
 
 main() {

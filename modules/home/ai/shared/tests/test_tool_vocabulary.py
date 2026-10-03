@@ -18,7 +18,7 @@ def test_vocabulary_declares_each_harness_mapping() -> None:
     with open(VOCABULARY, "rb") as handle:
         vocabulary = tomllib.load(handle)
 
-    assert set(vocabulary) == {"groups", "ask", "mappings", "passthrough"}
+    assert set(vocabulary) == {"groups", "ask", "mappings", "passthrough", "refused"}
     assert vocabulary["mappings"]["claude"] == {
         "Bash": "Bash",
         "Read": "Read",
@@ -62,13 +62,18 @@ def test_vocabulary_declares_each_harness_mapping() -> None:
         "edit": "Edit",
         "grep": "Read",
     }
-    assert vocabulary["passthrough"]["pi"] == [
+    assert [entry["tool"] for entry in vocabulary["passthrough"]["pi"]["tools"]] == [
         "find",
         "ls",
-        "mcp",
         "subagent",
         "intercom",
         "contact_supervisor",
+        "mcp__*",
+        "tool_search",
+        "codemode",
+        "subagent_wait",
+        "subagent_supervisor",
+        "structured_output",
     ]
 
 
@@ -88,6 +93,7 @@ def test_vocabulary_loader_exposes_groups_mappings_and_ask_support() -> None:
     assert vocabulary.is_passthrough("copilot", "mcp_context7_query-docs") is True
     assert vocabulary.is_passthrough("copilot", "edit_files") is False
     assert vocabulary.normalize("copilot", "edit_files") is None
+    assert "edit_files" in vocabulary.refused["copilot"]
 
 
 def test_hook_tool_sets_come_from_the_declaration() -> None:
@@ -139,8 +145,13 @@ novelTool = "NovelTool"
 [mappings.pi]
 novel = "NovelTool"
 
-[passthrough]
-pi = ["lookup"]
+[passthrough.pi]
+
+[[passthrough.pi.tools]]
+tool = "lookup"
+reason = "test"
+
+[refused]
 """
     )
     vocabulary = guarded_paths.load_tool_vocabulary(vocabulary_path)
@@ -158,6 +169,13 @@ pi = ["lookup"]
     assert hook_response.supports_ask("copilot", "NovelTool") is True
 
 
+def _records(table: str, harness: str, *tools: str, reason: str = "test") -> str:
+    """Render `[[<table>.<harness>.tools]]` records for a temporary vocabulary."""
+    return f"\n[{table}.{harness}]\n" + "".join(
+        f'\n[[{table}.{harness}.tools]]\ntool = "{tool}"\nreason = "{reason}"\n' for tool in tools
+    )
+
+
 _PASSTHROUGH_BASE = """\
 [groups]
 mutating = ["Write"]
@@ -173,7 +191,7 @@ create_file = "Write"
 def test_passthrough_tools_match_by_name_or_pattern(tmp_path) -> None:
     """Validates: a declared passthrough tool is known, and a pattern admits every name it matches."""
     path = tmp_path / "tool-vocabulary.toml"
-    path.write_text(_PASSTHROUGH_BASE + '\n[passthrough]\ncopilot = ["list_dir", "mcp_*"]\n')
+    path.write_text(_PASSTHROUGH_BASE + _records("passthrough", "copilot", "list_dir", "mcp_*") + "\n[refused]\n")
     vocabulary = guarded_paths.load_tool_vocabulary(path)
 
     assert vocabulary.is_passthrough("copilot", "list_dir") is True
@@ -184,17 +202,25 @@ def test_passthrough_tools_match_by_name_or_pattern(tmp_path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("passthrough", "message"),
+    ("tables", "message"),
     [
-        ('copilot = ["create_file"]', "covers mapped spellings: create_file"),
-        ('copilot = ["create_*"]', "covers mapped spellings: create_file"),
-        ('codex = ["shell"]', "names a harness with no mapping"),
+        (_records("passthrough", "copilot", "create_file"), "covers mapped spellings: create_file"),
+        (_records("passthrough", "copilot", "create_*"), "covers mapped spellings: create_file"),
+        (_records("passthrough", "codex", "shell"), "names a harness with no mapping"),
+        (_records("refused", "copilot", "create_file"), "covers mapped spellings: create_file"),
+        (
+            _records("passthrough", "copilot", "mcp_*") + _records("refused", "copilot", "mcp_server_tool"),
+            "names passthrough tools: mcp_server_tool",
+        ),
+        (_records("passthrough", "copilot", "list_dir", reason=" "), "nonempty `tool` and `reason`"),
     ],
 )
-def test_passthrough_entry_that_contradicts_the_mappings_is_refused(tmp_path, passthrough, message) -> None:
-    """Validates: a spelling cannot be both mapped and passthrough, so no adapter chooses between them."""
+def test_a_contradictory_or_unexplained_entry_is_refused(tmp_path, tables, message) -> None:
+    """Validates: a spelling sits in one table at most, and every record states its reason."""
     path = tmp_path / "tool-vocabulary.toml"
-    path.write_text(_PASSTHROUGH_BASE + f"\n[passthrough]\n{passthrough}\n")
+    passthrough = "" if "[passthrough." in tables else "\n[passthrough]\n"
+    refused = "" if "[refused." in tables else "\n[refused]\n"
+    path.write_text(_PASSTHROUGH_BASE + passthrough + refused + tables)
 
     with pytest.raises(guarded_paths.ToolVocabularyError, match=message):
         guarded_paths.load_tool_vocabulary(path)
@@ -225,7 +251,7 @@ def _private_tool_vocabulary(path: Path, canonical_tools: frozenset[str]) -> lis
 
 
 def test_shared_hooks_hold_no_private_tool_vocabulary() -> None:
-    """Validates: shared hook modules derive tool sets from the declaration."""
+    """Validates: shared hook modules and adapters derive tool sets from the declaration."""
     canonical_tools = frozenset(
         canonical for mapping in guarded_paths.TOOL_VOCABULARY.mappings.values() for canonical in mapping.values()
     )
@@ -235,6 +261,8 @@ def test_shared_hooks_hold_no_private_tool_vocabulary() -> None:
         HOOKS_DIR / "block-sensitive-paths.py",
         HOOKS_DIR / "block-destructive-ops.py",
         HOOKS_DIR / "hook_response.py",
+        HOOKS_DIR.parents[1] / "copilot" / "hooks" / "copilot-vscode-hook-adapter.py",
+        HOOKS_DIR.parents[1] / "pi" / "security" / "hook-dispatch.py",
     )
 
     findings = {path.name: names for path in consumers if (names := _private_tool_vocabulary(path, canonical_tools))}

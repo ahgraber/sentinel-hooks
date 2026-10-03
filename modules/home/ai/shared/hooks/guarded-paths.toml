@@ -1,82 +1,194 @@
 # Shared path policy. ~/ is the home; <repo>/ is any checkout containing the path.
 # A trailing / covers descendants. * matches within one component.
 
-# Reads proceed; writes and runs require approval unless a narrower class permits them.
 [guarded]
-paths = [
-  "~/.claude/",
-  "~/.codex/",
-  "~/.copilot/",
-  "~/.pi/agent/",
-  "~/Library/Application Support/Code/User/prompts/global.instructions.md",
-  "~/Library/Application Support/Code/User/prompts/shell.instructions.md",
-  "~/Library/Application Support/Code/User/settings.json",
-  "~/.config/Code/User/prompts/global.instructions.md",
-  "~/.config/Code/User/prompts/shell.instructions.md",
-  "~/.config/Code/User/settings.json",
-  "<repo>/users/*/home-manager/claude/settings.json",
-  "<repo>/users/*/home-manager/claude/settings.darwin.json",
-  "<repo>/users/*/home-manager/claude/settings.linux.json",
-  "<repo>/users/*/home-manager/claude/settings.user.json",
-  "<repo>/modules/home/ai/codex/rules/",
-  "<repo>/users/*/home-manager/codex/hooks.json",
-  "<repo>/users/*/home-manager/codex/config.toml",
-  "<repo>/users/*/home-manager/codex/config.darwin.toml",
-  "<repo>/users/*/home-manager/codex/config.linux.toml",
-  "<repo>/modules/home/ai/copilot/hooks/",
-  "<repo>/modules/home/ai/pi/security/",
-  "<repo>/modules/home/ai/pi/hooks/",
-  "<repo>/users/*/home-manager/pi/",
-  "<repo>/modules/home/apps/vscode/settings.json",
-  "<repo>/users/*/home-manager/vscode/settings.json",
-  "<repo>/modules/home/ai/claude/hooks/",
-  "<repo>/modules/home/ai/codex/hooks/",
-  "<repo>/modules/home/ai/shared/hooks/",
-  "<repo>/modules/home/ai/copilot/instructions/",
-  "~/.codex/*.config.toml",
-]
+description = "Reads proceed; writes and runs require approval unless a narrower class permits them."
 
-# Block reads, writes, and runs without an approval prompt.
+[[guarded.paths]]
+path = "~/.claude/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/.codex/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/.copilot/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/.pi/agent/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/Library/Application Support/Code/User/prompts/global.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/Library/Application Support/Code/User/prompts/shell.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/Library/Application Support/Code/User/settings.json"
+reason = "the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[guarded.paths]]
+path = "~/.config/Code/User/prompts/global.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/.config/Code/User/prompts/shell.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/.config/Code/User/settings.json"
+reason = "the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/claude/settings.json"
+reason = "the source of a user's Claude Code permissions, hooks, and sandbox"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/claude/settings.darwin.json"
+reason = "the source of a user's Claude Code permissions, hooks, and sandbox"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/claude/settings.linux.json"
+reason = "the source of a user's Claude Code permissions, hooks, and sandbox"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/claude/settings.user.json"
+reason = "the source of a user's Claude Code permissions, hooks, and sandbox"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/codex/rules/"
+reason = "the source of Codex's command rules"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/codex/hooks.json"
+reason = "the source of a user's Codex hook registration"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/codex/config.toml"
+reason = "the source of a user's Codex approval, sandbox, and reviewer policy"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/codex/config.darwin.toml"
+reason = "the source of a user's Codex approval, sandbox, and reviewer policy"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/codex/config.linux.toml"
+reason = "the source of a user's Codex approval, sandbox, and reviewer policy"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/copilot/hooks/"
+reason = "the source of the Copilot hook adapter"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/pi/security/"
+reason = "the source of Pi's hook registration and dispatcher"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/pi/extensions/hooks/"
+reason = "the source of Pi's hook runner"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/pi/"
+reason = "the source of a user's Pi settings and sandbox"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/apps/vscode/settings.json"
+reason = "the source of the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/vscode/settings.json"
+reason = "the source of the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/claude/hooks/"
+reason = "the source of the hooks only Claude Code runs"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/codex/hooks/"
+reason = "the source of the hooks only Codex runs"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/shared/hooks/"
+reason = "the source of the shared hooks, this manifest, and the tool vocabulary"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/copilot/instructions/"
+reason = "the source of Copilot's instructions"
+
+[[guarded.paths]]
+path = "~/.codex/*.config.toml"
+reason = "a Codex profile layer, which can widen what the base configuration narrows"
+
 [block]
-paths = [
-  "~/.claude.json",
-  "~/.claude/.credentials.json",
-  "~/.codex/auth.json",
-  "~/.pi/agent/auth.json",
-  "~/.config/mcp-secrets.env",
-]
+description = "Block reads, writes, and runs without an approval prompt."
 
-# Permit existing script runs; other operations retain the guarded default.
+[[block.paths]]
+path = "~/.claude.json"
+reason = "Claude Code's state file, which holds account state and OAuth material"
+
+[[block.paths]]
+path = "~/.claude/.credentials.json"
+reason = "Claude Code's stored credentials"
+
+[[block.paths]]
+path = "~/.codex/auth.json"
+reason = "Codex's stored credentials"
+
+[[block.paths]]
+path = "~/.pi/agent/auth.json"
+reason = "Pi's stored credentials"
+
+[[block.paths]]
+path = "~/.config/mcp-secrets.env"
+reason = "the API keys the MCP servers start with"
+
 [exec-through]
-paths = [
-  "~/.claude/skills/",
-  "~/.codex/skills/",
-  "~/.pi/agent/skills/",
-  "~/.agents/skills/",
-]
+description = "Permit existing script runs; other operations retain the guarded default."
 
-# Permit writes; runs retain the guarded default.
+[[exec-through.paths]]
+path = "~/.claude/skills/"
+reason = "a skills root; a skill's own helper scripts run without a prompt"
+
+[[exec-through.paths]]
+path = "~/.codex/skills/"
+reason = "a skills root; a skill's own helper scripts run without a prompt"
+
+[[exec-through.paths]]
+path = "~/.pi/agent/skills/"
+reason = "a skills root; a skill's own helper scripts run without a prompt"
+
+[[exec-through.paths]]
+path = "~/.agents/skills/"
+reason = "the target of the per-agent skills links, which a declaration does not follow"
+
 [write-through]
-paths = [
-  "~/.claude/projects/",
-]
+description = "Permit writes; runs retain the guarded default."
+
+[[write-through.paths]]
+path = "~/.claude/projects/"
+reason = "Claude Code's memory, which changes no enforcement"
 
 [[exceptions]]
 surface = "sensitive-path-name-heuristic"
 pattern = "<repo>/scripts/mcp-secrets.sh"
-why = "a tracked program named for the secret file it renders, holding none itself"
+reason = "a tracked program named for the secret file it renders, holding none itself"
 
 [[exceptions]]
 surface = "sensitive-path-nix-hook-wrapper"
 pattern = "<repo>/modules/home/ai/shared/hooks/block-secrets.py"
-why = "a Home Manager store symlink whose generated name and resolved source both identify this hook"
+reason = "a Home Manager store symlink whose generated name and resolved source both identify this hook"
 
 [[exceptions]]
 surface = "capability-coverage"
 pattern = "copilot:refuse-unlisted-tools.py"
-why = "the Copilot adapter refuses a tool the vocabulary does not list before any hook runs"
+reason = "the Copilot adapter refuses a tool the vocabulary does not list before any hook runs"
 
 [[exceptions]]
 surface = "capability-coverage"
 pattern = "pi:refuse-unlisted-tools.py"
-why = "Pi's dispatcher refuses a tool the vocabulary does not list before any hook runs"
+reason = "Pi's dispatcher refuses a tool the vocabulary does not list before any hook runs"

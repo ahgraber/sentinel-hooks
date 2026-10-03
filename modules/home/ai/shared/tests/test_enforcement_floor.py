@@ -27,7 +27,7 @@ def policy_world(tmp_path, monkeypatch):
         "~/.copilot/hooks/security-policy.json",
         "~/.pi/agent/settings.json",
         "~/.pi/agent/hooks.json",
-        "~/.pi/agent/hooks/hook-dispatch.py",
+        "~/.pi/agent/shared-hooks/hook-dispatch.py",
         "~/.pi/agent/extensions/hooks/extension.ts",
         "~/.config/Code/User/settings.json",
         "~/Library/Application Support/Code/User/settings.json",

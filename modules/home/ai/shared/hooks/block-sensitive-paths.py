@@ -26,14 +26,14 @@ from guarded_paths import (
     GuardedLocations,
     ManifestError,
     PathPolicy,
-    fragment,
     load_manifest,
     spellings,
 )
-from hook_response import Decision, invoking_agent, respond
+from hook_response import Decision, invoking_agent, respond, supports_ask
 import shell_words
 
 SENSITIVE_PATH_TOOLS = TOOL_VOCABULARY.group("sensitive-path")
+MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
 
 _EXPOSURE_RISK = (
     "Exposed credentials risk unauthorized access, account takeover, and data "
@@ -101,17 +101,11 @@ CRED_DIR_RE = re.compile(r"(?:^|[/\\])\.(?:ssh|aws|kube|gnupg|azure)(?:[/\\]|$)"
 
 # Apply exceptions only to the spelling that triggered the name heuristic; a
 # link must not borrow its target's exception.
-def _exception_alternation(manifest) -> str:
-    """Build the regex alternation matching any declared exception's trailing form."""
-    parts = [
-        re.escape(fragment(exception["pattern"])).replace("/", r"[/\\]")
-        for exception in manifest.get("exceptions", ())
-        if exception.get("surface") == "sensitive-path-name-heuristic"
-    ]
-    return "|".join(parts)
-
-
-_NAME_EXCEPTIONS = _exception_alternation(_MANIFEST)
+NAME_HEURISTIC_EXCEPTIONS = GuardedLocations(
+    exception["pattern"]
+    for exception in _MANIFEST.get("exceptions", ())
+    if exception.get("surface") == "sensitive-path-name-heuristic"
+)
 
 NIX_STORE = Path("/nix/store")
 NIX_HOOK_SOURCES = GuardedLocations(
@@ -135,12 +129,6 @@ def is_nix_hook_wrapper(path: str) -> bool:
     expected = "hm_" + re.sub(r"[^A-Za-z0-9+._?=]", "", target.name)
     return name.group(1) == expected
 
-
-NAME_HEURISTIC_EXCEPTION_RE = re.compile(
-    # `(?!)` never matches, so a manifest that declared none excuses none.
-    rf"(?:^|[/\\])(?:{_NAME_EXCEPTIONS})$" if _NAME_EXCEPTIONS else r"(?!)",
-    re.IGNORECASE,
-)
 
 ZERO_ACCESS_FILES_RE = re.compile(
     r"(?:^|[/\\])\.(?:bash_history|zsh_history|sh_history|node_repl_history|python_history)$",
@@ -171,7 +159,7 @@ def is_named_for_secrets(path: str) -> bool:
     return bool(
         NAME_PATTERN_RE.search(os.path.basename(path))
         and not NAME_HEURISTIC_EXEMPT_RE.search(path)
-        and not NAME_HEURISTIC_EXCEPTION_RE.search(path)
+        and not NAME_HEURISTIC_EXCEPTIONS.matches_hop(path)
         and not is_nix_hook_wrapper(path)
     )
 
@@ -392,15 +380,49 @@ def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
     return None
 
 
+_CALL = {"tool_name": "", "agent": None}
+
+
+def internal_error(exc: BaseException) -> NoReturn:
+    """Warn for a read or an unnamed tool; ask, or block where no prompt exists, for a mutation."""
+    # Reuse parsed state because recomputing the agent can repeat the failure.
+    agent, tool_name = _CALL["agent"], _CALL["tool_name"]
+    fault = f"{type(exc).__name__}: {exc}"
+    if tool_name not in MUTATING_TOOLS:
+        respond(
+            Decision.WARN,
+            f"block-sensitive-paths failed ({fault}). This call will proceed unchecked.",
+            agent=agent,
+        )
+    if supports_ask(agent, tool_name):
+        respond(
+            Decision.ASK,
+            f"block-sensitive-paths failed while checking this {tool_name} call ({fault}). "
+            "It cannot determine whether the call reaches a credential. Approve only after "
+            "verifying that it does not, and report the hook failure.",
+            agent=agent,
+            tool_name=tool_name,
+        )
+    respond(
+        Decision.BLOCK,
+        f"Blocked: block-sensitive-paths failed while checking this {tool_name} call ({fault}) "
+        "and cannot determine whether it reaches a credential. This agent cannot ask for "
+        "the required approval.",
+        agent=agent,
+    )
+
+
 def main() -> None:
     """Read the hook payload from stdin and respond to the tool call."""
     try:
         data = json.load(sys.stdin)
     except Exception:  # noqa: BLE001
-        # Fail open because a malformed payload does not identify the tool.
-        sys.exit(0)
+        # A payload that does not parse names no tool, so the read-only direction applies.
+        respond(Decision.WARN, "block-sensitive-paths could not parse the hook payload; this call was not checked.")
 
     tool_name = data.get("tool_name", "")
+    _CALL["tool_name"] = tool_name
+    _CALL["agent"] = invoking_agent(payload=data)
     tool_input = data.get("tool_input", {})
     cwd = data.get("cwd", "") or ""
 
@@ -440,5 +462,5 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:  # noqa: BLE001
-        sys.exit(0)
+    except Exception as exc:  # noqa: BLE001
+        internal_error(exc)

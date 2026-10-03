@@ -205,7 +205,9 @@ class TestNormalize:
 def _declared_paths() -> list[str]:
     """Every location the manifest declares, spelled as a tool call would supply it."""
     manifest = tomllib.loads((SHARED_HOOKS / "guarded-paths.toml").read_text())
-    declared = [path for table in manifest.values() if isinstance(table, dict) for path in table.get("paths", [])]
+    declared = [
+        entry["path"] for table in manifest.values() if isinstance(table, dict) for entry in table.get("paths", [])
+    ]
     declared += [entry["path"] for entry in manifest.get("exceptions", []) if "path" in entry]
     return sorted({path.replace("<repo>/", "").replace("*", "testuser") for path in declared})
 

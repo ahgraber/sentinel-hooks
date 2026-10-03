@@ -261,7 +261,7 @@ def test_construction_does_not_walk_carve_out_contents(policy_world, monkeypatch
 def test_unknown_exception_surface_is_a_manifest_failure(policy_world):
     home, repo, manifest = policy_world
     data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
-    data["exceptions"] = [{"surface": "misspelled-surface", "pattern": "~/file", "why": "test"}]
+    data["exceptions"] = [{"surface": "misspelled-surface", "pattern": "~/file", "reason": "test"}]
     with pytest.raises(guarded_paths.ManifestError, match="surface"):
         guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
 
@@ -271,7 +271,7 @@ def test_a_capability_coverage_exception_loads_and_changes_no_verdict(policy_wor
     home, repo, manifest = policy_world
     data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
     data["block"]["paths"] = ["~/file"]
-    data["exceptions"] = [{"surface": "capability-coverage", "pattern": "~/file", "why": "test"}]
+    data["exceptions"] = [{"surface": "capability-coverage", "pattern": "~/file", "reason": "test"}]
     policy = guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
     assert policy.verdict("~/file", "read") == "block"
 

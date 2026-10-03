@@ -66,11 +66,13 @@ SCRIPT_SUFFIXES = frozenset({".bash", ".cjs", ".js", ".mjs", ".pl", ".py", ".r",
 # A segment holding one of these says less about what it runs than its words do.
 OPAQUE_KINDS = frozenset({"unresolvable", "assignment", "redirection target"})
 
-# These programs can destroy a declared tree through its ancestor. `mv` destroys
-# all operands; `cp`, `install`, `ln`, and `truncate` replace only the last.
-DESTROYS_EVERY_OPERAND = frozenset({"mv", "rm", "rmdir", "shred", "unlink"})
-DESTROYS_LAST_OPERAND = frozenset({"cp", "install", "ln", "truncate"})
-DESTRUCTIVE = DESTROYS_EVERY_OPERAND | DESTROYS_LAST_OPERAND
+# Privilege wrappers, with the options that take a value.
+_PRIVILEGE_WRAPPERS = {"sudo": {"-u", "-g", "-U", "-h", "-p", "-C", "-D", "-r", "-t"}, "doas": {"-u", "-C"}}
+_GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
+_ACL_FLAG = re.compile(r"^[-+=]a\S*$")
+_FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
+_FIND_LEADING_OPTIONS = frozenset({"-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"})
+_UNZIP_INSPECTS = frozenset({"-l", "-t", "-v", "-Z", "-z", "-Z1"})
 
 # The classifier stops on the program or on the command's shape. Substituting a
 # program clears the first; the second stays whatever program runs.
@@ -177,8 +179,13 @@ def program_text(segment: list[Word]) -> list[str]:
     name = os.path.basename(words[0].value)
     if name == "trap":
         arguments = words[1:]
+        # `--` ends the options, so the body follows it.
+        if arguments and arguments[0].value == "--":
+            arguments = arguments[1:]
+            if not arguments or arguments[0].value == "-":
+                return []
         # `trap -p` lists handlers and `trap -` resets them; neither installs a body.
-        if not arguments or arguments[0].value.startswith("-"):
+        elif not arguments or arguments[0].value.startswith("-"):
             return []
         return [" ".join(word.value for word in arguments)]
     if name == "eval":
@@ -270,6 +277,10 @@ def read_only(segment: list[Word]) -> bool:
             continue
         if arg.value in whole or any(arg.value.startswith(f"{token}=") for token in whole):
             return False
+        # GNU utilities accept any unambiguous prefix of a long option.
+        stem = arg.value.split("=", 1)[0]
+        if len(stem) > 2 and stem.startswith("--") and any(token.startswith(stem) for token in whole):
+            return False
         if letters and not arg.value.startswith("--") and any(letter in arg.value[1:] for letter in letters):
             return False
     return True
@@ -287,21 +298,180 @@ def run_targets(segment: list[Word]) -> list[str]:
     return targets
 
 
-def destroyed_operands(segment: list[Word]) -> list[str]:
-    """Return the operands `segment` removes, renames, or replaces."""
-    # A leading assignment or redirection leaves the command word later in the
-    # segment; a path-qualified name picks which binary runs.
-    if not segment or segment[0].kind != "command":
+def _operands(args: list[Word]) -> list[str]:
+    return [arg.value for arg in args if arg.kind != "option"]
+
+
+def _option_value(args: list[Word], *names: str) -> str | None:
+    """Return the value given to the first of `names`, written separately or after `=`."""
+    for index, arg in enumerate(args):
+        for name in names:
+            if arg.value == name and index + 1 < len(args):
+                return args[index + 1].value
+            if name.startswith("--") and arg.value.startswith(name + "="):
+                return arg.value.split("=", 1)[1]
+    return None
+
+
+def _destination(args: list[Word]) -> list[str]:
+    """Return the destination of `cp`, `install`, or `ln`: the `-t` value, or the last operand."""
+    target = _option_value(args, "--target-directory")
+    if target:
+        return [target]
+    for index, arg in enumerate(args):
+        value = arg.value
+        if value.startswith("-") and not value.startswith("--") and "t" in value[1:]:
+            # `t` takes the rest of its cluster, or the next word when it ends the cluster.
+            rest = value[value.index("t", 1) + 1 :]
+            if rest:
+                return [rest]
+            if index + 1 < len(args):
+                return [args[index + 1].value]
+    return _operands(args)[-1:]
+
+
+def _after_mode(args: list[Word]) -> list[str]:
+    """Operands after the mode, owner, or flags; every operand after `--reference` or an ACL flag."""
+    values = [arg.value for arg in args]
+    if any(value.startswith("--reference") or _ACL_FLAG.match(value) for value in values):
+        return _operands(args)
+    return _operands(args)[1:]
+
+
+def _find_roots(args: list[Word], implicit: str | None) -> list[str]:
+    """Return the starting points of a `find` that deletes or runs a program."""
+    if not any(arg.value in _FIND_ACTIONS for arg in args):
         return []
-    name, *args = segment
-    if "/" in name.value or "\\" in name.value:
+    roots = []
+    for arg in args:
+        if not roots and arg.value in _FIND_LEADING_OPTIONS:
+            continue
+        if arg.value.startswith(("-", "(", "!")):
+            break
+        roots.append(arg.value)
+    return roots or ([implicit] if implicit else [])
+
+
+def _tar_extracts(args: list[Word]) -> bool:
+    for index, arg in enumerate(args):
+        value = arg.value
+        if value in {"--extract", "--get"}:
+            return True
+        if value.startswith("-") and not value.startswith("--") and "x" in value[1:]:
+            return True
+        if index == 0 and not value.startswith("-") and "x" in value:
+            return True
+    return False
+
+
+def _tar_target(args: list[Word], implicit: str | None) -> list[str]:
+    """Where an extracting `tar` writes."""
+    if not _tar_extracts(args):
         return []
-    operands = [arg.value for arg in args if arg.kind != "option"]
-    if name.value in DESTROYS_EVERY_OPERAND:
-        return operands
-    if name.value in DESTROYS_LAST_OPERAND:
-        return operands[-1:]
-    return []
+    directory = _option_value(args, "-C", "--directory") or implicit
+    return [directory] if directory else []
+
+
+def _unzip_target(args: list[Word], implicit: str | None) -> list[str]:
+    """Where `unzip` writes, unless it only lists or tests."""
+    if any(arg.value in _UNZIP_INSPECTS for arg in args):
+        return []
+    directory = _option_value(args, "-d") or implicit
+    return [directory] if directory else []
+
+
+def _git_targets(args: list[Word], cwd_known: bool) -> list[str]:
+    """Paths a git command reverts, removes, or detaches."""
+    base = _option_value(args, "-C")
+    index = 0
+    while index < len(args) and args[index].value.startswith("-"):
+        index += 2 if args[index].value in _GIT_VALUE_OPTIONS else 1
+    if index >= len(args):
+        return []
+    subcommand, rest = args[index].value, args[index + 1 :]
+    if subcommand == "stash":
+        if not rest or rest[0].value not in {"push", "save"}:
+            return []
+        rest = rest[1:]
+    elif subcommand == "worktree":
+        if not rest or rest[0].value != "remove":
+            return []
+        rest = rest[1:]
+    elif subcommand not in {"checkout", "restore", "rm", "clean"}:
+        return []
+    values = [arg.value for arg in rest]
+    if "--" in values:
+        targets = values[values.index("--") + 1 :]
+    elif cwd_known:
+        # A revision name resolves beneath the working directory and encloses nothing.
+        targets = _operands(rest)
+    else:
+        targets = []
+    return [os.path.join(base, target) if base and not os.path.isabs(target) else target for target in targets]
+
+
+def _strip_privilege(words: list[Word]) -> list[Word]:
+    while words and os.path.basename(words[0].value) in _PRIVILEGE_WRAPPERS:
+        value_options = _PRIVILEGE_WRAPPERS[os.path.basename(words.pop(0).value)]
+        while words and words[0].value.startswith("-"):
+            if words.pop(0).value in value_options and words:
+                words.pop(0)
+    return words
+
+
+def destroyed_operands(segment: list[Word], *, cwd_known: bool = True, directory: str | None = "") -> list[str]:
+    """Return the operands `segment` removes, renames, replaces, or changes the permissions of.
+
+    `directory` is where earlier `cd`s left the shell: `""` for none, `None` if unknown.
+    """
+    words = _strip_privilege([word for word in segment if word.kind != "redirection target"])
+    base = directory
+    if words and os.path.basename(words[0].value) == "env":
+        chdir = _option_value(words[1:], "-C", "--chdir")
+        if chdir is not None:
+            base = os.path.join(base or "", chdir) if base is not None else None
+    words = invocation(words)
+    if not words:
+        return []
+    name, args = os.path.basename(words[0].value), words[1:]
+    extract = _OPERAND_EXTRACTORS.get(name)
+    if extract is None:
+        return []
+    targets = extract(args, cwd_known, "." if base is not None else None)
+    return [os.path.join(base, target) if base and not os.path.isabs(target) else target for target in targets]
+
+
+def _directory_after(segment: list[Word], directory: str | None) -> str | None:
+    """Where the shell is after `segment`; `None` if the words do not say."""
+    words = invocation(list(segment))
+    if not words or os.path.basename(words[0].value) not in {"cd", "pushd", "popd"}:
+        return directory
+    name, args = os.path.basename(words[0].value), [word for word in words[1:] if word.value != "--"]
+    if name == "popd" or directory is None:
+        return None
+    if not args:
+        return None if name == "pushd" else "~"
+    target = args[0]
+    if target.value.startswith("-") or any(char in target.value for char in "$`{*?["):
+        return None
+    return os.path.join(directory, target.value)
+
+
+# Programs that can take a tree away, mapped to the operands they act on.
+# A program missing here passes on an ancestor.
+_OPERAND_EXTRACTORS = {
+    **dict.fromkeys(
+        ("mv", "rm", "rmdir", "shred", "unlink", "trash", "xattr", "setfacl"), lambda a, _c, _i: _operands(a)
+    ),
+    **dict.fromkeys(("cp", "install", "ln"), lambda a, _c, _i: _destination(a)),
+    **dict.fromkeys(("truncate", "ditto", "rsync"), lambda a, _c, _i: _operands(a)[-1:]),
+    **dict.fromkeys(("chmod", "chown", "chgrp", "chflags"), lambda a, _c, _i: _after_mode(a)),
+    "find": lambda a, _c, implicit: _find_roots(a, implicit),
+    **dict.fromkeys(("tar", "bsdtar", "gtar"), lambda a, _c, implicit: _tar_target(a, implicit)),
+    "unzip": lambda a, _c, implicit: _unzip_target(a, implicit),
+    "git": lambda a, cwd_known, _i: _git_targets(a, cwd_known),
+}
+DESTRUCTIVE = frozenset(_OPERAND_EXTRACTORS)
 
 
 @dataclass(frozen=True)
@@ -315,6 +485,8 @@ class SegmentReading:
     read_only: bool
     run_targets: tuple[str, ...]
     destroyed: tuple[str, ...]
+    # False after a `cd` the words do not resolve.
+    anchored: bool = True
 
 
 @dataclass(frozen=True)
@@ -381,6 +553,7 @@ def read(command: str, cwd: str | None = None) -> Reading:
         newline = "\n" in command or "\r" in command
         return Reading(command, (), (), "a newline" if newline else "unresolvable shell syntax")
     segments = []
+    directory: str | None = ""
     for index, words in enumerate(lexed):
         segments.append(
             SegmentReading(
@@ -390,7 +563,11 @@ def read(command: str, cwd: str | None = None) -> Reading:
                 builder=_builder(words, pipe_fed=index > 0 and lexed[index - 1].separator == "|"),
                 read_only=read_only(words),
                 run_targets=tuple(run_targets(words)),
-                destroyed=tuple(destroyed_operands(words)),
+                destroyed=tuple(destroyed_operands(words, cwd_known=cwd is not None, directory=directory)),
+                anchored=directory is not None,
             )
         )
+        # A `cd` in a pipeline runs in a subshell.
+        if words.separator != "|":
+            directory = _directory_after(words, directory)
     return Reading(command, tuple(segments), _piped_programs(segments), None)

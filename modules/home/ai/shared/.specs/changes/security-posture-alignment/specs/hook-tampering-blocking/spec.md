@@ -25,7 +25,7 @@ A refusal SHALL state what the gate refused, rather than which category the comm
 The gate matches the command; it does not receive the agent's intent.
 A refusal that reports "not a recognized read" therefore sends an agent that was writing to look for a read.
 
-An ask SHALL address the user alone.
+An ask SHALL address the user alone, except where an adapter may refuse it: there it also carries the instruction section, per `hook-interface` `ExplanationContract`.
 It SHALL name the specific file, state that the file is enforcement, and state what approving the mutation would permit.
 It SHALL NOT present the mutation as routine: the user is deciding whether a guardrail changes, and the explanation is what makes that decision an informed one.
 
@@ -271,24 +271,28 @@ The body can also drop a required option before passing the rest to the real pro
 
 Serves: the-declared-surface-is-what-is-protected
 
-The system SHALL gate an operation that removes, renames, or replaces a directory holding a declared location.
+The system SHALL gate an operation that removes, renames, or replaces a directory holding a declared location, or changes its permissions, owner, or attributes.
 
 A declaration names a directory and protects what is inside it.
 It does not protect the path to it, so `rm -rf modules/home/ai/pi` takes away the declared `modules/home/ai/pi/security/` while no word equals or falls inside any declaration.
 No other layer closes this: guarded paths are declared `ask` rather than `deny` so the prompt can reach the user, which means the permission layer permits the write by design.
 
-The gate covers removal, renaming, and replacement alone.
+The gate covers those operations alone.
 Reading, searching, and creating files beneath an ancestor are ordinary work and SHALL stay unprompted.
 Gating every command naming a prefix of a declaration reaches `modules/`, the home directory, and the repository root.
 
 A removal, a rename, or a replacement is a write under `guarded-path-declarations` `PrecedenceIsOneRule`; this gate reaches the ancestor that rule finds no declaration for.
 
 An ancestor carries no declaration fragment, so it is found by resolving the path rather than by matching text.
-A relative spelling resolves against the working directory the tool call supplies, and where none is supplied the word is unresolvable, per `path-matching` `TextMatchingIsForTextThatMayHoldNoPath`.
+A relative spelling resolves against the working directory the tool call supplies, moved by any earlier `cd` in the command.
+Where no directory is supplied, or a `cd` names one the hook cannot resolve, the word is unresolvable, per `path-matching` `TextMatchingIsForTextThatMayHoldNoPath`.
 The system SHALL refuse a removal, rename, or replacement of such a word, with the stop instruction, on every agent.
 It cannot be judged by its text: a `*` in a declaration matches almost any word, so judging its shape would refuse ordinary commands.
 It is not put to the user either, because the user has no more to place it by than the hook.
 The refusal SHALL say that an absolute path can be judged.
+
+The gate knows the operation from the program, so a program it does not list passes on an ancestor.
+So does a command assembled at run time, such as one `xargs` builds, and a branch switch, which changes every tracked file.
 
 #### Scenario: AnAncestorIsRemoved
 
@@ -299,6 +303,18 @@ The refusal SHALL say that an absolute path can be judged.
 #### Scenario: AnAncestorIsReplaced
 
 - **GIVEN** a command that renames a directory over such a directory, or copies over it
+- **WHEN** the command is intercepted
+- **THEN** the gate applies
+
+#### Scenario: AnAncestorsPermissionsChange
+
+- **GIVEN** a command that changes the mode, owner, or attributes of a directory holding a declared location
+- **WHEN** the command is intercepted
+- **THEN** the gate applies
+
+#### Scenario: AnAncestorIsReachedThroughACd
+
+- **GIVEN** a command that changes directory and then removes a relative path that resolves to a directory holding a declared location
 - **WHEN** the command is intercepted
 - **THEN** the gate applies
 

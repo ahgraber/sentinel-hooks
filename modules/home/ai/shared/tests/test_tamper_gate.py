@@ -256,6 +256,7 @@ NOT_READS = [
     f"bat {SKILL_FILE}",
     f"sort --compress-program=/tmp/helper {SKILL_FILE}",
     f"sort -o ~/.claude/skills/sdd-sync/SKILL.md {SKILL_FILE}",
+    f"sort --out=~/.claude/skills/sdd-sync/SKILL.md {SKILL_FILE}",
     "find ~/.claude/skills -name SKILL.md -delete",
     "find ~/.claude/skills -name SKILL.md -exec rm {} ;",
     f"cp /tmp/replacement.md {SKILL_FILE}",
@@ -382,6 +383,7 @@ INSTALLS_DEFERRED_CODE = [
     # `builtin` only chooses how the shell dispatches `trap`.
     f"builtin trap '/bin/echo banner' DEBUG; cat {SKILL_FILE}",
     f"builtin trap 'cp /tmp/replacement.md {SKILL_FILE}' DEBUG; cat {SKILL_FILE}",
+    f"trap -- 'cp /tmp/replacement.md {SKILL_FILE}' DEBUG; cat {SKILL_FILE}",
     # The body alone, without a read beside it.
     f"trap 'cp /tmp/replacement.md {SKILL_FILE}' DEBUG",
     f"trap 'rm -rf {SKILL_DIR}' DEBUG; cat /etc/hosts",
@@ -548,6 +550,39 @@ DESTROYS_AN_ANCESTOR = [
     f"ln -sfn /tmp/replacement {AI_MODULE}/pi",
     f"truncate -s 0 {AI_MODULE}/pi",
     f"ls && rm -rf {AI_MODULE}/pi",
+    f"chmod 000 {AI_MODULE}",
+    f"chmod -R o+w {AI_MODULE}",
+    f'chmod +a "everyone deny read" {AI_MODULE}',
+    f"chown -R nobody {AI_MODULE}",
+    f"chgrp -R staff {AI_MODULE}",
+    f"chflags -R uchg {AI_MODULE}",
+    f"xattr -rc {AI_MODULE}",
+    f"find {AI_MODULE} -delete",
+    f"find {AI_MODULE} -type f -exec rm {{}} +",
+    f"trash {AI_MODULE}/pi",
+    f"tar -xf /tmp/archive.tar -C {AI_MODULE}",
+    f"unzip -o /tmp/archive.zip -d {AI_MODULE}",
+    f"ditto /tmp/replacement {AI_MODULE}",
+    f"cp -r -t {AI_MODULE} /tmp/payload",
+    f"cp -r --target-directory={AI_MODULE} /tmp/payload",
+    f"cp -rt{AI_MODULE} /tmp/payload",
+    f"rsync -a --delete /tmp/replacement/ {AI_MODULE}",
+    f"git checkout HEAD~5 -- {AI_MODULE}",
+    f"git restore --source=HEAD~5 {AI_MODULE}",
+    f"git stash push -- {AI_MODULE}",
+    f"git -C {REPO_ROOT} checkout HEAD~5 -- modules",
+    "git checkout HEAD~5 -- .",
+    "tar -xf /tmp/archive.tar",
+    f"sudo rm -rf {AI_MODULE}",
+    f"env FOO=1 rm -rf {AI_MODULE}",
+    f"/bin/rm -rf {AI_MODULE}",
+    f"FOO=1 rm -rf {AI_MODULE}",
+    f"env -C {REPO_ROOT} rm -rf modules",
+    "cd modules/home && rm -rf ai",
+    "cd modules && cd home && rm -rf ai",
+    "cd modules/home/ai && tar -xf /tmp/archive.tar",
+    "cd modules/home/ai/shared && rm -rf hooks",
+    "cd /tmp | rm -rf modules",
     # `~/.claude/` is a declaration in its own right, so removing it is judged
     # by the naming rule and carries that rule's wording. The home above it is
     # an ancestor and nothing else.
@@ -563,6 +598,17 @@ LEAVES_THE_ANCESTOR_ALONE = [
     f"rm -rf {REPO_ROOT}/modules-old",
     "rm -rf /tmp/scratch",
     f"grep -rn 'rm -rf' {AI_MODULE}",
+    f"chmod +x {AI_MODULE}/pi/new.sh",
+    f"find {AI_MODULE} -name '*.nix'",
+    "tar -tf /tmp/archive.tar",
+    "tar -xf /tmp/archive.tar -C /tmp/out",
+    "cd /tmp && tar -xf /tmp/archive.tar",
+    "cd /tmp && rm -rf ai",
+    "unzip -l /tmp/archive.zip",
+    "git checkout main",
+    "git status",
+    "git stash",
+    f"git restore {AI_MODULE}/pi/default.nix",
 ]
 
 
@@ -572,7 +618,7 @@ class TestDestructiveOperationsOnAnAncestor:
     @pytest.mark.parametrize("command", DESTROYS_AN_ANCESTOR, ids=lambda c: c[:44])
     def test_taking_the_ancestor_away_asks_under_claude(self, command: str) -> None:
         reason = ask_reason(bash(command, CLAUDE))
-        assert "remove, rename, or replace" in reason
+        assert "remove, rename, replace, or change the permissions of" in reason
 
     @pytest.mark.parametrize("command", DESTROYS_AN_ANCESTOR, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
@@ -605,6 +651,9 @@ NAMES_EVERY_DESTROYED_OPERAND_ABSOLUTELY = [
     "rm -rf ~/scratch",
     "cat modules/home/ai/pi/default.nix",
     "cp modules/home/ai/pi/default.nix /tmp/copy.nix",
+    "chmod 755 /tmp/scratch",
+    "chown nobody:staff /tmp/scratch",
+    "git checkout HEAD~5",
 ]
 
 
@@ -628,9 +677,14 @@ class TestRelativeOperandWithoutAWorkingDirectory:
         assert result.stdout == ""
         assert result.stderr == ""
 
+    @pytest.mark.parametrize("command", ["cd - && rm -rf ai", "cd $TARGET && rm -rf ai", "popd && rm -rf ai"])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
+    def test_a_cd_the_hook_cannot_place_leaves_the_operand_unanchored(self, command: str, agent: str) -> None:
+        assert_refused(bash(command, agent), "an earlier `cd` names one")
+
     def test_an_absolute_ancestor_is_still_judged(self) -> None:
         reason = ask_reason(bash(f"rm -rf {AI_MODULE}/pi", CLAUDE, cwd=None))
-        assert "remove, rename, or replace" in reason
+        assert "remove, rename, replace, or change the permissions of" in reason
 
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
     def test_a_supplied_directory_decides_where_it_leads(self, agent: str) -> None:
@@ -697,7 +751,7 @@ class TestAgentHomeReadsProceed:
         assert_allowed(bash(command, CLAUDE))
 
 
-PI_SOURCE = "modules/home/ai/pi/hooks/extension.ts"
+PI_SOURCE = "modules/home/ai/pi/extensions/hooks/extension.ts"
 HOOK_SOURCE = "modules/home/ai/shared/hooks/block-secrets.py"
 
 MODULE_TREE_READS = [
@@ -923,13 +977,18 @@ class TestExecThroughCarveOut:
 SPLIT_CLASSES = """\
 exceptions = []
 [guarded]
-paths = ["~/.example/readable/", "~/.example/runnable/"]
+[[guarded.paths]]
+path = "~/.example/readable/"
+reason = "test"
+[[guarded.paths]]
+path = "~/.example/runnable/"
+reason = "test"
 [block]
-paths = []
 [exec-through]
-paths = ["~/.example/runnable/"]
+[[exec-through.paths]]
+path = "~/.example/runnable/"
+reason = "test"
 [write-through]
-paths = []
 """
 
 
