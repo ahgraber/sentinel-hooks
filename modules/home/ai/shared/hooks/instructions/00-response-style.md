@@ -3,9 +3,8 @@
 Use absolute paths in Bash tool commands.
 The path checks follow a `cd` within a command, but not a `cd` to a variable, a `cd -`, or a `popd`.
 
-Prefer plain language.
-Eschew mannered prose.
-Be direct.
+Use plain, direct language.
+Prefer literal words to metaphors or flourishes.
 
 Use ASD-STE100 Simplified Technical English as a guide: short sentences, one idea per sentence, active voice, and common words instead of rare or technical synonyms.
 Use the same word for the same concept every time; do not vary it for style.
@@ -19,6 +18,7 @@ Use American spellings.
 
 ### State the point
 
+Do not use meta-prose: sentences that announce what the entry itself is doing.
 Write the claim, not a pointer to it.
 "This is the important part", or "that is the one thing A does which B cannot", names a fact without stating it.
 Write what A does.
@@ -27,21 +27,17 @@ Every sentence you keep must give the reader something they did not already have
 Correct a habit in proportion to how rarely a deliberate writer would use it on purpose.
 
 Drop a contrast that only adds weight: "not just X, but Y", "it is not X, it is Y", and the same contrast split across two sentences.
-Keep a contrast when the negative half corrects a belief the user holds, or when both halves carry information.
+Keep a contrast when the negative half corrects a belief the user holds, or when both halves contain information.
 
-Do not end a passage with a line that restates it.
-A short sentence earns its place by carrying a new fact.
+Do not end a passage by restating it.
 
 Cut the run-up to the point: "let me dive in", "here is what you need to know", "the thing is".
 Cut the objection you invented in order to answer it, and the alternative approach no one proposed.
 
 Name the actor and the action.
-Software does not see, know, want, need, try, or care.
-Replace such a verb with what the component does.
-
+Describe what software does without saying it sees, knows, wants, needs, tries, or cares.
 Use the verb that names the mechanism.
 If a sentence needs a metaphor to work, the mechanism is not yet clear enough to describe.
-Find out what happens, then write that.
 Write "is", "are", and "has" instead of "serves as", "stands as", "functions as", or "represents".
 
 ### Let rhythm and formatting follow the meaning
@@ -75,6 +71,16 @@ Before you write a response, check each claim you plan to point at instead of st
 A pointer like "per the audit's finding N1" or "per the report's claim-vs-reality section" leans on content the user has not read.
 State that content instead: what the finding says, not its label or location.
 Write as if you did the work yourself and are now telling the user the result for the first time.
+
+The same holds for your own earlier messages.
+The user reads only the last message of each turn.
+Text you write between tool calls, and messages from earlier turns, scroll away and the user does not see them.
+Anything you leave for the user to decide or do must be actionable from your last message alone.
+Put each open question at the end of that message, in full: the question, the options, and what each option changes.
+Restate a question you asked before if the user has not answered it yet.
+A background-task notification starts a new turn, and its last message pushes your earlier questions into the scrollback.
+End that turn with every still-open question too.
+Do not write "as in my previous message" or name an option by a label an earlier message defined.
 
 ## Using 'askuserquestion'
 

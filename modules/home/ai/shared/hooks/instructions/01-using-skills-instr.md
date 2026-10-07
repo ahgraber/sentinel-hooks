@@ -1,4 +1,4 @@
-# Using Skills
+# Using skills
 
 Skills are on-demand specialized workflows available via the `Skill` tool.
 They are curated to guide _how_ you approach specific task types.
@@ -6,34 +6,31 @@ They are curated to guide _how_ you approach specific task types.
 This scanning behavior also doubles as a live signal source: how well a skill's description matches real requests reveals whether its trigger conditions are well calibrated (too broad, too narrow, or ambiguous).
 Skill authors use that signal, via the `optimize-skills` skill, to refine descriptions over time.
 
-## The Rule
+## The rule
 
-**Before any response or action, scan the available skills list and invoke every plausibly relevant skill.**
+**Before starting a task, scan the available skills and invoke each skill whose stated use cases match the task.**
 
-- If the skill's description shares any concept with the task at hand — the user's current request understood in the full context of the conversation — it is plausibly relevant.
-- Err toward invoking — the cost is near zero; skipping means missing established workflows.
-  If unsure whether a skill applies, invoke it; do not require a perfect match.
+- Consider the user's request in context.
+  A shared word alone does not make a skill relevant.
+- If the match is uncertain and the skill might materially improve the work (given its description), read the skill and decide.
 - Re-invoke skills when the task changes within a conversation.
   Prior invocations apply to prior tasks.
-- Skill invocation must precede all other cognitive work on the task.
-  Read the request to understand what is being asked, then immediately scan and invoke — before analyzing the problem, forming an approach, or reasoning about implementation.
-- Do not explore the codebase, gather context, or ask clarifying questions before checking skills — skills often define how to do those things.
+- Scan available skills and relevant skill content before exploring the codebase, forming a plan, or asking clarifying questions because a skill may provide guidance on those steps.
 
-### Limited Exceptions
+### Limited exceptions
 
 Skip skill invocation ONLY when:
 
 1. You are a narrowly scoped subagent whose launch instructions already define your workflow.
-2. No skill is plausibly relevant after a good-faith scan.
-   List the 2-3 closest candidate skills and why each was ruled out.
+2. No skill matches the task after a good-faith scan.
 3. The skill mechanism is unavailable or broken.
-   State this explicitly.
+   If that prevents required work, tell the user.
 
 ## Execution
 
 1. Read the user request.
-2. Scan the skills list (shown in system reminders) for matching names and trigger descriptions.
-3. Invoke every plausibly relevant skill via `Skill` (e.g., `skill: "commit-message"`).
+2. Scan the skills list for matching use cases and trigger descriptions.
+3. Invoke each matching skill via `Skill` (e.g., `skill: "commit-message"`).
    The full content loads into context.
 4. Follow the loaded instructions.
    If the skill includes a checklist, create TodoWrite items for each step.
@@ -51,13 +48,15 @@ The same applies to `awk`, `perl`, and any other command that can write as well 
 
 ## Instruction priority
 
-1. Highest priority: **User instructions** always take precedence, even over skill guidance.
-2. **Skills** guide default behavior via specialized knowledge.
-3. **Public directives** (CLAUDE.md, AGENTS.md) and system defaults are lowest priority.
+Follow the harness's instruction hierarchy.
+System and developer instructions take precedence over user instructions.
+Explicit user instructions override skill guidance.
+A skill does not override a higher-priority instruction.
 
-User instructions define _what_ to do.
-Skills define _how_.
-A user instruction is not permission to skip the skill check — always scan and invoke first, then follow user intent within the loaded workflow.
+User instructions define the task.
+Skills guide how to carry it out.
+Scan for applicable skills even when the user asks for direct execution.
+Follow the user's explicit request when it conflicts with skill guidance and no higher-priority instruction prevents it.
 Inferred urgency or simplicity is not an explicit user instruction; only skip skill steps when the user directly and specifically tells you to skip them.
 
 ## Ordering
