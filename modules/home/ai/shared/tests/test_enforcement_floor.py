@@ -4,9 +4,8 @@ import io
 import json
 
 from guarded_paths import PathPolicy
-from hermetic import build_world, install_policy, load_hook
+from hermetic import build_world, install_policy, load_hook, policy
 import pytest
-from test_path_class_policy import policy
 
 
 @pytest.fixture

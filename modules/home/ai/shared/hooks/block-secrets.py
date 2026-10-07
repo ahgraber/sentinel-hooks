@@ -16,7 +16,7 @@ import apply_patch
 from guarded_paths import NAME_HEURISTIC_EXEMPT_RE, TOOL_VOCABULARY, GuardedLocations
 from hook_response import UNKNOWN, Decision, invoking_agent, respond, supports_ask
 
-SENSITIVE_TOOLS = TOOL_VOCABULARY.group("mutating")
+MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
 
 _AGENT = UNKNOWN
 
@@ -355,7 +355,7 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001
-        if _current_tool_name in SENSITIVE_TOOLS:
+        if _current_tool_name in MUTATING_TOOLS:
             respond(
                 Decision.BLOCK,
                 "Blocked: block-secrets failed while checking a call that could expose credentials.",

@@ -306,11 +306,39 @@ def _word_candidates(word):
             yield attached
 
 
+def _input_redirect(word) -> bool:
+    return bool(word.redirection and "<" in word.redirection and "<<" not in word.redirection)
+
+
+def _reads(segment) -> bool:
+    """Return whether a segment runs a reading program or reads a redirected file."""
+    return any(os.path.basename(word.value) in READ_CMDS or _input_redirect(word) for word in segment)
+
+
+def _may_name_a_file(word, segment, reads: bool) -> bool:
+    """Return whether the name heuristic applies to `word`.
+
+    It applies to a word that denotes a file. An unresolvable word in a reading
+    segment may denote one when it is written as a path, when the shell builds
+    it from an expansion, when the segment's directory is unknown, or when it
+    names an entry in a directory the segment may run in; a search pattern
+    after a `cd` names none.
+    """
+    if word.kind in {"path candidate", "redirection target"}:
+        return True
+    if word.kind != "unresolvable" or not reads:
+        return False
+    if "/" in word.value or word.value.startswith("~"):
+        return True
+    if segment.directories is None or any(char in word.value for char in "$`{*?["):
+        return True
+    return any(os.path.isabs(path) and os.path.lexists(path) for path in word.paths)
+
+
 def _read_words(segment):
     reads = any(os.path.basename(word.value) in READ_CMDS for word in segment)
     for word in segment:
-        input_redirect = word.redirection and "<" in word.redirection and "<<" not in word.redirection
-        if reads or input_redirect or word.kind == "unresolvable":
+        if reads or _input_redirect(word) or word.kind == "unresolvable":
             yield word
 
 
@@ -330,26 +358,6 @@ def _write_words(segment):
         yield from words[2:]
 
 
-def extract_bash_read_targets(command: str, cwd: str | None = None) -> list[str]:
-    """Return the paths a Bash command reads."""
-    return [
-        path
-        for segment in shell_words.lex(command, cwd) or []
-        for word in _read_words(segment)
-        for path in _word_candidates(word)
-    ]
-
-
-def extract_bash_write_targets(command: str, cwd: str | None = None) -> list[str]:
-    """Return the paths a Bash command writes."""
-    return [
-        path
-        for segment in shell_words.lex(command, cwd) or []
-        for word in _write_words(segment)
-        for path in _word_candidates(word)
-    ]
-
-
 def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
     """Check strong rules on read words and name rules on paths only."""
     segments = shell_words.lex(command, cwd)
@@ -358,6 +366,7 @@ def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
         # on the literal text; the tamper hook gates unresolved guarded text.
         return command if is_zero_access(command) else None
     for segment in segments:
+        reads = _reads(segment)
         for word in _write_words(segment):
             for path in _word_candidates(word):
                 if should_block(path, cwd):
@@ -372,10 +381,7 @@ def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
                 forms = spellings(resolved)
                 if any(is_zero_access(form) for form in forms):
                     return path
-                if word.kind in {
-                    "path candidate",
-                    "redirection target",
-                } and any(is_named_for_secrets(form) for form in forms):
+                if _may_name_a_file(word, segment, reads) and any(is_named_for_secrets(form) for form in forms):
                     return path
     return None
 

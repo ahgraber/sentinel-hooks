@@ -35,11 +35,13 @@ The shell builds the words a program receives after the hook has counted them, a
 `{--output=/tmp/out,FILE}`, `${UNSET:---output=/tmp/out} FILE`, `?-output=/tmp/out FILE`, and `$'\x2d\x2doutput=/tmp/out' FILE` each reach a program as the option the same command is gated for when it is written plainly.
 
 Quoting is resolved, ANSI-C quoting included, because what a quoted word stands for follows from the text.
-Tilde is resolved against the home the hook runs under.
-Pathname expansion is resolved against the directory the tool call supplies, and a pattern matching nothing stays as written, which is what bash does with `nullglob` unset.
+Tilde is resolved against the home the hook runs under, and so is `$HOME` or `${HOME}` at the start of a word, which bash expands to the same directory.
+After a command assigns `HOME`, both are unresolvable, because the home the hook runs under is no longer the one bash uses.
+Pathname expansion is resolved against each directory the segment may run in, and a pattern matching nothing stays as written, which is what bash does with `nullglob` unset.
+A word whose glob character sits inside quotes or after a backslash is unresolvable, because that character is literal to bash and a pattern to the matcher; quotes around other text in the word do not stop its expansion.
 
-Substitution and brace expansion are refused.
-A substitution names a value the hook's environment does not hold; a brace expansion states its words in text the hook would have to build for itself.
+Every other substitution, and brace expansion, are refused.
+Such a substitution names a value the hook's environment does not hold; a brace expansion states its words in text the hook would have to build for itself.
 A refusal is a report, not a verdict: the hook that receives an unresolvable word decides what that means for the command.
 
 An unresolvable word SHALL still yield the paths written inside it.
@@ -65,7 +67,31 @@ Otherwise the syntax that stops a word being judged also stops it being seen.
 
 #### Scenario: ASubstitutionIsUnresolvable
 
-- **GIVEN** a word carrying a parameter or command substitution
+- **GIVEN** a word carrying a parameter or command substitution other than a leading `$HOME`
+- **WHEN** the command is lexed
+- **THEN** the word is reported as unresolvable
+
+#### Scenario: ALeadingHomeReferenceIsResolved
+
+- **GIVEN** a word beginning with `$HOME` or `${HOME}`, quoted or not
+- **WHEN** the command is lexed
+- **THEN** the word is handed on with the home the hook runs under in its place, as a leading `~` is
+
+#### Scenario: AHomeAssignmentUnresolvesLaterHomeWords
+
+- **GIVEN** `HOME=/x; cat ~/a` or `export HOME=/x; cat $HOME/a`
+- **WHEN** the command is lexed
+- **THEN** the home-relative word is reported as unresolvable
+
+#### Scenario: APatternQuotedOnlyAroundLiteralTextIsResolved
+
+- **GIVEN** `cat ~/.config/"mcp"*`
+- **WHEN** the command is lexed
+- **THEN** the pattern is resolved by what it matches, as `cat ~/.config/mcp*` is
+
+#### Scenario: AQuotedGlobCharacterIsUnresolvable
+
+- **GIVEN** `cat '*'x*`
 - **WHEN** the command is lexed
 - **THEN** the word is reported as unresolvable
 
@@ -183,6 +209,119 @@ A newline separates commands the same way `;` does, and a backslash before it do
 - **GIVEN** a command carrying a newline
 - **WHEN** it is lexed
 - **THEN** the command is reported as unresolvable as a whole
+
+### Requirement: EachSegmentCarriesTheDirectoriesItMayRunIn
+
+Every segment SHALL carry each directory bash may run it in, or report that a directory change before it does not resolve, and a relative path in a segment after a directory change SHALL yield its spelling in each of those directories.
+
+Serves: one-lexer
+
+A relative path names a file only together with the directory it is read in.
+A hook that judged it against the directory the tool call supplies would judge a different file from the one the program opens.
+
+A `cd` or `pushd` moves the segments after it when it stands in command position: first after any assignments, after an unquoted reserved word such as `!`, `{`, `if`, `then`, or `do`, or after `builtin` or `command` and their own leading options, unless those include `-v` or `-V`.
+A quoted reserved word is an ordinary command name, so `'if' cd sub` runs a program called `if`.
+Options end at `--`, so `cd -- -L` enters a directory named `-L`.
+Elsewhere the word is an operand: `grep cd file` and `env cd sub` do not move the shell.
+
+The change may succeed or fail, and the list operators decide which segments run after each.
+A segment joined by `&&` runs only after a success, one joined by `||` only after a failure, `!` swaps the two, and one joined by `;` runs either way.
+Each directory the shell may be in is carried with what is known of the status that left it there, so `cd A || cd B && cat a` runs in `A` or `B`, and `cd sub; cat a` in either the starting directory or `sub`.
+A change inside a subshell, a pipeline, or a background job does not outlast it, and a redirection after a subshell opens its target where the subshell started.
+A `cd` given an empty operand fails.
+
+A segment reports that its directory does not resolve after any of these:
+
+- a change to a substituted operand, `cd -`, `cd -P`, `popd`, or a `pushd` with no operand or a stack position
+- a command word that is a substitution, and `eval`, `source`, `.`, `trap`, or `shopt`, which run text these words do not show or change how `cd` resolves
+- a function definition, since calling it later may run any `cd` in its body
+- a `cd` inside a `for`, `select`, `while`, or `until` loop, which may run any number of times
+- an assignment to `HOME` or `CDPATH`, which change where `cd` goes
+- a bare relative operand while the hook's own environment sets `CDPATH`
+
+#### Scenario: AChangeThenAPath
+
+- **GIVEN** `cd sub && cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in `sub`, and its relative word yields `sub/a` among its paths
+
+#### Scenario: AChangeThatMayFail
+
+- **GIVEN** `cd sub; cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment may run in the starting directory or in `sub`, and its relative word yields both spellings
+
+#### Scenario: AChangeOnlyAFailureFollows
+
+- **GIVEN** `cd sub || cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in the starting directory
+
+#### Scenario: AMixedChain
+
+- **GIVEN** `cd A || cd B && cat a`
+- **WHEN** it is lexed
+- **THEN** the last segment may run in `A` or in `B`
+
+#### Scenario: AChangeBehindAReservedWord
+
+- **GIVEN** `if cd sub; then cat a; fi`, `! cd sub || cat a`, or `command -p cd sub && cat a`
+- **WHEN** it is lexed
+- **THEN** the segment holding `cat a` may run in `sub`
+
+#### Scenario: ACdWordThatIsAnOperand
+
+- **GIVEN** `grep cd file && cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in the starting directory
+
+#### Scenario: ATextRunningBuiltin
+
+- **GIVEN** `eval cd sub; cat a`, `source env.sh; cat a`, or `f() { cd sub; }; f; cat a`
+- **WHEN** it is lexed
+- **THEN** the segment holding `cat a` reports that its directory does not resolve
+
+#### Scenario: AChangeInsideALoop
+
+- **GIVEN** `for i in 1 2; do cd sub; done; cat a`
+- **WHEN** it is lexed
+- **THEN** the segment holding `cat a` reports that its directory does not resolve
+
+#### Scenario: AQuotedReservedWord
+
+- **GIVEN** `'if' cd sub && cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in the starting directory
+
+#### Scenario: AnOperandAfterTheEndOfOptions
+
+- **GIVEN** `cd -- -L && cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in `-L`
+
+#### Scenario: ARedirectionAfterASubshell
+
+- **GIVEN** `(cd sub && true) > out`
+- **WHEN** it is lexed
+- **THEN** the redirection target `out` is judged in the starting directory
+
+#### Scenario: AChangeInsideASubshell
+
+- **GIVEN** `(cd sub); cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in the starting directory
+
+#### Scenario: AChangeInAPipeline
+
+- **GIVEN** `cd sub | cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment runs in the starting directory
+
+#### Scenario: AnUnresolvedChange
+
+- **GIVEN** `cd $DIR && cat a`
+- **WHEN** it is lexed
+- **THEN** the second segment reports that its directory does not resolve, and its relative word is unresolvable
 
 ### Requirement: LexingIsTotal
 

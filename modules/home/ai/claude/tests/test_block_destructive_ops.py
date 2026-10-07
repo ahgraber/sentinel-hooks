@@ -39,12 +39,6 @@ mode = "block"
 case_insensitive = true
 
 [[rules]]
-pattern = "["
-description = "Invalid regular expression"
-reason = "This rule must be skipped"
-mode = "block"
-
-[[rules]]
 pattern = 'synthetic-danger\s+-force'
 description = "Synthetic multi-word"
 reason = "Blocked by the multi-word test rule"
@@ -135,15 +129,50 @@ def test_ask_rule_returns_claude_confirmation(hook_path: Path) -> None:
     assert "Confirm the test rule" in output["permissionDecisionReason"]
 
 
-def test_case_insensitive_rules_match_and_invalid_regexes_are_skipped(
-    hook_path: Path,
-) -> None:
+def test_case_insensitive_rules_match(hook_path: Path) -> None:
     assert run_hook(hook_path, "CASE-SENSITIVE-SOURCE").returncode == 2
-    assert run_hook(hook_path, "[").returncode == 0
 
 
-def test_missing_rules_fail_open(tmp_path: Path) -> None:
-    assert run_hook(install_hook(tmp_path), "synthetic-block").returncode == 0
+def assert_asks_naming(result: subprocess.CompletedProcess[str], fault: str) -> None:
+    assert result.returncode == 0
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "ask"
+    assert fault in output["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("command", ["synthetic-block", "safe command"])
+def test_missing_rules_ask_naming_the_file(tmp_path: Path, command: str) -> None:
+    assert_asks_naming(run_hook(install_hook(tmp_path), command), RULES_NAME)
+
+
+@pytest.mark.parametrize("command", ["synthetic-block", "safe command"])
+def test_unparsable_rules_ask_naming_the_file(tmp_path: Path, command: str) -> None:
+    hook_path = install_hook(tmp_path)
+    (tmp_path / RULES_NAME).write_text(RULES + "\n[[rules]\n")
+
+    assert_asks_naming(run_hook(hook_path, command), RULES_NAME)
+
+
+INVALID_RULES = {
+    "unknown mode": 'pattern = "invalid-rule"\ndescription = "Unknown mode"\nreason = "r"\nmode = "deny"\n',
+    "missing reason": 'pattern = "invalid-rule"\ndescription = "Missing reason"\nmode = "block"\n',
+    "uncompilable pattern": 'pattern = "invalid-rule["\ndescription = "Bad pattern"\nreason = "r"\nmode = "block"\n',
+}
+
+
+@pytest.mark.parametrize("invalid", INVALID_RULES.values(), ids=INVALID_RULES.keys())
+@pytest.mark.parametrize("command", ["synthetic-block", "safe command"])
+def test_an_invalid_rule_asks_on_every_call_naming_the_rule(tmp_path: Path, invalid: str, command: str) -> None:
+    hook_path = install_hook(tmp_path)
+    (tmp_path / RULES_NAME).write_text(RULES + "\n[[rules]]\n" + invalid)
+
+    assert_asks_naming(run_hook(hook_path, command), "invalid-rule")
+
+
+def test_the_shipped_rules_are_all_valid() -> None:
+    hook = _load_hook_module()
+
+    assert hook.load_rules(HOOKS_DIR / RULES_NAME)
 
 
 def test_malformed_hook_input_fails_closed(hook_path: Path) -> None:

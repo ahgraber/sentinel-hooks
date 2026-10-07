@@ -14,11 +14,10 @@ import subprocess
 import sys
 
 from guarded_paths import ManifestError, load_manifest
-from hermetic import load_hook
+from hermetic import HOOKS_DIR, dump_manifest, load_hook
 import pytest
 import tomllib
 
-HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 MANIFEST = HOOKS_DIR / "guarded-paths.toml"
 
 _ACCEPTED_PREFIXES = ("~/", "<repo>/")
@@ -111,7 +110,7 @@ class TestTemporaryManifestCopy:
         original = load_manifest(MANIFEST)
         original["block"]["paths"].append("~/.example/new-credential.json")
         copy = tmp_path / "guarded-paths.toml"
-        copy.write_text(_dump_minimal_toml(original))
+        copy.write_text(dump_manifest(original))
         # A copy that does not parse would make every assertion below pass for
         # the wrong reason: the hook reports the load failure and guards nothing.
         tomllib.loads(copy.read_text())
@@ -140,7 +139,7 @@ class TestReadAndExecAreSeparateClasses:
         original = load_manifest(MANIFEST)
         original["guarded"]["paths"].append("~/.example/readable/")
         copy = tmp_path / "guarded-paths.toml"
-        copy.write_text(_dump_minimal_toml(original))
+        copy.write_text(dump_manifest(original))
         tomllib.loads(copy.read_text())
         return copy
 
@@ -155,27 +154,6 @@ class TestReadAndExecAreSeparateClasses:
         policy = hook.load_policy(readable_only)
         assert policy.error is None
         assert policy.verdict("~/.example/readable/helper.sh", "run") == "guarded"
-
-
-def _quote(value: str) -> str:
-    """A TOML basic string. An exception's `why` is prose and carries quotes."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
-    return f'"{escaped}"'
-
-
-def _dump_minimal_toml(data: dict) -> str:
-    """Serialize a loaded manifest back to its record form. No stdlib TOML writer exists."""
-    lines = []
-    for section, value in data.items():
-        if section == "exceptions":
-            for table in value:
-                lines.append("[[exceptions]]")
-                lines.extend(f"{key} = {_quote(val)}" for key, val in table.items())
-            continue
-        lines.append(f"[{section}]")
-        for path in value["paths"]:
-            lines += [f"[[{section}.paths]]", f"path = {_quote(path)}", 'reason = "test"']
-    return "\n".join(lines) + "\n"
 
 
 class TestManifestLoadFailure:
@@ -203,7 +181,7 @@ class TestManifestLoadFailure:
         else:
             data = load_manifest(manifest)
             del data["block"]
-            manifest.write_text(_dump_minimal_toml(data))
+            manifest.write_text(dump_manifest(data))
         result = subprocess.run(
             [sys.executable, str(hooks_copy / "block-hook-tampering.py")],
             input=json.dumps(
@@ -245,7 +223,7 @@ class TestManifestLoadFailure:
         manifest = hooks_copy / "guarded-paths.toml"
         data = load_manifest(manifest)
         del data["exceptions"]
-        manifest.write_text(_dump_minimal_toml(data))
+        manifest.write_text(dump_manifest(data))
         result = self._run(
             hooks_copy,
             "block-sensitive-paths",

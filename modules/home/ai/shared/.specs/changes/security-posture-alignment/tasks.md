@@ -397,6 +397,10 @@ The requirements in `agent-configuration-floor`, and `ConfigurationSurfacesCover
 - [x] Run the assessment once against the current configurations and commit the record as this change's evidence for the four requirements; a finding becomes a task here, not a waiver.
   `.specs/assessments/2026-09-27.md`, run by an agent given only the recipe; its unclear points were fixed in the recipe.
 - [x] Update `modules/home/ai/shared/AGENTS.md`: the conformance tests no longer check the other surfaces against the manifest; the assessment does, and the Layout and Rules sections say so.
+- [x] Add `RegisteredHooksLieInTheEnforcementFloor` to `agent-configuration-floor`, and a step to the assessment recipe that compares the directory of every registered hook, and the repository directory its deployed link resolves to, with `HOOK_DIRECTORIES`.
+  The user asked for it on 2026-10-06, while `guarded-path-classes` still defers a rule that discovers hook directories, so a directory left out of the list is reported rather than silently outside the floor.
+  Checked by hand the same day: every registered hook sits in `~/.claude/hooks/`, `~/.codex/hooks/`, `~/.copilot/hooks/`, or `~/.pi/agent/shared-hooks/`, and their links resolve to `claude/hooks/`, `copilot/hooks/`, `pi/security/`, and `shared/hooks/`; all eight are listed.
+  The next full assessment records it.
 
 ### Findings from the 2026-09-27 assessment
 
@@ -477,15 +481,66 @@ No spec pins either file's shape, so the change is to the files, their loaders, 
 - [x] Record the end-of-turn selection limits: a file staged in a repository with no commits and then deleted, and a filename holding a newline.
 - [x] Correct the wording the run found overstated: `GateResponse` for an Ask an adapter may refuse, the Pi passthrough route, the model-compliance scenarios, the runner-availability condition in `RunsAtEndOfTurn`, and three stale statements in `design.md`.
 
+## Refuse a pattern file that does not validate
+
+- [x] Add a test over the shipped `block-destructive-ops-patterns.toml` that every rule has a pattern, `description`, `reason`, and a `mode` of `block` or `ask`, and that every pattern compiles.
+- [x] Make `block-destructive-ops.py` validate the whole pattern file before judging, and reach `Ask` naming the file or the invalid rule when the file is missing, unreadable, unparsable, or holds an invalid rule; update its docstring, which says a missing file fails open — evidence for `ExternalPatternFile`.
+- [x] Add tests for `PatternFileMissing`, `PatternFileUnparsable`, and `RuleIsInvalid` (unknown mode, missing field, pattern that does not compile, each with a command that matches a valid rule and one that matches none), and for `UnusableFileWhereNoPromptCanBeShown` on Codex — evidence for `ExternalPatternFile` and `hook-interface` `CommandHookCannotLoadItsRules`.
+- [x] Update the tests that pin the fail-open on a missing or unreadable file.
+
 ## Organization
 
-- [ ] consider whether/how to expand property testing
+- [x] Consider whether and how to expand property testing.
+  Added two properties over the four Python hooks, run in one process with `HOME` pinned to a temporary home by `tests/hook_chain.py`.
+  `test_credential_read_properties.py` plants credentials holding a marker and fails when an allowed command prints one; its command catalog is kept apart from the hooks' reader list.
+  `test_agent_ordering_properties.py` holds that Codex, Copilot, and an unknown agent are never allowed more than Claude; it passed on its first run.
+  Running the metamorphic relations over every Bash hook was conditional on holes in the pattern-based hooks, and the read property found none there.
 
-- [ ] /simplify and /refactor audit; assess fragility/overspecifity
+- [x] Track a `cd` or `pushd` in `shell_words` rather than in `bash_commands`, so `block-sensitive-paths.py` judges a relative read against the directory the command entered.
+  The read property found `cd ~/.config && cat mcp-secrets.env` allowed.
+  Report every directory a segment may run in: after `cd X ||`, the segment runs in the old directory when the change fails, and a `cd` inside a subshell does not carry past it; `cd /absent || cat mcp-secrets.env` from `~/.config` must be judged in `~/.config`.
+  Correct the working-directory limit in `path-matching` `StatedLimits`, which says such a path is judged as unresolvable, and close the matching deferred item in `guarded-path-classes`.
+  Done: each `Segment` carries `directories`, and `bash_commands.read` reads them in place of its own tracker; a relative word after a change yields its spelling in each directory.
+  The tamper ancestor case `cd modules/home/ai/shared && rm -rf hooks` now reaches the direct check, so the ancestor list holds `cd modules/home/ai && rm -rf shared` and `cd /tmp; rm -rf modules` instead.
 
-- [ ] consider whether to define as uv python project with pyproject.toml
+- [x] Resolve `$HOME` and `${HOME}` in `shell_words` as it resolves `~`.
+  The read property found `cat "$HOME"/.config/*` allowed while `cat ~/.config/*` is refused.
+  Done for a leading reference, quoted or not, where the home path holds no glob or space character; `shell-lexing` `AWordTheShellRewritesIsResolvedOrRefused` states the exception.
 
-- standardize kebab vs snake case hook script names
+- [x] Hold the read property to the forms `BashReadBestEffort` leaves in scope: run every command on the block-class credentials, and leave the stated-limit forms out of the commands run on a credential only the name rules recognize.
+  Done: `grep -r` is out of the catalog until `recursive-credential-read-refusal` adds it back, and the stated-limit forms run only on the declared credentials.
+  Both properties passed on 2026-10-04.
+
+- [x] Record a recursive read as a `BashReadBestEffort` limit, with the block-class sandbox floor in `ConfigurationSurfacesCoverTheDeclarations` as its boundary.
+  That floor passed on every agent in the 2026-10-02 assessment, so no new floor requirement is added.
+  Refusing a recursive read rooted above a declared credential is its own change, `recursive-credential-read-refusal`.
+
+- [x] /simplify and /refactor audit; assess fragility/overspecifity Ran on 2026-10-05 in audit mode over the shared hooks, their tests, and the Copilot adapter; the ledger is `.simplify/ledger-2026-10-05-2343.md`, untracked.
+  The user approved four fixes, listed below, and declined consolidating the shell and Python normalizers and adding constructor checks to `Reading` and `Word`.
+  Moving `block-dangerous-bash.sh` into one rule engine and matching the lexer's spelling of a command is its own change, `single-command-rule-engine`.
+
+- [x] Correct the `_quote` docstring in `test_guarded_paths_manifest.py`, which names the exception field `why`; the field is `reason`.
+
+- [x] Delete `extract_bash_read_targets` and `extract_bash_write_targets` from `block-sensitive-paths.py`, which nothing calls.
+
+- [x] Rename `SENSITIVE_TOOLS` in `block-secrets.py` to `MUTATING_TOOLS`, the name the other hooks give the same group, and update the two assertions in `test_tool_vocabulary.py`.
+
+- [x] Move `policy()` from `test_path_class_policy.py`, and `_quote` and `_dump_minimal_toml` from `test_guarded_paths_manifest.py`, into a shared test support module, and import `HOOKS_DIR` from `hermetic`.
+  The helpers went into `hermetic.py`, which already builds the temporary worlds, rather than a new module.
+
+- [x] Stop `shell_words` cutting a relative path at a `/` into a root path.
+  An unresolvable word's evidence took a fragment from any `/`, so after `cd ..` the word `hooks/<name>` also named `/<name>`.
+  The name heuristic then refused a file in an exempt directory by the root spelling.
+  A fragment now starts only where a word or an operator ends; `test_a_relative_path_is_not_cut_at_a_slash_into_a_root_path` and `test_a_relative_path_after_a_cd_is_judged_where_it_points` cover it.
+
+- [x] Consider whether to make the hooks a uv Python project with a `pyproject.toml`.
+  The user chose a test-only project on 2026-10-05: `modules/home/ai/pyproject.toml` and its `uv.lock` pin pytest and hypothesis, and `just apps test` runs every suite from that lock with `--locked`.
+  The hooks stay standalone PEP 723 scripts, so a hook call does not check the lock or build `.venv`, and a project environment would sit in a guarded directory the agent sandboxes do not let the agents write.
+  The flake checks still take the test tools from nixpkgs, because the build sandbox cannot download the locked versions.
+
+- [x] Standardize the hook script names.
+  The user confirmed on 2026-10-05 the rule in `AGENTS.md`: a hook that runs is kebab-case, and a module that is imported is snake_case, without a leading underscore.
+  Every hook file already follows the rule, so no file is renamed.
 
 - [x] assess spec drift over implementation
 
@@ -500,14 +555,16 @@ A linked file that git ignores is absent from a worktree and fails evaluation: l
 
 - [x] Deploy Pi's shared hooks to `~/.pi/agent/shared-hooks/`.
   Pi 1.0 reads `~/.pi/agent/hooks/` as its retired hooks directory and stops at startup until a key is pressed; found by the first live Pi session.
-- [x] Apply the 2026-10-02 assessment's tool decisions to `tool-vocabulary.toml`: refuse Claude's `ArtifactComments`, `ArtifactData`, and `ArtifactCheck`; pass through Codex's namespaced agent and clock tools and its two async tools; pass through Pi 1.0's `mcp__*`, `mcpScript`, `tool_search`, `codemode`, and the pi-subagents tools.
+- [x] Apply the 2026-10-02 assessment's tool decisions to `tool-vocabulary.toml`: refuse Claude's `ArtifactComments`, `ArtifactData`, and `ArtifactCheck`; pass through Codex's namespaced agent and clock tools and its two async tools; pass through Pi 1.0's `mcp__*`, `tool_search`, `codemode`, and the pi-subagents tools.
+  `mcpScript` was passed through too, and left the vocabulary with `pi-mcp-adapter`, which registered it.
   Codex names a namespaced tool by joining namespace and name, so the bare `spawn_agent` never matched and a live Codex session was refused `collaborationspawn_agent`.
 - [x] Show live that a subagent's or a script's tool calls reach the hooks before passing their launcher through.
   2026-10-03: a Codex subagent's `python3 -c` was refused by the command validator; a Pi `codemode` script's `bash` call was refused by the same rule; a Pi `mcpScript` script's `bash` call returned `native_tool`.
 - [x] Enable Pi's `grep`, `find`, and `ls` with `defaultTools` in mithras's Pi settings, and pass Codex's `image_genimagegen` through.
 - [x] Move the hooks extension from `pi/hooks/` to `pi/extensions/hooks/`, so the source mirrors `~/.pi/agent/extensions/hooks/` and `hooks` no longer names three things.
 - [x] Drop `pi-mcp-adapter` for every user, so Pi's built-in MCP support sends each MCP call through the tool pipeline the hooks judge.
-  2026-10-03: `pi mcp list` showed all five servers connected under the built-in support.
+  2026-10-03: `/mcp` inside a Pi session showed all five servers connected, exposed through `codemode`, once a `-builtin:mcp` entry Pi had written into mithras's settings was removed.
+  `pi mcp list` is no evidence here: it always uses the built-in support, whatever the settings say.
 - [x] Check only the files a turn changed at end of turn: `git-baseline.sh init` records a working-tree snapshot, and `stop-precommit.sh` checks the files that differ from it, or every uncommitted file without one.
   A Pi turn that changed nothing had linted every uncommitted file in the worktree.
 - [x] Drop the Pi 0.x package install: Pi 1.0 installs the packages `settings.json` lists into `~/.pi/agent/npm`, so the wrapper's `NPM_CONFIG_PREFIX` and the `~/.pi/npm` activation install served nothing.

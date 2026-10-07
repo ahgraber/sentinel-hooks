@@ -1,7 +1,7 @@
 ## Response style
 
-Use absolute paths in Bash tool commands, especially after changing directories.
-The path checks do not track directory changes within a single command.
+Use absolute paths in Bash tool commands.
+The path checks follow a `cd` within a command, but not a `cd` to a variable, a `cd -`, or a `popd`.
 
 Prefer plain language.
 Eschew mannered prose.

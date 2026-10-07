@@ -123,7 +123,12 @@ def test_class_outcomes(world, monkeypatch, capsys, tool, target, expected):
     ("command", "blocked"),
     [
         ("rg secret .", False),
-        ("cat ${VALUE:-secret}", False),
+        # A reading program may open whatever an unresolvable word becomes.
+        ("cat ${VALUE:-secret}", True),
+        ("echo ${VALUE:-secret}", False),
+        ("cd $DIR && cat secret", True),
+        # After a known `cd`, a word that names no entry there is a pattern, as before one.
+        ("cd /tmp && rg secret .", False),
         ("cat id_rsa", True),
         ("cat ./secret", True),
         ("cat $(cat .env)", True),
@@ -136,6 +141,40 @@ def test_sensitive_words_use_their_kinds(tmp_path, command, blocked):
     hook = load_hook("block-sensitive-paths")
 
     assert bool(hook.bash_blocked_target(command, str(tmp_path))) is blocked
+
+
+def test_a_word_written_as_a_path_after_a_cd_is_judged_as_a_file(tmp_path):
+    hook = load_hook("block-sensitive-paths")
+    (tmp_path / "sub").mkdir()
+
+    assert hook.bash_blocked_target("cd sub && cat ./secret-absent", str(tmp_path))
+
+
+def test_a_parent_reached_through_a_link_after_a_cd_is_judged_where_the_link_points(tmp_path):
+    hook = load_hook("block-sensitive-paths")
+    (tmp_path / "store/nested").mkdir(parents=True)
+    (tmp_path / "store/secret.txt").touch()
+    (tmp_path / "repo").mkdir()
+    (tmp_path / "repo/link").symlink_to(tmp_path / "store/nested")
+
+    assert hook.bash_blocked_target("cd link && cat ../secret.txt", str(tmp_path / "repo"))
+
+
+def test_a_relative_path_after_a_cd_is_judged_where_it_points(tmp_path):
+    hook = load_hook("block-sensitive-paths")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules/secret").touch()
+    (tmp_path / "sub").mkdir()
+
+    assert hook.bash_blocked_target("cd .. && cat node_modules/secret", str(tmp_path / "sub")) is None
+
+
+def test_a_word_naming_an_entry_after_a_known_cd_is_judged_as_a_file(tmp_path):
+    hook = load_hook("block-sensitive-paths")
+    (tmp_path / "keys").mkdir()
+    (tmp_path / "keys/secret").touch()
+
+    assert hook.bash_blocked_target("cd keys && cat secret", str(tmp_path))
 
 
 def test_bare_heuristic_word_depends_on_existence(tmp_path):

@@ -95,7 +95,8 @@ Groups run in build-dependency order: the pending change is revised first so the
 - [x] Replace `_lex_tokens`, `_decode_ansi_c`, `_candidate_paths`, and `expand_glob_candidates` in `block-sensitive-paths.py` with `shell_words.lex`; judge every word of a read segment by the strong rules, an unresolvable word by the paths it holds, and an input-redirection target regardless of the command word.
 - [x] Apply `NAME_PATTERN_RE` to path candidates and redirection targets, as the updated sensitive-path spec requires.
 - [x] Add to `sensitive-path-cases.json`: a search pattern carrying a heuristic word that names no entry proceeds; the same bare word refuses once an entry exists; a word with a separator refuses whether or not the file exists; a quoted and an ANSI-C quoted zero-access path refuse; a zero-access path inside an unresolvable word refuses; a bare `id_rsa` refuses with no such file — evidence for `BlockBashReadFromZeroAccessPath`.
-- [ ] Run the verdict tables against the Pi port to confirm the added cases are inert to it or match.
+- [x] Run the verdict tables against the Pi port to confirm the added cases are inert to it or match.
+  Superseded: `security-posture-alignment` deleted the port, and the tables now judge Pi's hook runner.
 
 ## session-tool-checks
 
@@ -115,7 +116,8 @@ Existing edits remain unverified until the replacement.
 Pi's new class and lexer behavior is temporarily excepted until the shared-hook migration, as recorded in `design.md` under Verification Overrides.
 Report affected shared-table cases as divergences; do not silently exclude them or claim parity.
 
-- [ ] Update `pi/security/manifest.ts` to read `guarded`, `block`, `exec-through`, and `write-through`, and derive `GUARDED_FILES`, `CREDENTIAL_FILES`, and the instruction-layer shape `guarded-paths.ts` consumes from them, with `LOCATION_ONLY` empty.
+- [x] Update `pi/security/manifest.ts` to read `guarded`, `block`, `exec-through`, and `write-through`, and derive `GUARDED_FILES`, `CREDENTIAL_FILES`, and the instruction-layer shape `guarded-paths.ts` consumes from them, with `LOCATION_ONLY` empty.
+  Superseded: `manifest.ts` was deleted with the port, and Pi reads the manifest through the shared hooks.
 - [x] Unhook the Pi suite until the migration lands: remove `pi-security-validator-tests` from `outputs.checks` in `flake.nix` and `_test-pi` from `_test-all` in `justfiles/apps.just`, leaving `just apps test pi` runnable by name.
   The suite cannot run in this tree: the Pi migration WIP imports `shell-quote`, which neither the check derivation nor the test layout supplies, so the reader update is committed unverified and is judged when the migration replaces the port.
 
@@ -202,11 +204,13 @@ Finding dispositions are in `.verify/feedback-resolution.md`; the original verif
   Codex: 49 passed.
   Copilot: 34 passed.
   Claude: 562 passed, two expected failures.
-- [ ] Run `nix build .#checks.<system>.shared-hook-tests` and `just nix check`.
+- [x] Run `nix build .#checks.<system>.shared-hook-tests` and `just nix check`.
+  `shared-hook-tests` and `pi-hook-tests` built on 2026-10-03; `just nix check` was not run.
   The Pi check is no longer in `outputs.checks`, so `just nix check` covers the shared hooks and the repository contracts alone until the migration lands.
 - [x] Run `prek run --files` over every changed path.
   Scoped checks passed on 2026-09-16, excluding paused Pi files and unrelated user changes.
-- [ ] Run `sdd-verify` for this change and for `security-posture-alignment`.
+- [x] Run `sdd-verify` for this change and for `security-posture-alignment`.
+  Run on 2026-10-01 and 2026-10-03; each finding was fixed.
   Both MODIFIED completeness checks pass.
   The failure-mode specs agree with the implementation after the user's 2026-09-16 edits.
   Contract and coverage review remain pending.
@@ -290,23 +294,34 @@ Merging them would make one of the two hooks wrong.
 
 ## Deferred and closing
 
-- [ ] Deferred: a generic rule for discovering hook directories that joins the enforcement floor without a code-held list or a repository-specific glob, so onboarding an agent does not mean editing `HOOK_DIRECTORIES`.
+- [x] Deferred: a generic rule for discovering hook directories that joins the enforcement floor without a code-held list or a repository-specific glob, so onboarding an agent does not mean editing `HOOK_DIRECTORIES`.
+  Closed as deferred on 2026-10-06: no rule is known that finds hook directories without depending on this repository's layout.
+  The configuration assessment reports a registered hook whose directory the list leaves out (`security-posture-alignment` `RegisteredHooksLieInTheEnforcementFloor`), so a forgotten entry is found.
 
-- [ ] Deferred: directory-change tracking in the lexer, as `DirectoryChangeTrackingIsDeferred` designs it.
+- [x] Deferred: directory-change tracking in the lexer, as `DirectoryChangeTrackingIsDeferred` designs it.
+  Taken up in `security-posture-alignment` on 2026-10-04; `shell-lexing` `EachSegmentCarriesTheDirectoriesItMayRunIn` states the rule, and `DirectoryChangeTrackingIsDeferred` records where it differs from the design.
   Reactivate when the absolute-path instruction proves to cost more prompts than the rule would cost to hold.
 
-- [ ] Closing: reevaluate whether floor conformance should broaden back over the guarded class.
+- [x] Closing: reevaluate whether floor conformance should broaden back over the guarded class.
   Expected to be hard: the harness sandboxes differ in what they can express, the harness hooks differ in whether they can ask, and the shared hooks differ in what they support, so a single floor statement has no single surface to check.
+  Closed as no on 2026-10-06, after a read-only measurement of each agent's own layer; `design.md` `FloorConformanceCoversTheBlockClass` records the findings and the reason.
 
-- [ ] Closing: evaluate adopting `shell_words` in `block-destructive-ops.py` and `block-secrets.py`, each of which matches patterns over the command text and would gain the same brace and ANSI-C resolution.
+- [x] Closing: evaluate adopting `shell_words` in `block-destructive-ops.py` and `block-secrets.py`, each of which matches patterns over the command text and would gain the same brace and ANSI-C resolution.
+  Evaluated on 2026-10-05.
+  `block-destructive-ops.py` allows `\r\m -r <dir>` and `$'\x72m' -r <dir>`, which the lexer resolves, so it adopts the lexer in `single-command-rule-engine`.
+  `block-secrets.py` does not: its checks are about network destinations, credential stores, and literal secrets in the text, which the lexer does not judge.
+  The lexer leaves brace expansions unresolved, so that gain does not exist.
 
 - [ ] Closing: evaluate splitting the manifest into a global policy file and a user file, `guarded-paths.policy.toml` and `guarded-paths.local.toml`, so the default stance ships with the module and a user file carries only their additions and grants.
   Raised by the user on 2026-09-17 while deciding how the enforcement floor is known.
   The floor question is settled separately: the floor is derived, not declared, so this split is about authoring ergonomics and upgrade behavior rather than about protection.
 
-- [ ] Closing: the Pi migration in `security-posture-alignment` replaces the Pi reader updated here; note there that `manifest.ts` is deleted with the rest of the port.
+- [x] Closing: the Pi migration in `security-posture-alignment` replaces the Pi reader updated here; note there that `manifest.ts` is deleted with the rest of the port.
+  Recorded there: its tool-vocabulary task states that `manifest.ts` is deleted with the port.
 
-- [ ] Closing: spike a Rust port of the hooks as one binary, and decide it from a measurement taken then rather than from this one.
+- [x] Closing: spike a Rust port of the hooks as one binary, and decide it from a measurement taken then rather than from this one.
+  Out of scope: the user deferred the Rust port on 2026-10-05, so this change does not spike it.
+  The measurement below stays as the starting point for a later change.
   Measured here, warm, best of five: `block-dangerous-bash.sh` 150 ms, `block-sensitive-paths.py` 120 ms, `block-hook-tampering.py` 110 ms, `bash-command-validator.sh` 90 ms, `block-destructive-ops.py` 40 ms. Seven hooks run for one Bash tool call, so the roughly 50 ms of interpreter and import startup inside each Python hook is paid five to seven times, and the two shell hooks are the most expensive of the set.
   One binary removes that startup and subsumes the shell hooks, which a Python rewrite would not.
   `brush-parser` and `brush-core` supply word expansion, which `TheLexerIsWrittenRatherThanTakenFromAPackage` records as having no Python supplier.

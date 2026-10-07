@@ -24,8 +24,7 @@ The system SHALL block heredoc syntax (`<<`) so the agent can verify that zsh `B
 
 ### Requirement: RejectZshExpansionHazards
 
-The system SHALL block command text that is vulnerable to zsh history expansion,
-extended globbing, or unsafe wildcard expansion.
+The system SHALL block command text that is vulnerable to zsh history expansion, extended globbing, or unsafe wildcard expansion.
 
 #### Scenario: BangHistoryHazardBlocked
 
@@ -60,8 +59,7 @@ extended globbing, or unsafe wildcard expansion.
 
 ### Requirement: RejectRipgrepRecursiveFlag
 
-The system SHALL reject `r` in a ripgrep short-option bundle because ripgrep is recursive
-by default and interprets `-r` as `--replace`.
+The system SHALL reject `r` in a ripgrep short-option bundle because ripgrep is recursive by default and interprets `-r` as `--replace`.
 
 #### Scenario: RecursiveFlagBlockedInAnyBundlePosition
 
@@ -73,8 +71,7 @@ by default and interprets `-r` as `--replace`.
 
 The system SHALL redirect direct `python` or `python3` invocations to `uv run`.
 
-A direct invocation is one that appears at the start of a command or after a command separator
-(`; | & ( )`), optionally preceded by environment variable assignments.
+A direct invocation is one that appears at the start of a command or after a command separator (`; | & ( )`), optionally preceded by environment variable assignments.
 
 #### Scenario: DirectPythonRedirected
 
@@ -84,8 +81,7 @@ A direct invocation is one that appears at the start of a command or after a com
 
 ### Requirement: RedirectPipToUv
 
-The system SHALL redirect `pip install`, `pip uninstall`, `pip download`, and their `pip3`
-equivalents to `uv add` or `uv run --with`.
+The system SHALL redirect `pip install`, `pip uninstall`, `pip download`, and their `pip3` equivalents to `uv add` or `uv run --with`.
 
 #### Scenario: PipInstallRedirected
 
@@ -97,8 +93,7 @@ equivalents to `uv add` or `uv run --with`.
 
 The system SHALL redirect bare `pytest` and `py.test` invocations to `uv run pytest`.
 
-A bare invocation is one where `pytest` or `py.test` is not preceded by `uv run` and
-not embedded inside a longer word token.
+A bare invocation is one where `pytest` or `py.test` is not preceded by `uv run` and not embedded inside a longer word token.
 
 #### Scenario: BarePytestRedirected
 
@@ -140,8 +135,7 @@ The system SHALL redirect `pre-commit run` invocations to `prek run`.
 
 The system SHALL block `commit` when it is the Git subcommand and require use of the `git agent-commit` alias.
 
-`git agent-commit` is the designated alias for AI agents; it signs with the dedicated agent key
-(`~/.local/share/git-signing/agent-signing`) without requiring additional flags.
+`git agent-commit` is the designated alias for AI agents; it signs with the dedicated agent key (`~/.local/share/git-signing/agent-signing`) without requiring additional flags.
 
 #### Scenario: DirectGitCommitBlocked
 
@@ -180,8 +174,7 @@ The system SHALL report every matching validation issue in one response.
 
 ### Requirement: RuleRegistrationPattern
 
-The system SHALL define rules using a `rule` registration function that co-locates
-each pattern with its corresponding message as a single declaration.
+The system SHALL define rules using a `rule` registration function that co-locates each pattern with its corresponding message as a single declaration.
 
 ```bash
 rule() {
@@ -193,5 +186,4 @@ rule() {
 Each rule SHALL be declared as a single `rule 'pattern' 'message'` call.
 Parallel arrays populated by index are NOT permitted.
 
-This ensures that adding, removing, or reordering a rule is an atomic edit
-with no risk of index desynchronisation between patterns and messages.
+This ensures that adding, removing, or reordering a rule is an atomic edit with no risk of index desynchronisation between patterns and messages.

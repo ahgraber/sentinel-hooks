@@ -114,7 +114,7 @@ A checkout, a worktree, and a home directory need not share one volume, so a sin
 
 ### Requirement: StatedLimits
 
-> Previously: the limits did not record that a declaration does not follow links held inside the directory it names, and stated the working-directory limit as a fact rather than a deferred choice.
+> Previously: the limits did not record that a declaration does not follow links held inside the directory it names, and stated that a command changing directory and then naming a target relatively was not judged against the changed directory.
 
 The system SHALL NOT be represented as a boundary.
 
@@ -122,10 +122,12 @@ Serves: one-list-then-deltas
 
 The following defeat it and SHALL be recorded wherever the capability is described:
 
-- **Working-directory change within a single shell command.**
-  A command that changes directory and then names a target relatively is not judged against the changed directory.
-  Tracking the change is a design choice that has been made and deferred: a `cd` or `pushd` whose operand resolves would set the directory for the segments after it across `;` and `&&`, reverting after `||` or a subshell, and any other form would make later relative words unresolvable.
-  Until it is taken up, agents are instructed to name paths absolutely, and a relative path after a directory change is judged as an unresolvable word.
+- **A directory change the words do not resolve.**
+  `shell-lexing` `EachSegmentCarriesTheDirectoriesItMayRunIn` judges a relative path after a resolved `cd` or `pushd` in every directory the command may be in.
+  The forms that requirement lists as unresolved, among them a substituted operand, `cd -`, `cd -P`, `popd`, `eval`, `source`, and a function definition, leave no directory to judge against, so a relative path after one is an unresolvable word.
+  A `CDPATH` set in the agent's shell rather than in the hook's environment, and the `pushd` stack, are not visible to the hook.
+  `|&` is not read at all, so a command holding it is unresolvable as a whole.
+  Agents are instructed to name paths absolutely.
 - **Hard links.**
   A second name for the same file is indistinguishable by path.
 - **Links held inside a declared directory.**

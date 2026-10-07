@@ -101,7 +101,7 @@ def test_hook_tool_sets_come_from_the_declaration() -> None:
     vocabulary = guarded_paths.TOOL_VOCABULARY
 
     assert load_hook("block-hook-tampering").MUTATING_TOOLS is vocabulary.group("mutating")
-    assert load_hook("block-secrets").SENSITIVE_TOOLS is vocabulary.group("mutating")
+    assert load_hook("block-secrets").MUTATING_TOOLS is vocabulary.group("mutating")
     assert load_hook("block-sensitive-paths").SENSITIVE_PATH_TOOLS is vocabulary.group("sensitive-path")
     assert load_hook("block-destructive-ops").DESTRUCTIVE_OPS_TOOLS is vocabulary.group("destructive-ops")
 
@@ -163,7 +163,7 @@ reason = "test"
     assert vocabulary.normalize("copilot", "novelTool") == "NovelTool"
     assert vocabulary.normalize("pi", "novel") == "NovelTool"
     assert "NovelTool" in load_hook("block-hook-tampering").MUTATING_TOOLS
-    assert "NovelTool" in load_hook("block-secrets").SENSITIVE_TOOLS
+    assert "NovelTool" in load_hook("block-secrets").MUTATING_TOOLS
     assert "NovelTool" in load_hook("block-sensitive-paths").SENSITIVE_PATH_TOOLS
     assert "NovelTool" in load_hook("block-destructive-ops").DESTRUCTIVE_OPS_TOOLS
     assert hook_response.supports_ask("copilot", "NovelTool") is True

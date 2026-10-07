@@ -55,6 +55,42 @@ def build_world(tmp_path: Path, monkeypatch, hooks_relative: str = "hooks") -> t
     return home, repo, manifest
 
 
+def policy(world, guarded=(), block=(), run=(), write=()):
+    """A policy over `world` declaring the given paths in each class, with no exceptions."""
+    import guarded_paths  # importable only after conftest or load_hook puts the hooks directory on sys.path
+
+    home, repo, manifest = world
+    data = {
+        "guarded": {"paths": list(guarded)},
+        "block": {"paths": list(block)},
+        "exec-through": {"paths": list(run)},
+        "write-through": {"paths": list(write)},
+        "exceptions": [],
+    }
+    return guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
+
+
 def install_policy(monkeypatch, hook, policy) -> None:
     """Bind `policy` into the one global a hook reads for the manifest."""
     monkeypatch.setattr(hook, "POLICY", policy, raising=False)
+
+
+def _quote(value: str) -> str:
+    """A TOML basic string. An exception's `reason` is prose and may carry quotes."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
+    return f'"{escaped}"'
+
+
+def dump_manifest(data: dict) -> str:
+    """Serialize a loaded manifest back to its record form. No stdlib TOML writer exists."""
+    lines = []
+    for section, value in data.items():
+        if section == "exceptions":
+            for table in value:
+                lines.append("[[exceptions]]")
+                lines.extend(f"{key} = {_quote(val)}" for key, val in table.items())
+            continue
+        lines.append(f"[{section}]")
+        for path in value["paths"]:
+            lines += [f"[[{section}.paths]]", f"path = {_quote(path)}", 'reason = "test"']
+    return "\n".join(lines) + "\n"

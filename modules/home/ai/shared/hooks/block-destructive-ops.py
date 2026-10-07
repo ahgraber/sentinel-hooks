@@ -6,14 +6,15 @@
 """Block destructive Bash commands from PreToolUse hooks.
 
 Rules match raw and normalized command spellings. Unsupported asks block.
-Missing or unreadable rules fail open. Rules and sibling modules load from the
-hook's directory.
+A pattern file that is missing, unreadable, or holds an invalid rule asks on
+every call. Rules and sibling modules load from the hook's directory.
 """
 
 import json
 from pathlib import Path
 import re
 import sys
+from typing import NoReturn
 
 from guarded_paths import TOOL_VOCABULARY
 from hook_response import Decision, invoking_agent, respond, supports_ask
@@ -22,23 +23,59 @@ import tomllib
 DESTRUCTIVE_OPS_TOOLS = TOOL_VOCABULARY.group("destructive-ops")
 
 
-def load_rules() -> list[dict]:
-    """Return co-located rules from flat or nested TOML; return `[]` on error."""
-    patterns_file = Path(__file__).parent / "block-destructive-ops-patterns.toml"
+PATTERNS_FILE = Path(__file__).parent / "block-destructive-ops-patterns.toml"
+_REQUIRED_FIELDS = ("pattern", "description", "reason", "mode")
+_MODES = ("block", "ask")
+
+
+class RulesError(Exception):
+    """The pattern file cannot be used, so no command can be judged by it."""
+
+
+def _invalid(rule: object) -> str | None:
+    """Return why `rule` is unusable, or `None` when it is valid."""
+    if not isinstance(rule, dict):
+        return "it is not a table"
+    missing = [field for field in _REQUIRED_FIELDS if not rule.get(field)]
+    if missing:
+        return f"it has no {', '.join(missing)}"
+    if rule["mode"] not in _MODES:
+        return f"its mode {rule['mode']!r} is not one of {', '.join(_MODES)}"
+    try:
+        re.compile(rule["pattern"])
+    except (re.error, TypeError) as exc:
+        return f"its pattern does not compile ({exc})"
+    return None
+
+
+def load_rules(patterns_file: Path = PATTERNS_FILE) -> list[dict]:
+    """Return the rules from flat or nested TOML; raise `RulesError` unless every rule is valid.
+
+    A rule dropped without notice is a protection removed without notice, so one
+    invalid rule makes the whole file unusable.
+    """
     try:
         with open(patterns_file, "rb") as f:
             data = tomllib.load(f)
-    except Exception:  # noqa: BLE001
-        return []
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RulesError(f"{patterns_file.name} could not be read: {exc}") from exc
 
     if "rules" in data and isinstance(data["rules"], list):
-        return data["rules"]
+        rules = data["rules"]
+    else:
+        rules = [
+            rule
+            for section in data.values()
+            if isinstance(section, dict) and isinstance(section.get("rules"), list)
+            for rule in section["rules"]
+        ]
 
-    all_rules: list[dict] = []
-    for section in data.values():
-        if isinstance(section, dict) and "rules" in section:
-            all_rules.extend(section["rules"])
-    return all_rules
+    for index, rule in enumerate(rules, start=1):
+        fault = _invalid(rule)
+        if fault:
+            name = rule.get("pattern") or rule.get("description") if isinstance(rule, dict) else None
+            raise RulesError(f"rule {index} ({name!r}) in {patterns_file.name} is invalid: {fault}")
+    return rules
 
 
 _LINE_CONTINUATION = re.compile(r"\\\n")
@@ -94,53 +131,47 @@ def main() -> None:
 
     agent = invoking_agent(payload=data)
 
-    rules = load_rules()
-    if not rules:
-        sys.exit(0)
+    try:
+        rules = load_rules()
+    except RulesError as exc:
+        # The fault recurs on every call, so a refusal would stop all shell work.
+        _ask(
+            f"block-destructive-ops cannot judge this command: {exc}. "
+            "Every Bash call asks until the pattern file is fixed.",
+            agent,
+        )
 
     # A block match overrides asks. Preserve the first match within each mode.
     first_block: str | None = None
     first_ask: str | None = None
 
     for rule in rules:
-        pattern = rule.get("pattern", "")
-        if not pattern:
-            continue
-
         flags = re.IGNORECASE if rule.get("case_insensitive", False) else 0
-        try:
-            compiled = re.compile(pattern, flags)
-        except re.error:
-            continue
-
+        compiled = re.compile(rule["pattern"], flags)
         if not any(compiled.search(text) for text in candidates):
             continue
 
-        description = rule.get("description", "")
-        reason = rule.get("reason", "")
-        mode = rule.get("mode", "block")
-
-        explanation = description
-        if reason:
-            explanation += f"\n\n{reason}"
-
-        if mode == "block" and first_block is None:
+        explanation = f"{rule['description']}\n\n{rule['reason']}"
+        if rule["mode"] == "block" and first_block is None:
             first_block = explanation
-        elif mode == "ask" and first_ask is None:
+        elif rule["mode"] == "ask" and first_ask is None:
             first_ask = explanation
 
     if first_block is not None:
         respond(Decision.BLOCK, f"Blocked: {first_block}", agent=agent)
 
     if first_ask is not None:
-        if supports_ask(agent):
-            respond(Decision.ASK, first_ask, agent=agent)
-        first_ask += (
-            "\n\nThis agent cannot show a confirmation prompt, so this command is blocked instead of prompted."
-        )
-        respond(Decision.BLOCK, f"Blocked: {first_ask}", agent=agent)
+        _ask(first_ask, agent)
 
     sys.exit(0)
+
+
+def _ask(reason: str, agent: str) -> NoReturn:
+    """Ask, or block where the agent cannot show a prompt."""
+    if supports_ask(agent):
+        respond(Decision.ASK, reason, agent=agent)
+    reason += "\n\nThis agent cannot show a confirmation prompt, so this command is blocked instead of prompted."
+    respond(Decision.BLOCK, f"Blocked: {reason}", agent=agent)
 
 
 if __name__ == "__main__":

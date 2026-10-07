@@ -64,3 +64,30 @@ A declaration for a different surface MAY excuse a link by its verified target, 
 - **GIVEN** a link whose own name carries a term the heuristic recognizes
 - **WHEN** its target is covered by an exception declared for the name-heuristic surface
 - **THEN** the read is refused, because the spelling that triggered the heuristic is not the spelling the exception covers
+
+## MODIFIED Requirements
+
+### Requirement: BashReadBestEffort
+
+> Previously: the limits named a command word hidden behind a variable but not an operand, did not name a recursive read, and named the OS sandbox's literal-prefix denies as the boundary without naming the requirement that holds them.
+
+Serves: existing-guarantees-are-recorded
+
+Bash read blocking is fail-safe but not a boundary: some ways of reading a file need real shell evaluation that command-text parsing cannot do.
+
+The following are OUT OF SCOPE and SHALL NOT be relied upon:
+
+- Interpreters that open the file in code (`python -c`, `node -e`, `perl`, `ruby`)
+- Words hidden behind a variable, whether the command word (`c=cat; $c .env`) or the operand (`f=.env; cat "$f"`)
+- Wrappers whose child is a nested command string (`bash -c '...'`, `eval`, backticks) or where the secret and the reader land in different pipeline segments (`echo .env | xargs cat`)
+- Symlink indirection (`ln -s <secret> link`, then reading `link`)
+- A recursive read of a directory holding a secret (`grep -r x ~`, `rg --hidden x ~`, `tar -c ~`, `cp -r ~/.config dest`), which reaches the files beneath the directory without naming them
+
+For these, the boundary is the OS sandbox's denies, which `guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds to the block class on every agent, the network egress allowlist, and `block-secrets.py`.
+A secret only the name rules recognize, such as a `.env` file, has no declaration for that floor to cover, so on an agent whose sandbox does not deny it by name, these forms reach it.
+
+#### Scenario: RecursiveReadOfADeclaredCredential
+
+- **GIVEN** a directory holding a file the block class declares
+- **WHEN** a Bash command reads the directory recursively
+- **THEN** the hooks do not refuse it, and the agent's OS sandbox denies the read of the declared file

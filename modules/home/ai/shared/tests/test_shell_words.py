@@ -209,9 +209,18 @@ def test_subshell_boundaries_split_segments(lexer, shell_world):
     ]
 
 
-def test_partly_quoted_glob_is_refused(lexer, shell_world):
+def test_a_glob_quoted_only_around_literal_text_is_expanded(lexer, shell_world):
     _, repository = shell_world
-    assert lexer.lex("cat 'a'*", str(repository))[0][1].kind == "unresolvable"
+    (repository / "a1").touch()
+
+    words = lexer.lex("cat 'a'*", str(repository))[0][1:]
+
+    assert [(word.value, word.kind) for word in words] == [("a1", "path candidate")]
+
+
+def test_a_quoted_glob_character_keeps_the_word_unresolvable(lexer, shell_world):
+    _, repository = shell_world
+    assert lexer.lex("cat '*'x*", str(repository))[0][1].kind == "unresolvable"
 
 
 @pytest.mark.parametrize("text", [chr(0xD800), chr(0xDFFF), "cat $'" + chr(0xD800) + "'"])
@@ -219,3 +228,162 @@ def test_lone_surrogate_does_not_raise(lexer, shell_world, text):
     _, repository = shell_world
     result = lexer.lex(text, str(repository))
     assert result is None or isinstance(result, list)
+
+
+# Each segment's directories, as spellings relative to where the command
+# starts: "" is that directory. `None` is a directory change the words do not
+# resolve. A segment after a `cd` may run in the starting directory too, since
+# the `cd` may fail or be skipped.
+START = ("",)
+MOVED = ("", "sub")
+DIRECTORY_CASES = [
+    ("cat a", [START]),
+    ("cd sub && cat a", [START, ("sub",)]),
+    ("cd sub && cd deeper && cat a", [START, ("sub",), ("sub/deeper",)]),
+    ("cd sub; cat a", [START, MOVED]),
+    ("cd sub || cat a", [START, START]),
+    ("cd /tmp || cd / && cat a", [START, START, ("/", "/tmp")]),
+    ("(cd sub); cat a", [START, START]),
+    ("(cd sub && cat a); cat b", [START, ("sub",), START]),
+    ("cd sub | cat a", [START, START]),
+    ("cd sub & cat a", [START, START]),
+    ("cd sub 2>/dev/null && cat a", [START, ("sub",)]),
+    ("cd . && cat a", [START, START]),
+    ("cd '' && cat a", [START, ()]),
+    ("pushd sub && cat a", [START, ("sub",)]),
+    ("cd -- sub && cat a", [START, ("sub",)]),
+    ("command -p cd sub && cat a", [START, ("sub",)]),
+    ("builtin cd sub && cat a", [START, ("sub",)]),
+    ("! cd sub || cat a", [START, ("sub",)]),
+    ("if cd sub; then cat a; fi", [START, MOVED, MOVED]),
+    ("{ cd sub; } && cat a", [START, MOVED, MOVED]),
+    ("command -v cd sub && cat a", [START, START]),
+    ("grep cd file && cat a", [START, START]),
+    ("env cd sub && cat a", [START, START]),
+    ("cd $DIR && cat a", [START, None]),
+    ("cd - && cat a", [START, None]),
+    ("cd -P sub && cat a", [START, None]),
+    ("popd && cat a", [START, None]),
+    ("pushd && cat a", [START, None]),
+    ("pushd +1 && cat a", [START, None]),
+    ("cd $DIR; cd sub && cat a", [START, None, None]),
+    ("$(echo cd) sub && cat a", [START, None]),
+    ("eval cd sub; cat a", [START, None]),
+    ("source env.sh; cat a", [START, None]),
+    (". env.sh; cat a", [START, None]),
+    ("trap 'cd sub' ERR; cat a", [START, None]),
+    ("shopt -s cdable_vars; cat a", [START, None]),
+    ("f() { cd sub; }; f; cat a", [START, None, None, None, None]),
+    ("HOME=/x cd && cat a", [START, None]),
+    ("cd stays && cat a", [START, ("stays",)]),
+    ("cd fails && cat a", [START, ("fails",)]),
+    ("cd unknown && cat a", [START, ("unknown",)]),
+    ("cd -- -L && cat a", [START, ("-L",)]),
+    ("command cd -- -v && cat a", [START, ("-v",)]),
+    ("'if' cd sub && cat a", [START, START]),
+    ("echo for; cd sub && cat a", [START, START, ("sub",)]),
+    ("for i in 1 2; do cd sub; done; cat a", [START, START, None, None]),
+    ("while cd sub; do :; done; cat a", [START, None, None, None]),
+    ("(cd sub && true) > out", [START, ("sub",), START]),
+    ("export CDPATH=/x; cd sub && cat a", [START, None, None]),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), DIRECTORY_CASES)
+def test_each_segment_carries_the_directories_it_may_run_in(lexer, shell_world, command, expected):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [segment.directories for segment in segments] == expected
+
+
+def test_an_inherited_cdpath_leaves_a_bare_relative_cd_unknown(lexer, shell_world, monkeypatch):
+    _, repository = shell_world
+    monkeypatch.setenv("CDPATH", "/elsewhere")
+
+    segments = lexer.lex("cd sub && cat a; cd ./sub && cat b", str(repository))
+
+    assert [segment.directories for segment in segments] == [START, None, None, None]
+
+
+def test_cd_without_an_operand_enters_home(lexer, shell_world):
+    home, repository = shell_world
+
+    segments = lexer.lex("cd && cat a", str(repository))
+
+    assert segments[1].directories == (str(home),)
+
+
+@pytest.mark.parametrize("command", ["HOME=/x; cat ~/a", "export HOME=/x; cat $HOME/a", "HOME=/x; DEST=~/a cat"])
+def test_a_home_assignment_leaves_later_home_spellings_unresolvable(lexer, shell_world, command):
+    _, repository = shell_world
+
+    words = lexer.lex(command, str(repository))[-1]
+
+    assert "unresolvable" in [word.kind for word in words]
+
+
+@pytest.mark.parametrize("command", ["cd ~/.config && cat secrets.env", "cd ~/.config; cat secrets.env"])
+def test_relative_word_after_cd_carries_its_path_in_each_directory(lexer, shell_world, command):
+    home, repository = shell_world
+
+    word = lexer.lex(command, str(repository))[1][1]
+
+    assert word.kind == "unresolvable"
+    assert str(home / ".config/secrets.env") in word.paths
+
+
+@pytest.mark.parametrize("command", ["cd /absent; cat sub/notes", "cd ..; cat ../sub/notes"])
+def test_a_relative_path_is_not_cut_at_a_slash_into_a_root_path(lexer, shell_world, command):
+    _, repository = shell_world
+
+    word = lexer.lex(command, str(repository))[1][1]
+
+    assert not {"/notes", "/sub/notes"} & set(word.paths)
+
+
+def test_relative_word_after_a_cd_that_may_fail_carries_both_paths(lexer, shell_world):
+    _, repository = shell_world
+
+    word = lexer.lex("cd /absent; cat secrets.env", str(repository))[1][1]
+
+    assert {str(repository / "secrets.env"), "/absent/secrets.env"} <= set(word.paths)
+
+
+@pytest.mark.parametrize(
+    ("spelling", "beneath"),
+    [
+        ("$HOME/x", "x"),
+        ('"$HOME"/x', "x"),
+        ("${HOME}/x", "x"),
+        ('"${HOME}"/x', "x"),
+        ('"$HOME/x"', "x"),
+        ("$HOME", ""),
+    ],
+)
+def test_leading_home_variable_resolves_like_a_tilde(lexer, shell_world, spelling, beneath):
+    home, repository = shell_world
+
+    word = lexer.lex(f"cat {spelling}", str(repository))[0][1]
+
+    assert (word.value, word.kind) == (str(home / beneath) if beneath else str(home), "path candidate")
+
+
+def test_leading_home_variable_takes_part_in_pathname_expansion(lexer, shell_world):
+    home, repository = shell_world
+    (home / ".config").mkdir()
+    (home / ".config/secrets.env").touch()
+
+    words = lexer.lex('cat "$HOME"/.config/*', str(repository))[0][1:]
+
+    assert [word.value for word in words] == [str(home / ".config/secrets.env")]
+
+
+@pytest.mark.parametrize("spelling", ["$HOMEDIR/x", "x$HOME", "'$HOME'/x", "$HOME_X"])
+def test_other_home_spellings_do_not_resolve(lexer, shell_world, spelling):
+    home, repository = shell_world
+
+    word = lexer.lex(f"cat {spelling}", str(repository))[0][1]
+
+    assert not word.value.startswith(str(home))

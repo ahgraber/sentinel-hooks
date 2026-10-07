@@ -203,6 +203,17 @@ class TestChangedFileSet:
 
 
 BASELINE_PATH = HOOK_PATH.parent / "git-baseline.sh"
+
+ALWAYS_FAILING_CONFIG = """repos:
+  - repo: local
+    hooks:
+      - id: always-fail
+        name: always-fail
+        language: system
+        entry: "false"
+        always_run: true
+        pass_filenames: false
+"""
 SESSION = "turn-scope-session"
 
 
@@ -257,12 +268,52 @@ class TestTurnScope:
         assert _end_turn(repo).exit_code == 2
 
     def test_a_turn_that_changes_nothing_runs_nothing(self, tmp_path):
-        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
+        """A hook that always runs and fails would block the stop if the runner started."""
+        repo = _create_git_repo(tmp_path / "repo", ALWAYS_FAILING_CONFIG)
         (repo / "tracked.txt").write_text("changed before the turn\n")
         (repo / "untracked.txt").write_text("new before the turn\n")
         _start_turn(repo)
 
         _assert_silent(_end_turn(repo))
+
+    def test_a_file_deleted_during_the_turn_is_not_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("tracked.txt"))
+        _start_turn(repo)
+        (repo / "tracked.txt").unlink()
+
+        _assert_silent(_end_turn(repo))
+
+    def test_a_file_staged_during_the_turn_is_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("staged.txt"))
+        _start_turn(repo)
+        (repo / "staged.txt").write_text("staged\n")
+        subprocess.run(["git", "-C", str(repo), "add", "staged.txt"], check=True, capture_output=True)
+
+        assert _end_turn(repo).exit_code == 2
+
+    def test_an_ignored_file_written_during_the_turn_is_not_checked(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", _rejecting_config("ignored.txt"))
+        (repo / ".gitignore").write_text("ignored.txt\n")
+        _start_turn(repo)
+        (repo / "ignored.txt").write_text("noise\n")
+
+        _assert_silent(_end_turn(repo))
+
+    def test_a_failed_snapshot_drops_the_previous_one(self, tmp_path):
+        """Otherwise the next stop would compare against an earlier turn's start."""
+        repo = _create_git_repo(tmp_path / "repo", PASSING_CONFIG)
+        _start_turn(repo)
+        snapshot = repo / ".git" / f"agent-snapshot-{SESSION}"
+        assert snapshot.is_file()
+        unreadable = repo / "unreadable.txt"
+        unreadable.write_text("x\n")
+        unreadable.chmod(0)
+        try:
+            _start_turn(repo)
+        finally:
+            unreadable.chmod(0o644)
+
+        assert not snapshot.exists()
 
     def test_the_real_index_is_unchanged(self, tmp_path):
         repo = _create_git_repo(tmp_path / "repo", PASSING_CONFIG)

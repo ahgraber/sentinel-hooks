@@ -272,8 +272,7 @@ The stated fail-open posture therefore does not hold uniformly for startup failu
 
 ### Requirement: NoSideEffects
 
-A hook SHALL NOT, while judging a tool call, modify the state it is judging,
-spawn background processes, or make network calls.
+A hook SHALL NOT, while judging a tool call, modify the state it is judging, spawn background processes, or make network calls.
 
 Reading is unrestricted.
 A hook that cannot read its own declarations cannot judge anything, and concealment is not the boundary these hooks defend.

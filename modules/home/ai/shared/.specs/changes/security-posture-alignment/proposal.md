@@ -44,7 +44,7 @@ Preventing the next one is a matter of instruction rather than of test, so it li
 
 - `bash-command-validator`: the removal records for `RedirectGrepToRipgrep`, `RedirectFindToRipgrep`, and `RequireSignedCommits`, each naming the commit that retired it and why.
 - `end-of-turn-precommit` (new capability): the Stop-hook contract already implemented by `stop-precommit.sh` and `pi/security/precommit.ts` — when it runs, which files it selects, when it does nothing, and how it blocks.
-- `agent-configuration-floor` (new capability): the values an agent's configuration must not express, the escalation route that carries a guardrail decision where a hook `Ask` cannot, and per-user network parity between agents.
+- `agent-configuration-floor` (new capability): the values an agent's configuration must not express, the escalation route that carries a guardrail decision where a hook `Ask` cannot, per-user network parity between agents, and that every hook an agent registers lies in the enforcement floor.
 - Enabling the editor's agent sandbox and closing the three values that let an agent past it, in both VS Code settings files.
   Copilot is the one agent here with no OS-level layer of its own, and the sandbox is what closes that.
   The values matter more than the switch: each of `allowAutoApprove`, `allowUnsandboxedCommands`, and `retryWithAllowNetworkRequests` defaults to permissive, so a sandbox enabled at defaults would drop the approval prompt this repository currently enforces.
@@ -90,6 +90,9 @@ Preventing the next one is a matter of instruction rather than of test, so it li
 - `hook-interface` and `hook-tampering-blocking`: choosing the error direction by the tool the payload names.
   The tamper hook exited 0 on any unexpected error, against `ErrorHandlingByDamagePotential`, which already required a sensitive tool not to proceed on a hook crash.
   `os.path.expanduser` raises on a null byte and every containment test runs through it, so `~\x00` reached that branch and allowed the call.
+- `destructive-ops-blocking` and `hook-interface`: refusing to judge by a pattern file that does not validate.
+  The hook allowed every command when its file was missing or unreadable, and skipped a rule with an unknown mode or a pattern that did not compile, so a wrong value such as `mode = "deny"` turned a protection off with nothing reporting it.
+  An unusable file now reaches `Ask` on every `Bash` call, with the fault named.
 - Declaring the gated tool vocabulary once, with each harness's spellings, in a file beside the manifest, and requiring every adapter to refuse a tool name it cannot map.
   The vocabulary is undeclared and copied across six implementation sites, and `normalize_payload` in `copilot-vscode-hook-adapter.py` forwards an unmapped name unchanged, which reaches the hooks as a tool they do not gate and is allowed.
   A registered hook chain that does not gate is the same hole as an unimplemented capability, so it belongs with parity rather than beside it.
@@ -112,7 +115,7 @@ Preventing the next one is a matter of instruction rather than of test, so it li
 
 New capabilities where the posture has none, and no MODIFIED block over a requirement `guarded-path-classes` also modifies.
 That change is merged and live but not yet synced, and `sdd-sync` replaces a matched requirement wholesale, so two deltas over one requirement would have the second sync discard the first.
-This change modifies `ErrorHandlingByDamagePotential`, `ExplanationContract`, and `BlockAIGuidance` in `hook-interface`, `FailureMode` and `GateResponse` in `hook-tampering-blocking`, and `DriftWarning` in `git-baseline-drift`, none of which `guarded-path-classes` touches; its other deltas add or remove.
+This change modifies `ErrorHandlingByDamagePotential`, `ExplanationContract`, and `BlockAIGuidance` in `hook-interface`, `FailureMode` and `GateResponse` in `hook-tampering-blocking`, `DriftWarning` in `git-baseline-drift`, and `ExternalPatternFile` in `destructive-ops-blocking`, none of which `guarded-path-classes` touches; its other deltas add or remove.
 The removal records name three requirements the baseline already lacks, so they rewrite nothing.
 
 The floor is expressed as a prohibition on named values rather than as an assertion of current ones.

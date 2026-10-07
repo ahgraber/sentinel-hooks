@@ -581,7 +581,8 @@ DESTROYS_AN_ANCESTOR = [
     "cd modules/home && rm -rf ai",
     "cd modules && cd home && rm -rf ai",
     "cd modules/home/ai && tar -xf /tmp/archive.tar",
-    "cd modules/home/ai/shared && rm -rf hooks",
+    "cd modules/home/ai && rm -rf shared",
+    "cd /tmp; rm -rf modules",
     "cd /tmp | rm -rf modules",
     # `~/.claude/` is a declaration in its own right, so removing it is judged
     # by the naming rule and carries that rule's wording. The home above it is

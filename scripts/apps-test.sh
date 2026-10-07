@@ -20,18 +20,22 @@ Targets:
 USAGE
 }
 
+# The test tools are pinned in this project's lock; `--locked` fails a stale lock
+# rather than resolving new versions.
+run_pytest() {
+  uv run --project "${REPO_ROOT}/modules/home/ai" --locked pytest -q "$@"
+}
+
 run_python_suite() {
   local app="${1}"
 
   echo "==> Testing ${app}"
-  # hypothesis carries the property suites over the read classifier, which takes
-  # arbitrary command text and cannot be covered by an example table.
-  uv run --with pytest --with hypothesis pytest -q "${REPO_ROOT}/modules/home/ai/${app}/tests"
+  run_pytest "${REPO_ROOT}/modules/home/ai/${app}/tests"
 }
 
 run_pi_suite() {
   echo "==> Testing pi"
-  uv run --with pytest --with hypothesis pytest -q "${REPO_ROOT}/modules/home/ai/pi/tests"
+  run_pytest "${REPO_ROOT}/modules/home/ai/pi/tests"
   # Quoted so node expands the glob, which it matches against every test file.
   node --test "${REPO_ROOT}/modules/home/ai/pi/extensions/hooks/*.test.mjs" "${REPO_ROOT}/modules/home/ai/pi/tests/*.test.mjs"
 }

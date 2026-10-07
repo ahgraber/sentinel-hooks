@@ -4,11 +4,12 @@ Declarations support `~/`, `<repo>/`, and single-component `*` patterns. Path
 checks use written, expanded, and resolved spellings with filesystem case rules.
 Text checks use declaration fragments.
 
-Limits: working-directory changes within one shell command are deferred; name
-paths absolutely. Hard links are not identified. A directory declaration follows
-its own symlink chain, not links held inside that directory. Routes that present
-no path cannot be checked. The operating system sandbox and agent permissions
-are the boundary; this matcher supplies defense in depth.
+Limits: a directory change to a substituted operand, `cd -`, or `popd` leaves a
+later relative path unresolvable; name paths absolutely. Hard links are not
+identified. A directory declaration follows its own symlink chain, not the
+links held inside that directory. Routes that present no path cannot be
+checked. The operating system sandbox and agent permissions are the boundary;
+this matcher supplies defense in depth.
 """
 
 from __future__ import annotations

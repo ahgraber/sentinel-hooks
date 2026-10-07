@@ -207,8 +207,7 @@ If `open` control is desired, it should be an `ask`-mode rule in `destructive-op
 
 ### Requirement: RuleRegistrationPattern
 
-The system SHALL define all pattern-based blocking rules using a `rule` registration function
-that co-locates each rule's exemption type, pattern, and block message as a single declaration.
+The system SHALL define all pattern-based blocking rules using a `rule` registration function that co-locates each rule's exemption type, pattern, and block message as a single declaration.
 
 ```bash
 rule() {
@@ -216,8 +215,7 @@ rule() {
 }
 ```
 
-Message strings that are shared across multiple rules within the same threat category SHALL be
-extracted into named variables (e.g. `_MSG_REVERSE_SHELL`) to avoid repetition.
+Message strings that are shared across multiple rules within the same threat category SHALL be extracted into named variables (e.g. `_MSG_REVERSE_SHELL`) to avoid repetition.
 
 All registered rules SHALL be evaluated by a single loop at the bottom of the script, replacing per-category loops.
 

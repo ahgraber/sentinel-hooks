@@ -70,6 +70,20 @@ def test_block_rule_blocks_with_reason_and_contract(hook_path: Path) -> None:
     assert "AI INSTRUCTIONS:" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "rules", [None, RULES + '\n[[rules]]\npattern = "x"\ndescription = "d"\nreason = "r"\nmode = "deny"\n']
+)
+def test_an_unusable_rules_file_blocks_where_no_prompt_can_be_shown(tmp_path: Path, rules: str | None) -> None:
+    hook_path = install_hook(tmp_path)
+    if rules is not None:
+        (tmp_path / RULES_NAME).write_text(rules)
+
+    result = run_hook(hook_path, "safe command")
+
+    assert result.returncode == 2
+    assert "blocked instead of prompted" in result.stderr
+
+
 def test_ask_rule_is_also_blocked(hook_path: Path) -> None:
     result = run_hook(hook_path, "run synthetic-ask now")
 

@@ -17,7 +17,8 @@ An unhandled crash in a hook guarding a destructive tool must not silently allow
 A hook whose subject is a class of path rather than a class of command MAY reach `Ask` rather than `Block`.
 Such a hook runs on every call to a sensitive tool, most of which reach nothing it guards, so a fault that recurs would refuse every mutation the agent attempts with no route left for the user to say otherwise.
 `Ask` grants nothing the full encoding would not: where the agent cannot show a prompt it degrades to the same refusal.
-A hook that refuses a named class of command SHALL reach `Block`, because every call it judges is one it was registered to refuse.
+A hook that refuses a named class of command SHALL reach `Block` on an error judging one call.
+When such a hook cannot load the rules it judges by, it SHALL reach `Ask`: that fault recurs on every call it judges, which is the ground on which a path hook reaches `Ask`.
 
 **Read-only tools** (`Read`, `Glob`, `Grep`) — tools that cannot modify state.
 On internal error, the hook SHALL reach a `Warn` decision: the tool proceeds and the reason is reported where the agent can report it.
@@ -50,6 +51,12 @@ Run alone, that hook would have exited with a status its agent refuses or report
 - **GIVEN** an unhandled error occurs inside a hook judging a sensitive tool
 - **WHEN** the invoking agent cannot express `Ask` for that tool
 - **THEN** the hook reaches `Block`
+
+#### Scenario: CommandHookCannotLoadItsRules
+
+- **GIVEN** a hook that refuses a named class of command cannot load the rules it judges by
+- **WHEN** a call to a sensitive tool it judges is intercepted
+- **THEN** the hook reaches `Ask`, degrading to `Block` where the agent cannot express `Ask`
 
 #### Scenario: InternalErrorOnReadOnlyTool
 

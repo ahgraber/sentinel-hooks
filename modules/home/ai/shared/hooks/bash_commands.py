@@ -441,22 +441,6 @@ def destroyed_operands(segment: list[Word], *, cwd_known: bool = True, directory
     return [os.path.join(base, target) if base and not os.path.isabs(target) else target for target in targets]
 
 
-def _directory_after(segment: list[Word], directory: str | None) -> str | None:
-    """Where the shell is after `segment`; `None` if the words do not say."""
-    words = invocation(list(segment))
-    if not words or os.path.basename(words[0].value) not in {"cd", "pushd", "popd"}:
-        return directory
-    name, args = os.path.basename(words[0].value), [word for word in words[1:] if word.value != "--"]
-    if name == "popd" or directory is None:
-        return None
-    if not args:
-        return None if name == "pushd" else "~"
-    target = args[0]
-    if target.value.startswith("-") or any(char in target.value for char in "$`{*?["):
-        return None
-    return os.path.join(directory, target.value)
-
-
 # Programs that can take a tree away, mapped to the operands they act on.
 # A program missing here passes on an ancestor.
 _OPERAND_EXTRACTORS = {
@@ -525,7 +509,7 @@ class Reading:
         if "unresolvable" in kinds:
             return (
                 "an unresolved substitution, variable, brace expansion, or relative path "
-                "without a known directory (including after a directory change)"
+                "after a directory change or without a known directory"
             )
         return UNKNOWN_PROGRAM
 
@@ -553,8 +537,13 @@ def read(command: str, cwd: str | None = None) -> Reading:
         newline = "\n" in command or "\r" in command
         return Reading(command, (), (), "a newline" if newline else "unresolvable shell syntax")
     segments = []
-    directory: str | None = ""
     for index, words in enumerate(lexed):
+        directories = (None,) if words.directories is None else words.directories
+        destroyed = (
+            target
+            for directory in directories
+            for target in destroyed_operands(words, cwd_known=cwd is not None, directory=directory)
+        )
         segments.append(
             SegmentReading(
                 words=words,
@@ -563,11 +552,8 @@ def read(command: str, cwd: str | None = None) -> Reading:
                 builder=_builder(words, pipe_fed=index > 0 and lexed[index - 1].separator == "|"),
                 read_only=read_only(words),
                 run_targets=tuple(run_targets(words)),
-                destroyed=tuple(destroyed_operands(words, cwd_known=cwd is not None, directory=directory)),
-                anchored=directory is not None,
+                destroyed=tuple(dict.fromkeys(destroyed)),
+                anchored=words.directories is not None,
             )
         )
-        # A `cd` in a pipeline runs in a subshell.
-        if words.separator != "|":
-            directory = _directory_after(words, directory)
     return Reading(command, tuple(segments), _piped_programs(segments), None)

@@ -10,7 +10,7 @@ Serves: posture-and-mechanism-are-separate, one-list-then-deltas
 
 An agent home holds the enforcement the agent loads at run time, its settings, its skills, and its instructions, and little else.
 One base declaration with the carve-outs beneath it is the shortest true statement of the posture, and a directory kind a harness adds later is guarded the day it appears.
-`~/.pi/` is declared at `agent/` because the parent also holds the module's npm prefix.
+`~/.pi/` is declared at `agent/`, the directory Pi reads its settings, extensions, packages, and skills from.
 
 #### Scenario: WriteInAnAgentHome
 

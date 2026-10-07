@@ -4,7 +4,7 @@ import io
 import json
 
 import guarded_paths
-from hermetic import build_world, load_hook
+from hermetic import build_world, load_hook, policy
 import pytest
 
 
@@ -14,18 +14,6 @@ def policy_world(tmp_path, monkeypatch):
     home, repo, manifest = build_world(tmp_path, monkeypatch)
     (manifest.parent / "hook.py").touch()
     return home, repo, manifest
-
-
-def policy(world, guarded=(), block=(), run=(), write=()):
-    home, repo, manifest = world
-    data = {
-        "guarded": {"paths": list(guarded)},
-        "block": {"paths": list(block)},
-        "exec-through": {"paths": list(run)},
-        "write-through": {"paths": list(write)},
-        "exceptions": [],
-    }
-    return guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
 
 
 @pytest.mark.parametrize(
@@ -325,11 +313,10 @@ def test_the_ancestor_check_reads_the_same_glob_form_as_the_distance_check(polic
 def test_stated_limits_are_documented():
     documentation = guarded_paths.__doc__.lower()
     for limit in (
-        "directory changes",
+        "directory change",
         "hard links",
         "links held inside",
         "no path",
         "paths absolutely",
-        "deferred",
     ):
         assert limit in documentation

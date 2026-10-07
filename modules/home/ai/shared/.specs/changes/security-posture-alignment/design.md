@@ -614,12 +614,52 @@ A fault in a shared step — path resolution, the containment test — recurs on
 `Ask` grants nothing the full encoding would: where no prompt can be shown it is the same refusal.
 
 The requirement now carries the condition rather than the exception.
-A hook that refuses a named class of command still reaches `Block`, because every call it judges is one it was registered to refuse; `block-destructive-ops.py` is unchanged.
+A hook that refuses a named class of command still reaches `Block` on an error judging one call.
+A command hook that cannot load its rules reaches `Ask` on the same ground; `AnUnusableRuleFileAsks` records why.
 
 **Alternatives considered:**
 
-- `Block`, as the baseline named: correct for a hook whose subject is a class of command, and unusable for one whose subject is a class of path.
+- `Block`, as the baseline named: correct for a fault confined to one call, and unusable for a fault that recurs on every call.
 - `Warn` for both: the tool proceeds unchecked, which is the behavior being removed.
+
+### Decision: AnUnusableRuleFileAsks
+
+**Chosen:** `block-destructive-ops.py` uses its pattern file only when every rule in it is valid.
+A missing, unreadable, or unparsable file, or one invalid rule, reaches `Ask` on every `Bash` call, with a reason that names the fault, degrading to `Block` where the agent cannot show a prompt.
+A test over the shipped pattern file checks every rule, so a typo fails the suite before it is deployed.
+
+**Rationale:** the hook returned no rules for a missing or unreadable file and allowed every command, and it skipped a rule with an unknown mode or a pattern that did not compile.
+`mode = "deny"` therefore turned one protection off with nothing reporting it.
+The convention for security policy is to refuse a configuration that does not validate rather than enforce part of it: `visudo -c`, `sshd -t`, and `nginx -t` check before the configuration takes effect, and `nft -f` rejects a whole ruleset file for one bad line.
+A warning on an allowed call is not a substitute: a hook that exits 0 usually does not show its stderr to the user.
+The user chose `Ask` over `Block` on 2026-10-05.
+The fault recurs on every `Bash` call, most of which match no rule, so `Block` would stop all shell work, including the test run that confirms the fix.
+`Ask` puts each call to the user with the fault named, and grants nothing on an agent that cannot prompt.
+
+The earlier statement that a command hook reaches `Block` "because every call it judges is one it was registered to refuse" was false for this fault: the hook judges every `Bash` call.
+`ErrorHandlingByDamagePotential` now separates an error judging one call from a failure to load the rules.
+
+**Alternatives considered:**
+
+- Warn and continue with the valid rules: the convention for settings that enforce nothing, and silent in practice here.
+- `Block` on every `Bash` call: fail-closed and simple, and leaves the user no way to keep working while the file is broken.
+- Keep a missing file fail-open and refuse only an invalid rule: a deleted file would then grant more than a broken one.
+  Nix deploys the file, so its absence is a deployment fault, not a choice.
+
+### Decision: TheAssessmentChecksTheFloorsHookDirectories
+
+**Chosen:** the assessment compares the directory of every hook an agent registers, and the repository directory each deployed link resolves to, with `HOOK_DIRECTORIES`, under the new requirement `RegisteredHooksLieInTheEnforcementFloor`.
+
+**Rationale:** `guarded-path-classes` defers a rule that discovers hook directories, because a glob for this repository's layout pins the floor to it and deriving the floor from declared paths let a permissive spelling escape it.
+Until that rule exists, a directory left out of the code-held list is outside the floor, and nothing reports it.
+The registrations name every hook an agent runs, but they are vendor configuration, so a hook that read them would carry the vendor coupling `TheHooksAreAPackageIndependentOfAnyAgentConfiguration` removed from the tests.
+The assessment already reads them.
+The user asked for the check on 2026-10-06.
+
+**Alternatives considered:**
+
+- Have the hooks derive the floor's hook directories from the registrations: no list to forget, at the cost of parsing four vendors' formats on every call.
+- Leave the deferral alone: a forgotten directory stays silently outside the floor until someone notices.
 
 ## Architecture
 
@@ -672,3 +712,6 @@ That is where the remaining divergence lives: an adapter holds no policy, so its
   A shell hook run directly exits 126 when a directory above it loses its execute bit, and Claude reads 126 as a non-blocking error, so that hook stops judging.
   A hook run through `uv run --script` exits 2 instead, which every agent reads as a refusal, so the session stops rather than proceeding unjudged.
   Mitigation: the ancestor gate asks before a mode change reaches that directory.
+- **Each turn hashes the working tree twice.**
+  The turn-start and turn-end snapshots add every changed and untracked file that is not ignored to the object store, so a large untracked file slows every turn and leaves unreachable objects until `git gc`.
+  Mitigation: the snapshots copy the real index, so unchanged tracked files are not hashed again; ignore large generated files.

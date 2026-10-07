@@ -88,6 +88,40 @@ A declared setting also carries its reason beside it where the format allows a c
 - **WHEN** the repository declares a value for it
 - **THEN** conformance passes, whichever permitted value it declares
 
+### Requirement: RegisteredHooksLieInTheEnforcementFloor
+
+Serves: posture-floor-is-enforced
+
+Every directory that holds a hook an agent's configuration registers SHALL lie inside the enforcement floor that `guarded-path-declarations` defines, both where the agent runs the hook and where a deployed link to it resolves in the repository.
+
+The hooks name the hook directories of their floor in code rather than discover them, because no rule is known that finds hook directories without depending on one repository's layout.
+A directory missing from that list is outside the floor, so a manifest exception that covers it lets an agent edit a hook it runs without a prompt.
+The registrations are the one record of which hooks an agent runs, and they are vendor configuration, so the assessment compares them with the floor rather than a hook reading them.
+
+#### Scenario: RegisteredHookInsideTheFloor
+
+- **GIVEN** an agent registers a hook whose script lies in a directory the floor names, and its deployed link resolves to a repository directory the floor names
+- **WHEN** the configuration is assessed
+- **THEN** the assessment passes
+
+#### Scenario: RegisteredHookOutsideTheFloor
+
+- **GIVEN** an agent registers a hook whose script lies in a directory the floor does not name
+- **WHEN** the configuration is assessed
+- **THEN** the assessment fails, naming the registration and the directory
+
+#### Scenario: DeployedHookResolvesOutsideTheFloor
+
+- **GIVEN** a registered hook under a directory the floor names, whose deployed link resolves to a repository directory the floor does not name
+- **WHEN** the configuration is assessed
+- **THEN** the assessment fails, naming the link and the directory it resolves to
+
+#### Scenario: HookRunThroughAnAdapter
+
+- **GIVEN** an agent that runs the shared hooks through an adapter or a dispatcher
+- **WHEN** the configuration is assessed
+- **THEN** the adapter or dispatcher and every hook it runs are judged as registered hooks
+
 ### Requirement: GuardrailEditsRouteToTheUser
 
 Serves: degradation-still-reaches-the-user

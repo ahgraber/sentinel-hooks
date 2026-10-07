@@ -19,7 +19,8 @@ Where any word of a segment names a recognized read utility, every word in that 
 An unresolvable word SHALL be judged by the paths it holds.
 Input redirection targets SHALL be judged regardless of the command word.
 
-The name heuristic, which guesses contents from a word in a name, SHALL be applied to a path candidate, as `shell-lexing` `APathCandidateDenotesAFile` defines it, and to a redirection target, and to no other word.
+The name heuristic, which guesses contents from a word in a name, SHALL be applied to a path candidate, as `shell-lexing` `APathCandidateDenotesAFile` defines it, to a redirection target, and in a segment that reads to an unresolvable word that may denote a file, and to no other word.
+An unresolvable word may denote a file when the shell builds it from an expansion, when the segment's directory does not resolve, or when its spelling in a directory the segment may run in names an existing entry; that last test is the one a bare word already meets to be a path candidate.
 A search pattern, a selector expression, and a commit subject are words a read utility receives that name no file, and refusing them stopped ordinary work over this module four times in one session.
 A bare word that names an entry in the working directory is a path candidate, so the same word is refused the moment a file of that name exists.
 
@@ -57,6 +58,24 @@ Read-from-path forms in Bash include:
 - **GIVEN** a Bash tool call is intercepted
 - **WHEN** a search command's pattern carries a name-heuristic word and names no entry in the working directory (e.g. `grep -r secret .`)
 - **THEN** the hook exits 0
+
+#### Scenario: SearchPatternAfterADirectoryChange
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** a search after a resolved `cd` carries a name-heuristic word that names no entry in any directory the search may run in (e.g. `cd sub && rg secret .`)
+- **THEN** the hook exits 0
+
+#### Scenario: NamedFileAfterADirectoryChange
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** a read after a `cd` names a file whose name carries a name-heuristic word, and the `cd` is unresolved or the file exists in a directory the read may run in (e.g. `X=~/.config; cd $X && cat mcp-secrets.env`, `if cd ~/.config; then cat mcp-secrets.env; fi`)
+- **THEN** the hook exits 2
+
+#### Scenario: NamedFileBehindAnExpansion
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** a read names a file through an expansion carrying a name-heuristic word (e.g. `cat ${X:-mcp-secrets.env}`)
+- **THEN** the hook exits 2
 
 #### Scenario: SearchPatternNamingAnExistingEntry
 

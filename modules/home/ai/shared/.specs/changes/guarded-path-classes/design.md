@@ -165,6 +165,15 @@ Superseded in part by `security-posture-alignment` `TheHooksAreAPackageIndepende
 The representatives stay in `tests/conformance.py` as the assessment's inputs.
 The `ConfigurationSurfacesCoverTheDeclarations` delta in this change is edited to say so.
 
+Reevaluated on 2026-10-06, and kept: the user decided that floor conformance does not broaden back over the guarded class.
+A read-only measurement of each agent's own layer against every guarded declaration and enforcement-floor location found the coverage partial on every agent.
+Pi's sandbox wraps only its shell tool, so its file tools write every guarded location unless a hook refuses.
+Codex's workspace leaves unlisted settings variants, the Pi hook-runner sources, and unlisted users writable, and runs readable hook scripts without approval.
+Claude's source asks name the main checkout literally, so a worktree is not covered, and it allows edits to the plugin cache.
+Copilot prompts for every terminal command and for direct edits in this checkout.
+Closing the gap, even only over the enforcement locations, would need edits to every agent's settings, four of them files only the user can commit, and a new all-tool boundary for Pi.
+The shared hooks therefore stay the only complete gate over the guarded class, including the files that load and implement them.
+
 ### Decision: OneLexerModuleWithWordKinds
 
 **Chosen:** `hooks/shell_words.py` holds what `_split_words`, `_resolve`, `_candidate_words`, and `_segments` do in the tamper hook today, and returns segments of `Word` values, each with its resolved text and a kind.
@@ -248,6 +257,15 @@ Deferring it keeps this change to the class model and the lexer's move; the desi
 **Alternatives considered:**
 
 - Track it now: one more expansion rule in a change that already replaces the manifest model, with its own property to write.
+
+**Taken up** in `security-posture-alignment` on 2026-10-04, after its read property found `cd ~/.config && cat mcp-secrets.env` allowed.
+The rule differs from the design above in three places, each found by a review against bash.
+A `cd` may fail, so each directory is carried with the status that left it there, and `&&`, `||`, and `!` select from those states; reverting after `||` missed `cd A || cd B && cat a`, which bash runs in `A` when the first `cd` succeeds.
+A `cd` moves the shell only in command position, which reaches past `!`, `{`, `if`, `then`, `do`, `builtin`, and `command`.
+A larger set of forms leaves the directory unresolved: `eval`, `source`, `trap`, `shopt`, a function definition, a `cd` inside a loop, and an assignment to `HOME` or `CDPATH`.
+A relative path joined onto a directory keeps its `..`, because `cd link && cat ../file` reaches the parent of the link's target, which collapsing `link/..` would miss.
+A union of every directory any `cd` named was considered and rejected: it gates `cd /tmp && tar -xf archive.tar` by judging the extraction in the starting directory too.
+`shell-lexing` `EachSegmentCarriesTheDirectoriesItMayRunIn` states the rule, and the probe that checked it recorded 64 runs against bash with none outside the predicted set.
 
 ### Decision: EnforcementCarveOutsAreInert
 

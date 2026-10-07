@@ -5,8 +5,8 @@ import os
 import shutil
 import subprocess
 
+from hermetic import HOOKS_DIR, dump_manifest
 import pytest
-from test_guarded_paths_manifest import HOOKS_DIR, _dump_minimal_toml
 
 
 @pytest.fixture
@@ -28,9 +28,7 @@ def session(tmp_path):
 def run_session(session, agent="claude", pin=None, defect=None):
     hooks, home, data = session
     manifest = hooks / "guarded-paths.toml"
-    manifest.write_text(
-        _dump_minimal_toml(data) if data["exceptions"] else "exceptions = []\n" + _dump_minimal_toml(data)
-    )
+    manifest.write_text(dump_manifest(data) if data["exceptions"] else "exceptions = []\n" + dump_manifest(data))
     if defect == "absent":
         manifest.unlink()
     elif defect == "unparsable":
