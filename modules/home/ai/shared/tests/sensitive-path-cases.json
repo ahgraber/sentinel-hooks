@@ -48,6 +48,106 @@
       "command": "cat id_rsa",
       "blocked": true,
       "exists": []
+    },
+    {
+      "command": "cat apps/web/.env.example",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.op",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.*",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo x > .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cp notes.txt .env.template",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "sed -i s/a/b/ .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "wc -c < .env.example",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example 2>/dev/null",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "grep KEY .env.example > notes.txt",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example > .env",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat <> .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat .env.*",
+      "blocked": false,
+      "exists": [
+        ".env.sample"
+      ]
+    },
+    {
+      "command": "cat .env.*",
+      "blocked": true,
+      "exists": [
+        ".env.sample",
+        ".env.local"
+      ]
+    },
+    {
+      "command": "cat .env.local\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "head -n1 ./deploy/id_rsa\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "x=$(cat server.pem)\necho \"$x\"",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "dd if=.env.production of=/tmp/out\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat notes.txt\necho done",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example\necho done",
+      "blocked": true,
+      "exists": []
     }
   ],
   "cases": [
@@ -166,7 +266,6 @@
       "blocked": true,
       "why": "a directory named env is not a package directory and can hold real secrets"
     },
-
     {
       "path": "README.md",
       "blocked": false,
@@ -190,12 +289,12 @@
     {
       "path": "modules/home/ai/shared/hooks/block-secrets.py",
       "blocked": false,
-      "why": "a guardrail source named for what it blocks"
+      "why": "a hook source tree excuses a file the name heuristic would refuse"
     },
     {
       "path": "modules/home/ai/claude/hooks/block-secrets.py",
       "blocked": false,
-      "why": "a guardrail source named for what it blocks"
+      "why": "a hook source tree excuses a file the name heuristic would refuse"
     },
     {
       "path": "modules/home/ai/copilot/hooks/security-policy.json",
@@ -205,7 +304,7 @@
     {
       "path": "modules/home/ai/codex/tests/test_block_secrets.py",
       "blocked": false,
-      "why": "a guardrail test named for what it covers"
+      "why": "a hook test tree excuses a file the name heuristic would refuse"
     },
     {
       "path": "~/.claude/.credentials.json",
@@ -233,9 +332,9 @@
       "why": "an agent's home directory earns no blanket exemption from the name heuristic"
     },
     {
-      "path": "~/.claude/hooks/block-secrets.py",
+      "path": "~/.claude/hooks/block-leaks.py",
       "blocked": false,
-      "why": "a deployed guardrail hook named for what it blocks stays readable"
+      "why": "a deployed guardrail hook stays readable"
     },
     {
       "path": "~/.config/mcp-secrets.env",
@@ -256,6 +355,36 @@
       "path": "scripts/other-secrets.sh",
       "blocked": true,
       "why": "an undeclared neighbor of an excepted path earns nothing from it"
+    },
+    {
+      "path": "apps/web/.env.example",
+      "blocked": false,
+      "why": "declared placeholder name for the dotenv surface, read in a nested directory"
+    },
+    {
+      "path": ".env.sample",
+      "blocked": false,
+      "why": "declared placeholder name for the dotenv surface"
+    },
+    {
+      "path": ".ENV.TEMPLATE",
+      "blocked": false,
+      "why": "a declared placeholder name matches without regard to case"
+    },
+    {
+      "path": ".env.example.local",
+      "blocked": true,
+      "why": "a placeholder name with a further suffix is not the declared name"
+    },
+    {
+      "path": ".env.dist",
+      "blocked": true,
+      "why": "not a declared placeholder name"
+    },
+    {
+      "path": ".env.local",
+      "blocked": true,
+      "why": "holds live values; the dotenv rule refuses it"
     }
   ]
 }

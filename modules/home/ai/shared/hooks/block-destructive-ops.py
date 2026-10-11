@@ -57,18 +57,19 @@ def load_rules(patterns_file: Path = PATTERNS_FILE) -> list[dict]:
     try:
         with open(patterns_file, "rb") as f:
             data = tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, ValueError) as exc:
+        # `TOMLDecodeError` and `UnicodeDecodeError` are both `ValueError`s.
         raise RulesError(f"{patterns_file.name} could not be read: {exc}") from exc
 
-    if "rules" in data and isinstance(data["rules"], list):
-        rules = data["rules"]
-    else:
-        rules = [
-            rule
-            for section in data.values()
-            if isinstance(section, dict) and isinstance(section.get("rules"), list)
-            for rule in section["rules"]
-        ]
+    rules = list(data["rules"]) if isinstance(data.get("rules"), list) else []
+    rules += [
+        rule
+        for section in data.values()
+        if isinstance(section, dict) and isinstance(section.get("rules"), list)
+        for rule in section["rules"]
+    ]
+    if not rules:
+        raise RulesError(f"{patterns_file.name} holds no rules under `rules` or a `<category>.rules` table")
 
     for index, rule in enumerate(rules, start=1):
         fault = _invalid(rule)

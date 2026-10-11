@@ -312,9 +312,10 @@ Merging them would make one of the two hooks wrong.
   `block-secrets.py` does not: its checks are about network destinations, credential stores, and literal secrets in the text, which the lexer does not judge.
   The lexer leaves brace expansions unresolved, so that gain does not exist.
 
-- [ ] Closing: evaluate splitting the manifest into a global policy file and a user file, `guarded-paths.policy.toml` and `guarded-paths.local.toml`, so the default stance ships with the module and a user file carries only their additions and grants.
+- [x] Closing: evaluate splitting the manifest into a global policy file and a user file, `guarded-paths.policy.toml` and `guarded-paths.local.toml`, so the default stance ships with the module and a user file carries only their additions and grants.
   Raised by the user on 2026-09-17 while deciding how the enforcement floor is known.
   The floor question is settled separately: the floor is derived, not declared, so this split is about authoring ergonomics and upgrade behavior rather than about protection.
+  Decided 2026-10-09: the manifest stays one file, recorded in `design.md` as `TheManifestStaysOneFile`.
 
 - [x] Closing: the Pi migration in `security-posture-alignment` replaces the Pi reader updated here; note there that `manifest.ts` is deleted with the rest of the port.
   Recorded there: its tool-vocabulary task states that `manifest.ts` is deleted with the port.

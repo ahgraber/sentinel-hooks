@@ -66,7 +66,7 @@ class TestReadAccess:
 
     def test_each_agents_repository_config_is_readable(self):
         for path in (
-            repo_path("claude", "hooks", "block-secrets.py"),
+            repo_path("claude", "hooks", "block-leaks.py"),
             repo_path("codex", "rules", "default.rules"),
             repo_path("copilot", "hooks", "security-policy.json"),
             user_path("codex", "config.linux.toml"),
@@ -100,7 +100,7 @@ class TestMutationGate:
 
     def test_each_agents_repository_config_write_asks(self):
         for path in (
-            repo_path("claude", "hooks", "block-secrets.py"),
+            repo_path("claude", "hooks", "block-leaks.py"),
             repo_path("codex", "rules", "default.rules"),
             repo_path("copilot", "hooks", "security-policy.json"),
             user_path("codex", "config.linux.toml"),
@@ -120,7 +120,7 @@ class TestMutationGate:
 
     def test_repo_hook_edit_asks(self):
         assert_ask(
-            edit(repo_path("claude", "hooks", "block-secrets.py")),
+            edit(repo_path("claude", "hooks", "block-leaks.py")),
             "hooks",
         )
 
@@ -135,13 +135,13 @@ class TestBashCommandProtection:
     def test_bash_reading_repo_hook_proceeds(self):
         # The agent module tree is read-through, so a recognized read runs
         # unprompted on the agent whose gate is a refusal rather than a prompt.
-        assert_allowed(bash(f"cat {repo_path('claude', 'hooks', 'block-secrets.py')}"))
+        assert_allowed(bash(f"cat {repo_path('claude', 'hooks', 'block-leaks.py')}"))
 
     def test_bash_touching_repo_hook_blocks(self):
         # Outside a recognized read the Bash branch matches on mention, not
         # intent: a command's effect is not readable from its text.
         assert_block_contract(
-            bash(f"sed -i 's/a/b/' {repo_path('claude', 'hooks', 'block-secrets.py')}"),
+            bash(f"sed -i 's/a/b/' {repo_path('claude', 'hooks', 'block-leaks.py')}"),
             "hooks",
         )
 
@@ -200,7 +200,7 @@ class TestApplyPatchProtection:
 class TestInstructionMarkdownGuard:
     """Instruction text is guarded enforcement."""
 
-    def test_each_agents_instruction_markdown_write_allowed(self):
+    def test_each_agents_instruction_markdown_write_asks(self):
         for path in (
             repo_path("claude", "hooks", "instructions", "00-response-style.md"),
             repo_path("codex", "hooks", "instructions", "00-response-style.md"),

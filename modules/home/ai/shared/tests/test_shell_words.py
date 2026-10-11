@@ -255,8 +255,8 @@ DIRECTORY_CASES = [
     ("command -p cd sub && cat a", [START, ("sub",)]),
     ("builtin cd sub && cat a", [START, ("sub",)]),
     ("! cd sub || cat a", [START, ("sub",)]),
-    ("if cd sub; then cat a; fi", [START, MOVED, MOVED]),
-    ("{ cd sub; } && cat a", [START, MOVED, MOVED]),
+    ("if cd sub; then cat a; fi", [START, MOVED]),
+    ("{ cd sub; } && cat a", [START, MOVED]),
     ("command -v cd sub && cat a", [START, START]),
     ("grep cd file && cat a", [START, START]),
     ("env cd sub && cat a", [START, START]),
@@ -273,7 +273,7 @@ DIRECTORY_CASES = [
     (". env.sh; cat a", [START, None]),
     ("trap 'cd sub' ERR; cat a", [START, None]),
     ("shopt -s cdable_vars; cat a", [START, None]),
-    ("f() { cd sub; }; f; cat a", [START, None, None, None, None]),
+    ("f() { cd sub; }; f; cat a", [START, None, None, None]),
     ("HOME=/x cd && cat a", [START, None]),
     ("cd stays && cat a", [START, ("stays",)]),
     ("cd fails && cat a", [START, ("fails",)]),
@@ -282,8 +282,8 @@ DIRECTORY_CASES = [
     ("command cd -- -v && cat a", [START, ("-v",)]),
     ("'if' cd sub && cat a", [START, START]),
     ("echo for; cd sub && cat a", [START, START, ("sub",)]),
-    ("for i in 1 2; do cd sub; done; cat a", [START, START, None, None]),
-    ("while cd sub; do :; done; cat a", [START, None, None, None]),
+    ("for i in 1 2; do cd sub; done; cat a", [START, START, None]),
+    ("while cd sub; do :; done; cat a", [START, None, None]),
     ("(cd sub && true) > out", [START, ("sub",), START]),
     ("export CDPATH=/x; cd sub && cat a", [START, None, None]),
 ]
@@ -387,3 +387,80 @@ def test_other_home_spellings_do_not_resolve(lexer, shell_world, spelling):
     word = lexer.lex(f"cat {spelling}", str(repository))[0][1]
 
     assert not word.value.startswith(str(home))
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("{ cat a; }", [["cat", "a"]]),
+        ("if true; then head b; fi", [["true"], ["head", "b"]]),
+        ("! cat a", [["cat", "a"]]),
+        ("while true; do cat a; done", [["true"], ["cat", "a"]]),
+        ("if ! cat a; then :; else head b; fi > out", [["cat", "a"], [":"], ["head", "b"], ["out"]]),
+    ],
+)
+def test_a_reserved_word_leaves_the_program_in_command_position(lexer, shell_world, command, expected):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [[word.value for word in segment] for segment in segments] == expected
+    assert all(segment[0].kind in {"command", "redirection target"} for segment in segments)
+
+
+def test_a_quoted_reserved_word_is_the_program(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("'if' a", str(repository))
+
+    assert [[(word.value, word.kind) for word in segment] for segment in segments] == [
+        [("if", "command"), ("a", "plain word")]
+    ]
+
+
+@pytest.mark.parametrize("operator", ["&>", "&>>"])
+def test_both_streams_redirect_within_the_segment(lexer, shell_world, operator):
+    _, repository = shell_world
+
+    segments = lexer.lex(f"cat a {operator} out", str(repository))
+
+    assert [[(word.value, word.kind, word.redirection) for word in segment] for segment in segments] == [
+        [("cat", "command", None), ("a", "plain word", None), ("out", "redirection target", operator)]
+    ]
+
+
+def test_a_directory_change_with_both_streams_redirected_carries_its_directory(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("cd sub &>/dev/null && cat a", str(repository))
+
+    assert [segment.directories for segment in segments] == [("",), ("sub",)]
+
+
+@pytest.mark.parametrize(
+    ("spelling", "literal"), [('~"/x"', "~/x"), ("'~'/x", "~/x"), ("\\~/x", "~/x"), ('~"root"/x', "~root/x")]
+)
+def test_a_tilde_with_a_quoted_prefix_stays_as_written(lexer, shell_world, spelling, literal):
+    _, repository = shell_world
+
+    word = lexer.lex(f"cat {spelling}", str(repository))[0][1]
+
+    assert word.value == literal
+
+
+def test_a_tilde_before_a_quoted_path_expands(lexer, shell_world):
+    home, repository = shell_world
+
+    word = lexer.lex('cat ~/"x"', str(repository))[0][1]
+
+    assert word.value == f"{home}/x"
+
+
+@pytest.mark.parametrize("pattern", ["[^x]b", "[[:alpha:]]b", "[[=a=]]b", "[[.a.]]b"])
+def test_a_bracket_expression_glob_reads_differently_is_unresolvable(lexer, shell_world, pattern):
+    _, repository = shell_world
+    (repository / "ab").touch()
+
+    word = lexer.lex(f"cat {pattern}", str(repository))[0][1]
+
+    assert word.kind == "unresolvable"

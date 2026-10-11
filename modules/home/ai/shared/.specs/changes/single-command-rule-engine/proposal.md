@@ -46,7 +46,7 @@ The shell hook is also the slowest of the seven hooks a Bash call runs, at 150 m
 
 - A command name held in a variable, such as `x=rm; $x -r <dir>`.
   The lexer marks the word unresolvable; treating every unresolvable command name as suspect is a separate decision.
-- `block-secrets.py`.
+- `block-leaks.py`.
   Its checks are about network destinations, credential stores, and literal secrets in the text, which the lexer does not judge.
 - Resolving brace expansions, which the lexer does not do.
 - Changing what any rule refuses or asks about when the command is spelled plainly.

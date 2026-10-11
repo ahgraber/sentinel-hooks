@@ -24,7 +24,7 @@ HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 
 TAMPERING = "block-hook-tampering.py"
 SENSITIVE = "block-sensitive-paths.py"
-SECRETS = "block-secrets.py"
+SECRETS = "block-leaks.py"
 DESTRUCTIVE = "block-destructive-ops.py"
 
 # A string where the hook expects a mapping. Every hook reaches for `.get` on
@@ -82,10 +82,17 @@ class TestSecretHookFollowsTheNamedTool:
         result = run_hook(SECRETS, {"tool_name": "Bash", "tool_input": MALFORMED_TOOL_INPUT})
 
         assert result.exit_code == 2, result.stderr
-        assert "block-secrets failed" in result.stderr
+        assert "block-leaks failed" in result.stderr
 
-    def test_an_error_judging_a_read_proceeds_with_a_warning(self) -> None:
+    def test_a_read_with_a_malformed_input_proceeds(self) -> None:
+        """A read's input is only serialized for the content scan, so its shape cannot fail the hook."""
         result = run_hook(SECRETS, {"tool_name": "Read", "tool_input": MALFORMED_TOOL_INPUT})
+
+        assert result.exit_code == 0, result.stderr
+
+    def test_an_error_judging_a_call_naming_no_mutating_tool_proceeds_with_a_warning(self) -> None:
+        """A payload that parses to a list fails inside the judgment, before any tool is named."""
+        result = run_hook(SECRETS, raw="[]")
 
         assert result.exit_code == 0, result.stderr
         assert "was not checked" in result.stdout + result.stderr

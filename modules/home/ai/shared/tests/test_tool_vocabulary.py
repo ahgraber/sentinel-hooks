@@ -101,7 +101,7 @@ def test_hook_tool_sets_come_from_the_declaration() -> None:
     vocabulary = guarded_paths.TOOL_VOCABULARY
 
     assert load_hook("block-hook-tampering").MUTATING_TOOLS is vocabulary.group("mutating")
-    assert load_hook("block-secrets").MUTATING_TOOLS is vocabulary.group("mutating")
+    assert load_hook("block-leaks").MUTATING_TOOLS is vocabulary.group("mutating")
     assert load_hook("block-sensitive-paths").SENSITIVE_PATH_TOOLS is vocabulary.group("sensitive-path")
     assert load_hook("block-destructive-ops").DESTRUCTIVE_OPS_TOOLS is vocabulary.group("destructive-ops")
 
@@ -129,6 +129,7 @@ def test_added_spelling_reaches_every_consumer(tmp_path, monkeypatch) -> None:
 mutating = ["NovelTool"]
 sensitive-path = ["NovelTool"]
 destructive-ops = ["NovelTool"]
+file = ["NovelTool"]
 
 [ask]
 copilot = ["NovelTool"]
@@ -163,8 +164,10 @@ reason = "test"
     assert vocabulary.normalize("copilot", "novelTool") == "NovelTool"
     assert vocabulary.normalize("pi", "novel") == "NovelTool"
     assert "NovelTool" in load_hook("block-hook-tampering").MUTATING_TOOLS
-    assert "NovelTool" in load_hook("block-secrets").MUTATING_TOOLS
+    assert "NovelTool" in load_hook("block-leaks").MUTATING_TOOLS
     assert "NovelTool" in load_hook("block-sensitive-paths").SENSITIVE_PATH_TOOLS
+    assert "NovelTool" in load_hook("block-hook-tampering").FILE_TOOLS
+    assert "NovelTool" in load_hook("block-sensitive-paths").FILE_TOOLS
     assert "NovelTool" in load_hook("block-destructive-ops").DESTRUCTIVE_OPS_TOOLS
     assert hook_response.supports_ask("copilot", "NovelTool") is True
 
@@ -227,26 +230,23 @@ def test_a_contradictory_or_unexplained_entry_is_refused(tmp_path, tables, messa
 
 
 def _private_tool_vocabulary(path: Path, canonical_tools: frozenset[str]) -> list[str]:
-    """Return module-level collections that copy two or more canonical tool names."""
+    """Return collections that copy two or more canonical tool names: a module-level name, or `line N`."""
     tree = ast.parse(path.read_text(), filename=str(path))
-    findings = []
+    names = {}
     for statement in tree.body:
-        if isinstance(statement, ast.Assign):
-            targets = statement.targets
-            value = statement.value
-        elif isinstance(statement, ast.AnnAssign):
-            targets = [statement.target]
-            value = statement.value
-        else:
-            continue
-        if value is None or not isinstance(value, (ast.Dict, ast.List, ast.Set, ast.Tuple)):
+        if isinstance(statement, (ast.Assign, ast.AnnAssign)) and statement.value is not None:
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            names[id(statement.value)] = [target.id for target in targets if isinstance(target, ast.Name)]
+    findings = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Dict, ast.List, ast.Set, ast.Tuple)):
             continue
         strings = {
-            node.value for node in ast.walk(value) if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            item.value for item in ast.walk(node) if isinstance(item, ast.Constant) and isinstance(item.value, str)
         }
         if len(strings & canonical_tools) < 2:
             continue
-        findings.extend(target.id for target in targets if isinstance(target, ast.Name))
+        findings.extend(names.get(id(node)) or [f"line {node.lineno}"])
     return findings
 
 
@@ -257,7 +257,7 @@ def test_shared_hooks_hold_no_private_tool_vocabulary() -> None:
     )
     consumers = (
         HOOKS_DIR / "block-hook-tampering.py",
-        HOOKS_DIR / "block-secrets.py",
+        HOOKS_DIR / "block-leaks.py",
         HOOKS_DIR / "block-sensitive-paths.py",
         HOOKS_DIR / "block-destructive-ops.py",
         HOOKS_DIR / "hook_response.py",
@@ -281,3 +281,13 @@ def test_private_tool_vocabulary_is_reported(tmp_path) -> None:
     )
 
     assert findings == ["PRIVATE_TOOLS"]
+
+
+def test_an_inline_tool_name_collection_is_reported(tmp_path) -> None:
+    """Validates: a copy written into a comparison is a private copy too."""
+    implementation = tmp_path / "implementation.py"
+    implementation.write_text('def judge(tool_name):\n    return tool_name in ("Read", "Write")\n')
+
+    findings = _private_tool_vocabulary(implementation, frozenset({"Bash", "Read", "Write", "Edit", "apply_patch"}))
+
+    assert findings == ["line 2"]

@@ -3,7 +3,11 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Block secret exfiltration and flag sensitive access (PreToolUse hook)."""
+"""Block secret exfiltration and flag credential content (PreToolUse hook).
+
+This hook judges what a call carries and where it sends it. Which file paths
+are credentials is `block-sensitive-paths.py`'s judgment, made from the manifest.
+"""
 
 import io
 import json
@@ -12,8 +16,7 @@ import subprocess
 import sys
 from typing import NoReturn
 
-import apply_patch
-from guarded_paths import NAME_HEURISTIC_EXEMPT_RE, TOOL_VOCABULARY, GuardedLocations
+from guarded_paths import TOOL_VOCABULARY
 from hook_response import UNKNOWN, Decision, invoking_agent, respond, supports_ask
 
 MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
@@ -109,25 +112,6 @@ BUILTIN_SECRET_RES = [
     ),
 ]
 
-CREDENTIAL_FILE_RE = re.compile(
-    r"(?:^|[/\\])(?:"
-    r"id_rsa|id_ed25519|id_ecdsa|id_dsa"
-    r"|[^/\\]*\.(?:key|pem|keystore|jks|p12|pfx)"
-    r"|[^/\\]*(?:token|password|passwd|api[_-]?key|auth_key|secret|credential)[^/\\]*"
-    r"|\.env(?:\.[^/\\]*)?|\.envrc"
-    r"|\.npmrc|\.netrc|\.pypirc|\.git-credentials"
-    r")$",
-    re.IGNORECASE,
-)
-
-# Always match, even inside an exempt package directory.
-STRONG_CRED_FILE_RE = re.compile(
-    r"(?:^|[/\\])(?:\.?credentials\.json|service-account[^/\\]*\.json)$",
-    re.IGNORECASE,
-)
-
-CREDENTIAL_DIRS = {prefix: GuardedLocations([prefix]) for prefix in ("~/.ssh/", "~/.aws/", "~/.kube/", "~/.gnupg/")}
-
 
 def scan_with_gitleaks(text: str) -> bool | None:
     """Return True for a leak, False for clean input, or None when unavailable."""
@@ -179,56 +163,11 @@ def ask(reason: str) -> NoReturn:
         "If this access is intentional, have the user perform it manually outside the agent session.",
     )
     reason = reason.replace(
-        "Approve only if you intentionally want the agent to access this material.",
-        "If this access is intentional, have the user perform it manually outside the agent session.",
-    )
-    reason = reason.replace(
         "approve below. Otherwise deny and remove the credential before re-running.",
         "have the user perform the sensitive step manually outside the agent "
         "session. Otherwise remove the credential before re-running.",
     )
     block("Blocked: this agent cannot show a confirmation prompt for this action.\n" + reason)
-
-
-def extract_apply_patch_paths(tool_input: dict) -> list[str]:
-    """Extract target file paths from a Codex apply_patch command body."""
-    command = tool_input.get("command", "")
-    if not isinstance(command, str):
-        return []
-    return apply_patch.targets(command)
-
-
-def ask_if_sensitive_path(path: str) -> None:
-    """Ask when supported; otherwise block access to a sensitive path."""
-    if not path:
-        return
-
-    if STRONG_CRED_FILE_RE.search(path):
-        ask(
-            f"This operation targets '{path}', a credential store file with "
-            "OAuth tokens or a cloud service-account key. Exposing it to the agent "
-            "could let prompt injection send credentials to an attacker. "
-            f"{_EXPOSURE_RISK} Approve only if you intentionally want the agent to "
-            "access this material."
-        )
-
-    for dir_prefix, credential_dir in CREDENTIAL_DIRS.items():
-        if credential_dir.contains(path):
-            ask(
-                f"This operation targets '{path}' inside credential directory "
-                f"({dir_prefix}), where files may contain private keys, tokens, or "
-                "credentials. Exposing them to the agent could let prompt injection "
-                f"send them to an attacker. {_EXPOSURE_RISK} Approve only if you "
-                "intentionally want the agent to access this material."
-            )
-
-    if CREDENTIAL_FILE_RE.search(path) and not NAME_HEURISTIC_EXEMPT_RE.search(path):
-        ask(
-            f"This operation targets '{path}', whose name suggests credentials, "
-            "tokens, or key material. Exposing it to the agent could let prompt "
-            f"injection send it to an attacker. {_EXPOSURE_RISK} Approve only if "
-            "you intentionally want the agent to access this material."
-        )
 
 
 def main() -> None:
@@ -242,7 +181,7 @@ def main() -> None:
             respond(Decision.ALLOW, agent=_AGENT)
         respond(
             Decision.WARN,
-            "block-secrets could not parse the hook payload; this call was not checked.",
+            "block-leaks could not parse the hook payload; this call was not checked.",
             agent=_AGENT,
         )
 
@@ -309,15 +248,6 @@ def main() -> None:
                 "is intentional and the credentials will not leave this session."
             )
 
-    if tool_name in ("Read", "Write", "Edit"):
-        path = tool_input.get("file_path") or tool_input.get("path", "")
-        if path:
-            ask_if_sensitive_path(path)
-
-    elif tool_name == "apply_patch":
-        for path in extract_apply_patch_paths(tool_input):
-            ask_if_sensitive_path(path)
-
     # Run gitleaks only before egress; other checks use built-in patterns.
     serialized = json.dumps(tool_input)
 
@@ -358,11 +288,11 @@ if __name__ == "__main__":
         if _current_tool_name in MUTATING_TOOLS:
             respond(
                 Decision.BLOCK,
-                "Blocked: block-secrets failed while checking a call that could expose credentials.",
+                "Blocked: block-leaks failed while checking a call that could expose credentials.",
                 agent=_AGENT,
             )
         respond(
             Decision.WARN,
-            "block-secrets failed; this tool call was not checked.",
+            "block-leaks failed; this tool call was not checked.",
             agent=_AGENT,
         )

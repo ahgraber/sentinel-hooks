@@ -44,8 +44,7 @@ The exception is declared rather than written into the rule so that the reason t
 An entry no implementation reads records an intention and changes nothing, so each implementation SHALL build its exemption from the declaration.
 
 Judging one spelling at a time is what keeps the exemption with the file it was written for.
-A link whose own name triggers the heuristic SHALL be refused even where its target is excused on this surface.
-A declaration for a different surface MAY excuse a link by its verified target, where it states the conditions the link must meet; `guarded-surface` `NameHeuristicExceptionIsDeclared` declares one for a Home Manager store wrapper, and the strong rules still apply to every hop.
+A link whose own name triggers the heuristic SHALL be refused even where its target is excused.
 
 #### Scenario: DeclaredExceptionIsReadable
 
@@ -62,8 +61,121 @@ A declaration for a different surface MAY excuse a link by its verified target, 
 #### Scenario: ExceptionDoesNotTravelAlongALink
 
 - **GIVEN** a link whose own name carries a term the heuristic recognizes
-- **WHEN** its target is covered by an exception declared for the name-heuristic surface
+- **WHEN** its target is covered by a declared exception
 - **THEN** the read is refused, because the spelling that triggered the heuristic is not the spelling the exception covers
+
+### Requirement: DotenvPlaceholderReadIsExcusedOnlyByDeclaration
+
+Serves: placeholder-files-are-readable
+
+A read of a file the dotenv rule refuses SHALL proceed only where the manifest declares an exception for the dotenv surface whose file name matches the file's name, without regard to case.
+Such an exception SHALL excuse reads only; a write SHALL still be refused.
+The exception SHALL be judged against every form `path-matching` produces, so a link named for a placeholder whose target the dotenv rule refuses is refused.
+
+A project commits a file such as `.env.example` to list the variables it expects, with placeholder values.
+The dotenv rule recognizes `.env` followed by any suffix, so it refuses these files along with `.env.local` and `.env.production`, which hold live values.
+A refused placeholder stops routine work that reads it, and holds nothing a refusal protects.
+
+The exception names a file name rather than a path, because a placeholder sits wherever its project keeps one.
+It excuses only the dotenv rule: a placeholder inside a credential directory is still refused by that rule.
+A write stays refused because the hazard is the reverse of a read: an agent can copy a live value into a placeholder that is then committed.
+
+A shell command reads a placeholder only where the read classifier recognizes its segment as a read, by the criterion `hook-tampering-blocking` `ReadClassifierAdmitsOnlySelfDescribingUtilities` sets.
+The rules that refuse take the broad set of programs that may read a file; an exemption takes the narrow set of utilities that only read their arguments.
+`sed`, `awk`, and an editor can write the file they name, and the hook recognizes no in-place write, so a placeholder named to one of them stays refused.
+A redirection's target is judged by its direction, as `UnrecognizedCommandsAreGated` judges it: an input target as a read, and an output target as a write.
+
+A placeholder read refused only because its command is not recognized as a read SHALL carry the retry form of `hook-interface` `BlockAIGuidance`, with the recognized reads listed and a statement that writing to the placeholder is refused.
+The policy permits the read, so the stop form would tell the agent to abandon work a different command completes.
+A refusal any other rule makes SHALL keep the stop form, including a placeholder whose resolved form the dotenv rule refuses.
+
+#### Scenario: DeclaredPlaceholderIsReadable
+
+- **GIVEN** the manifest declares `.env.example` for the dotenv surface
+- **WHEN** a tool call reads `apps/web/.env.example`
+- **THEN** the read proceeds
+
+#### Scenario: PlaceholderWriteIsRefused
+
+- **GIVEN** a declared placeholder name
+- **WHEN** a tool call writes a file of that name
+- **THEN** the write is refused
+
+#### Scenario: UndeclaredVariantIsRefused
+
+- **GIVEN** the declared placeholder names
+- **WHEN** a tool call reads `.env.local` or `.env.example.local`
+- **THEN** the read is refused, because neither name is declared
+
+#### Scenario: PlaceholderLinkToSecretIsRefused
+
+- **GIVEN** a link named `.env.example` whose target is `.env`
+- **WHEN** a tool call reads the link
+- **THEN** the read is refused, because the resolved form is a name the dotenv rule refuses
+
+#### Scenario: GlobIsJudgedByItsMatches
+
+- **GIVEN** the declared placeholder names
+- **WHEN** a shell command reads `.env.*`
+- **THEN** the read proceeds where every current match is a declared placeholder, and is refused where a match is a refused name or nothing matches, because the glob is judged by its matches as `shell-lexing` reads it
+
+#### Scenario: PlaceholderReadThroughARedirection
+
+- **GIVEN** a declared placeholder name
+- **WHEN** a recognized read takes it as an input redirection target, or writes its output to a file the policy permits
+- **THEN** the read proceeds
+
+#### Scenario: UnrecognizedPlaceholderReadNamesTheReadsThatProceed
+
+- **GIVEN** a declared placeholder name
+- **WHEN** a shell command reads it with a program the classifier does not recognize as a read
+- **THEN** the refusal carries the retry form, lists the recognized reads, and states that writing to the placeholder is refused
+
+### Requirement: SuggestiveNamesAsk
+
+Serves: placeholder-files-are-readable, existing-guarantees-are-recorded
+
+A `Read`, `Write`, `Edit`, or `apply_patch` call SHALL reach `Ask` when a spelling of a target path it names is suggestive and no rule in this capability refuses the target.
+A name is suggestive when its basename contains `token`, `password`, `passwd`, `api_key`, `api-key`, `apikey`, `auth_key`, or `credential`, or ends in `.keystore` or `.jks`, matched without regard to letter case.
+The package-directory exemption and the declared name-heuristic exceptions SHALL excuse a suggestive name exactly as they excuse the name heuristic.
+A file named `.credentials.json` SHALL reach `Ask` inside a package directory too, where the exemption would otherwise let an OAuth credential store through.
+
+These names suggest a credential without proving one, so the user decides rather than the hook refusing.
+They sit in this capability because it owns the judgment of which paths hold credentials, and it reads the manifest: one declaration then holds for every rule.
+
+The ask SHALL name the file and satisfy `hook-interface` `ExplanationContract`.
+An agent that cannot show a prompt for the tool SHALL receive a refusal whose explanation does not ask anyone to approve.
+A Bash command naming such a file is judged by the Bash read rules alone.
+
+#### Scenario: SuggestiveNameAsks
+
+- **GIVEN** a `Read` tool call targets `/project/auth_token.json`
+- **WHEN** the hook judges it
+- **THEN** the decision is `Ask`, and the reason names the file
+
+#### Scenario: SuggestiveNameInAPackageDirectory
+
+- **GIVEN** a `Read` tool call targets `token.py` inside a `.venv` package directory
+- **WHEN** the hook judges it
+- **THEN** the hook exits 0
+
+#### Scenario: OAuthStoreInAPackageDirectory
+
+- **GIVEN** a `Read` tool call targets `.credentials.json` inside a `.venv` package directory
+- **WHEN** the hook judges it
+- **THEN** the decision is `Ask`
+
+#### Scenario: DeclaredReadsReachNoAsk
+
+- **GIVEN** a `Read` tool call targets a declared dotenv placeholder or a declared name-heuristic exception
+- **WHEN** the hook judges it
+- **THEN** the hook exits 0
+
+#### Scenario: AgentThatCannotPrompt
+
+- **GIVEN** an agent that cannot show a prompt for the tool
+- **WHEN** a call reaches this ask
+- **THEN** the call is refused, and the explanation asks no one to approve
 
 ## MODIFIED Requirements
 
@@ -83,7 +195,7 @@ The following are OUT OF SCOPE and SHALL NOT be relied upon:
 - Symlink indirection (`ln -s <secret> link`, then reading `link`)
 - A recursive read of a directory holding a secret (`grep -r x ~`, `rg --hidden x ~`, `tar -c ~`, `cp -r ~/.config dest`), which reaches the files beneath the directory without naming them
 
-For these, the boundary is the OS sandbox's denies, which `guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds to the block class on every agent, the network egress allowlist, and `block-secrets.py`.
+For these, the boundary is the OS sandbox's denies, which `guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds to the block class on every agent, the network egress allowlist, and `block-leaks.py`.
 A secret only the name rules recognize, such as a `.env` file, has no declaration for that floor to cover, so on an agent whose sandbox does not deny it by name, these forms reach it.
 
 #### Scenario: RecursiveReadOfADeclaredCredential

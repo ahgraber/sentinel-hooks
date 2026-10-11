@@ -57,7 +57,7 @@ class TestReadAccess:
         assert_allowed(read("~/.claude/settings.json"))
 
     def test_repo_hooks_are_readable(self):
-        assert_allowed(read(repo_path("hooks", "block-secrets.py")))
+        assert_allowed(read(repo_path("hooks", "block-leaks.py")))
 
     def test_user_settings_are_readable(self):
         for platform in ("darwin", "linux"):
@@ -65,7 +65,7 @@ class TestReadAccess:
 
     def test_read_through_symlink_to_repo_hook_is_allowed(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
-        alias.symlink_to(HOOKS_DIR / "block-secrets.py")
+        alias.symlink_to(HOOKS_DIR / "block-leaks.py")
 
         assert_allowed(read(str(alias)))
 
@@ -80,7 +80,7 @@ class TestMutationGate:
         assert_blocked(write("~/.claude.json"), ".claude.json")
 
     def test_repo_hook_edit_asks(self):
-        assert_ask(edit(repo_path("hooks", "block-secrets.py")), "hooks")
+        assert_ask(edit(repo_path("hooks", "block-leaks.py")), "hooks")
 
     def test_user_settings_write_asks(self):
         assert_ask(
@@ -104,13 +104,13 @@ class TestBashCommandProtection:
     def test_bash_reading_repo_hook_proceeds(self):
         # The agent module tree is read-through, so a recognized read of a hook
         # source runs unprompted. Reviewing a guardrail is not changing it.
-        assert_allowed(bash(f"cat {repo_path('hooks', 'block-secrets.py')}"))
+        assert_allowed(bash(f"cat {repo_path('hooks', 'block-leaks.py')}"))
 
     def test_bash_touching_repo_hook_asks(self):
         # Outside a recognized read the Bash branch still matches on mention,
         # not intent: a command's effect cannot be read off its text.
         assert_ask(
-            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-secrets.py')}"),
+            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-leaks.py')}"),
             "hooks",
         )
 
@@ -137,10 +137,10 @@ class TestBashCommandProtection:
 class TestInstructionMarkdownGuard:
     """Instruction text is guarded enforcement."""
 
-    def test_repo_instruction_markdown_write_allowed(self):
+    def test_repo_instruction_markdown_write_asks(self):
         assert_ask(write(repo_path("hooks", "instructions", "00-response-style.md")))
 
-    def test_deployed_instruction_markdown_write_allowed(self):
+    def test_deployed_instruction_markdown_write_asks(self):
         assert_ask(write("~/.claude/hooks/instructions/00-response-style.md"))
 
     def test_nested_instruction_path_asks(self):
@@ -159,13 +159,13 @@ class TestInstructionMarkdownGuard:
 class TestPathResolution:
     def test_write_through_symlink_to_repo_hook_asks(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
-        alias.symlink_to(HOOKS_DIR / "block-secrets.py")
+        alias.symlink_to(HOOKS_DIR / "block-leaks.py")
 
         assert_ask(write(str(alias)), "notes.py")
 
     def test_traversal_normalized_repo_hook_write_asks(self):
         claude_dir = REPO_ROOT / "modules" / "home" / "ai" / "claude"
-        obfuscated = f"{claude_dir}/../claude/hooks/block-secrets.py"
+        obfuscated = f"{claude_dir}/../claude/hooks/block-leaks.py"
         assert "modules/home/ai/claude/hooks/" not in obfuscated
 
         assert_ask(write(obfuscated), "claude")

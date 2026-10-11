@@ -4,8 +4,10 @@ Declarations support `~/`, `<repo>/`, and single-component `*` patterns. Path
 checks use written, expanded, and resolved spellings with filesystem case rules.
 Text checks use declaration fragments.
 
-Limits: a directory change to a substituted operand, `cd -`, or `popd` leaves a
-later relative path unresolvable; name paths absolutely. Hard links are not
+Limits: a directory change the lexer does not follow (a substituted operand,
+`cd -`, `cd -P`, `popd`, a `pushd` stack position, a `cd` in a loop or a
+function, after `eval`, `source`, or `trap`, or under `CDPATH`) leaves a later
+relative path unresolvable; name paths absolutely. Hard links are not
 identified. A directory declaration follows its own symlink chain, not the
 links held inside that directory. Routes that present no path cannot be
 checked. The operating system sandbox and agent permissions are the boundary;
@@ -39,8 +41,17 @@ MANIFEST_PATH = Path(__file__).parent / "guarded-paths.toml"
 TOOL_VOCABULARY_PATH = Path(__file__).parent / "tool-vocabulary.toml"
 # `capability-coverage` excuses an agent from running a hook; no hook reads it, only the assessment.
 EXCEPTION_SURFACES = frozenset(
-    {"sensitive-path-name-heuristic", "sensitive-path-nix-hook-wrapper", "capability-coverage"}
+    {
+        "sensitive-path-name-heuristic",
+        "sensitive-path-dotenv-placeholder",
+        "capability-coverage",
+    }
 )
+# A placeholder exception is compared as a literal file name. A separator, home
+# notation, or a glob shows its author expected path or glob semantics the
+# surface does not have, and a name other than `.env.<suffix>`, `.env` itself
+# above all, would excuse a file the dotenv rule exists to refuse.
+_PLACEHOLDER_NAME = re.compile(r"\.env\.[^\s/\\~*?\[\]{}<>$]+", re.IGNORECASE)
 
 
 class ManifestError(Exception):
@@ -667,6 +678,12 @@ def _validate_manifest_shape(manifest: dict, names: tuple[str, ...]) -> dict[str
             raise TypeError("unknown exception surface")
         if any(not isinstance(exception.get(key), str) or not exception[key] for key in ("pattern", "reason")):
             raise TypeError("exception pattern and reason must be nonempty strings")
+        if exception["surface"] == "sensitive-path-dotenv-placeholder" and not _PLACEHOLDER_NAME.fullmatch(
+            exception["pattern"]
+        ):
+            raise TypeError(
+                f"a dotenv placeholder exception must be a file name `.env.<suffix>`: {exception['pattern']}"
+            )
     if any(not isinstance(path, str) for paths in entries.values() for path in paths):
         raise TypeError("path declarations must be strings")
     return entries
@@ -909,19 +926,6 @@ def load_policy(manifest_path: Path = MANIFEST_PATH, *, invocation_path: str | N
         )
     except Exception as exc:  # noqa: BLE001 -- the caller decides what a failed load does to a tool call
         return PathPolicy(_EMPTY_MANIFEST, manifest_path=manifest_path, error=str(exc))
-
-
-def verdict(
-    path: str,
-    operation: str,
-    *,
-    policy: PathPolicy | None = None,
-    cwd: str | None = None,
-) -> str:
-    """Judge a path using a loaded policy, or the deployed manifest."""
-    if policy is None:
-        policy = PathPolicy(load_manifest())
-    return policy.verdict(path, operation, cwd=cwd)
 
 
 def validate(manifest: Path | str = MANIFEST_PATH) -> list[str]:

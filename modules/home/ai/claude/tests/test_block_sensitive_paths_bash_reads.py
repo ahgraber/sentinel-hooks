@@ -6,6 +6,7 @@ and redirection targets, so a search pattern alone does not trigger it.
 """
 
 from conftest import assert_allowed, assert_blocked, run_hook
+import pytest
 
 HOOK = "block-sensitive-paths.py"
 
@@ -119,8 +120,14 @@ class TestObfuscationClosed:
     def test_attached_option_value(self):
         assert_blocked(bash("grep -f.env README.md"), "zero-access")
 
+    @pytest.mark.parametrize(
+        "command", ["grep -fid_rsa README.md", "grep -fcredentials.json README.md", "grep -ivfid_ed25519 x"]
+    )
+    def test_attached_option_value_starting_with_a_letter(self, command):
+        assert_blocked(bash(command), "zero-access")
+
     def test_command_substitution_inner_reader(self):
-        # punctuation_chars exposes the inner `cat` segment.
+        # The lexer keeps the substitution as one unresolvable word that names `.env`.
         assert_blocked(bash("echo $(cat .env)"), "zero-access")
 
 
@@ -149,7 +156,7 @@ class TestBareCredentialsAndWrappers:
         assert_allowed(bash("cat .venv/lib/python3.11/site-packages/pkg/credentials"))
 
 
-class TestAcceptedOverDeny:
+class TestPatternsInReadCommands:
     def test_grep_secret_pattern(self):
         assert_allowed(bash("grep -r secret ."))
 

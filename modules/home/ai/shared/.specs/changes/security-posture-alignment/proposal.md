@@ -37,6 +37,8 @@ Preventing the next one is a matter of instruction rather than of test, so it li
   (North star: the posture is the justification for every rule, so a rule that is not expressed anywhere cannot be checked against it.)
 - **the-declared-surface-is-what-is-protected** — As the maintainer of these guardrails, I want a declared location to be reached by every spelling and by no route the hooks do not judge, so that what the manifest declares is what is actually protected.
   (North star: "a denial from any layer is final"; a route no layer judges is not a denial anyone can rely on.)
+- **placeholder-files-are-readable** — As the operator of these agents, I want an agent to read the committed example files that list a project's environment variables, so that routine work does not stop on a file that holds no secret.
+  (North star: "ordinary, recoverable work proceeds without friction"; a placeholder file is not credential material.)
 
 ## Scope
 
@@ -93,6 +95,13 @@ Preventing the next one is a matter of instruction rather than of test, so it li
 - `destructive-ops-blocking` and `hook-interface`: refusing to judge by a pattern file that does not validate.
   The hook allowed every command when its file was missing or unreadable, and skipped a rule with an unknown mode or a pattern that did not compile, so a wrong value such as `mode = "deny"` turned a protection off with nothing reporting it.
   An unusable file now reaches `Ask` on every `Bash` call, with the fault named.
+- `sensitive-path-blocking` and `guarded-surface`: reading a placeholder dotenv file, `.env.example`, `.env.sample`, `.env.template`, or `.env.op`, where the manifest declares its name.
+  The dotenv rule refused these along with `.env.local`, and the Claude sandbox's `**/.env.*` deny hid them from every process, so an agent session could not read or `git` stat a file committed to hold placeholders.
+  Writes stay refused.
+  Claude's sandbox re-allows the same three names with `allowRead`; Codex cannot reopen a file inside a deny glob and still refuses them.
+- `hook-tampering-blocking` and `sensitive-path-blocking`: judging a redirection's target by its direction rather than refusing recognition for any redirection.
+  An input target is a read and an output target a write, in both hooks, so `cat <file> 2>/dev/null` is a read and `cat x > <guarded file>` a write.
+- `hook-interface`: the retry form states nothing that holds for one hook alone, since a write the tamper hook puts to the user is one the sensitive-path hook refuses.
 - Declaring the gated tool vocabulary once, with each harness's spellings, in a file beside the manifest, and requiring every adapter to refuse a tool name it cannot map.
   The vocabulary is undeclared and copied across six implementation sites, and `normalize_payload` in `copilot-vscode-hook-adapter.py` forwards an unmapped name unchanged, which reaches the hooks as a tool they do not gate and is allowed.
   A registered hook chain that does not gate is the same hole as an unimplemented capability, so it belongs with parity rather than beside it.
@@ -128,3 +137,12 @@ Once Pi adapts, the tables arbitrate the adapters rather than two languages, whi
 Pi adapts rather than keeps porting.
 The north star already settles the direction: onboarding an agent means expressing this posture in that agent's vocabulary, not writing a new one.
 Feasibility was measured against a live `pi` before this was written — the gating path awaits a subprocess and honors its verdict, and one dispatcher costs less per tool call than the per-hook shape Claude already pays.
+
+## Resolved Questions
+
+- 2026-10-09: a refusal whose classifier stopped only on relative paths in an undetermined directory ends with a third instruction form, the absolute-path form, and `UnrecognizedCommandsAreGated` defers to `GateResponse` for what a reason offers.
+  Decided with the user.
+- 2026-10-09: `block-secrets.py` judges content and exfiltration only; its file-path asks move to `block-sensitive-paths.py` as `SuggestiveNamesAsk`, so the manifest's declarations hold for every path rule.
+  Decided with the user.
+- 2026-10-09: `block-secrets.py` is renamed `block-leaks.py`, with its two test files.
+  Decided with the user.

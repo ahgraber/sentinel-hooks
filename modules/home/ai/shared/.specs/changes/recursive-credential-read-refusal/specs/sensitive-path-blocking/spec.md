@@ -117,7 +117,7 @@ The following are OUT OF SCOPE and SHALL NOT be relied upon:
 - Symlink indirection (`ln -s <secret> link`, then reading `link`), including a link beneath a recursive read's root
 - A recursive read that `RecursiveReadAboveADeclaredCredential` does not refuse: one by a reader the hooks do not recognize, and one reaching a secret only the name rules recognize, such as a `.env` file beneath the root
 
-For these, the boundary is the OS sandbox's denies, which `guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds to the block class on every agent, the network egress allowlist, and `block-secrets.py`.
+For these, the boundary is the OS sandbox's denies, which `guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds to the block class on every agent, the network egress allowlist, and `block-leaks.py`.
 A secret only the name rules recognize, such as a `.env` file, has no declaration for that floor to cover, so on an agent whose sandbox does not deny it by name, these forms reach it.
 
 #### Scenario: RecursiveReadOfANameRuleSecret

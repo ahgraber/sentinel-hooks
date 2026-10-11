@@ -28,33 +28,27 @@ This change replaces it: its requirements are restated here against the new clas
 
 ### Story: one-list-then-deltas
 
-As the maintainer of these guardrails, I want the manifest to read as one guarded list plus named deltas, so that the policy can be understood by reading it and the same policy can be written more than one way.
-(North star: "the policy is written once and holds for every agent"; a policy only its implementer can read is written for one reader.)
+As the maintainer of these guardrails, I want the manifest to read as one guarded list plus named deltas, so that the policy can be understood by reading it and the same policy can be written more than one way. (North star: "the policy is written once and holds for every agent"; a policy only its implementer can read is written for one reader.)
 
 ### Story: posture-and-mechanism-are-separate
 
-As the maintainer of these guardrails, I want the posture, which locations are in which class and why, recorded apart from the mechanism, how a class is enforced, so that a change to one is reviewed against that one alone.
-(North star: "a rule found in any surface is an expression of this posture"; a rule that cannot be told from the surface enforcing it cannot be checked against the posture.)
+As the maintainer of these guardrails, I want the posture, which locations are in which class and why, recorded apart from the mechanism, how a class is enforced, so that a change to one is reviewed against that one alone. (North star: "a rule found in any surface is an expression of this posture"; a rule that cannot be told from the surface enforcing it cannot be checked against the posture.)
 
 ### Story: reads-are-frictionless
 
-As the operator of these agents, I want a recognized read or search of any guarded location to proceed without a prompt, so that reviewing a guardrail, a skill, or this module never trains me to approve prompts about my own tooling.
-(North star: "ordinary, recoverable work proceeds without friction".)
+As the operator of these agents, I want a recognized read or search of any guarded location to proceed without a prompt, so that reviewing a guardrail, a skill, or this module never trains me to approve prompts about my own tooling. (North star: "ordinary, recoverable work proceeds without friction".)
 
 ### Story: skill-scripts-run
 
-As the operator of these agents, I want a run of a script already held in a skills directory to proceed without a prompt, so that using an installed skill does not train me to approve prompts about my own tooling.
-(North star: "response matches risk".)
+As the operator of these agents, I want a run of a script already held in a skills directory to proceed without a prompt, so that using an installed skill does not train me to approve prompts about my own tooling. (North star: "response matches risk".)
 
 ### Story: one-lexer
 
-As the maintainer of these guardrails, I want every hook that judges a Bash command to read it through one lexer held to the shell that runs it, so that a spelling one hook resolves is never one another hook misreads.
-(North star: "layers are independent, and a denial from any layer is final"; two readings of one command are two chances to miss the same word.)
+As the maintainer of these guardrails, I want every hook that judges a Bash command to read it through one lexer held to the shell that runs it, so that a spelling one hook resolves is never one another hook misreads. (North star: "layers are independent, and a denial from any layer is final"; two readings of one command are two chances to miss the same word.)
 
 ### Story: floors-are-checked-where-a-miss-is-unrecoverable
 
-As the maintainer of these guardrails, I want floor conformance to cover the block class and nothing the floors cannot express, so that the check holds where a leak cannot be undone and a manifest edit does not demand a settings edit it cannot be given.
-(North star: "response matches risk"; a check that fails on what a surface cannot say is a check that gets waived.)
+As the maintainer of these guardrails, I want floor conformance to cover the block class and nothing the floors cannot express, so that the check holds where a leak cannot be undone and a manifest edit does not demand a settings edit it cannot be given. (North star: "response matches risk"; a check that fails on what a surface cannot say is a check that gets waived.)
 
 ## Scope
 
@@ -154,3 +148,8 @@ The differential property is run once under zsh, as a measurement rather than a 
 
 `hooks.nix` enumerates `hooks/` at activation, so `shell_words.py` has no deployed symlink until the next `just nix switch home`.
 The work happens in the `ai-guardrails` worktree, and the activation runs once after merge.
+
+## Resolved Questions
+
+- 2026-10-10: the `sensitive-path-nix-hook-wrapper` exception surface is removed, because renaming the hook it excused left it excusing nothing.
+  Decided with the user.

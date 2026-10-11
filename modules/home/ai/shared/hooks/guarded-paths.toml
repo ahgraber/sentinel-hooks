@@ -178,10 +178,26 @@ surface = "sensitive-path-name-heuristic"
 pattern = "<repo>/scripts/mcp-secrets.sh"
 reason = "a tracked program named for the secret file it renders, holding none itself"
 
+# A placeholder pattern is a file name, matched in any directory and excusing reads only.
 [[exceptions]]
-surface = "sensitive-path-nix-hook-wrapper"
-pattern = "<repo>/modules/home/ai/shared/hooks/block-secrets.py"
-reason = "a Home Manager store symlink whose generated name and resolved source both identify this hook"
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.example"
+reason = "a committed list of a project's environment variables with placeholder values"
+
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.sample"
+reason = "a committed list of a project's environment variables with placeholder values"
+
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.template"
+reason = "a committed list of a project's environment variables with placeholder values"
+
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.op"
+reason = "a committed list of a project's environment variables whose values are 1Password secret references"
 
 [[exceptions]]
 surface = "capability-coverage"

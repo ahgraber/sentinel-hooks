@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from hook_response import (
+    ABSOLUTE_PATH_INSTRUCTIONS,
     CLAUDE,
     CODEX,
     COPILOT,
@@ -62,6 +63,13 @@ class TestAgentIdentification:
         """Validates: AdapterNamesARecognizedAgent."""
         monkeypatch.setenv("AI_HOOK_AGENT", "pi")
         assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == PI
+
+    @pytest.mark.parametrize(("declared", "expected"), [("copilot", COPILOT), ("pi", PI)])
+    def test_a_declaration_outranks_another_agents_payload_field(self, monkeypatch, declared, expected) -> None:
+        """VS Code sends `transcript_path` too, so the field cannot name the agent over its adapter."""
+        monkeypatch.setenv("AI_HOOK_AGENT", declared)
+        payload = {"transcript_path": "/tmp/transcript.jsonl"}
+        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py", payload) == expected
 
     def test_an_unrecognized_declaration_is_ignored(self, monkeypatch) -> None:
         monkeypatch.setenv("AI_HOOK_AGENT", "something-else")
@@ -126,7 +134,12 @@ class TestAsk:
         assert payload["permissionDecision"] == "ask"
 
     @pytest.mark.parametrize(
-        ("instruction", "text"), [(Instruction.STOP, STOP_INSTRUCTIONS), (Instruction.RETRY, RETRY_INSTRUCTIONS)]
+        ("instruction", "text"),
+        [
+            (Instruction.STOP, STOP_INSTRUCTIONS),
+            (Instruction.RETRY, RETRY_INSTRUCTIONS),
+            (Instruction.ABSOLUTE_PATH, ABSOLUTE_PATH_INSTRUCTIONS),
+        ],
     )
     def test_a_pi_ask_carries_the_instructions_its_adapter_may_refuse_with(self, capsys, instruction, text) -> None:
         """Validates: AskAnAdapterMayRefuse. Pi's adapter refuses from this reason without a UI or on a decline."""
@@ -179,3 +192,10 @@ class TestAsk:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert "why" in captured.err
+
+
+@pytest.mark.parametrize("text", [RETRY_INSTRUCTIONS, ABSOLUTE_PATH_INSTRUCTIONS])
+def test_every_instruction_form_ends_with_the_same_four_reporting_points(text) -> None:
+    """Validates: BlockAIGuidance. Each form requests the same account of the same stopped call."""
+    points = STOP_INSTRUCTIONS[STOP_INSTRUCTIONS.index("1. ") :]
+    assert text.endswith(points)

@@ -45,7 +45,7 @@ def test_cases_are_loaded() -> None:
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["path"])
 def test_verdict_matches_the_shared_table(case: dict) -> None:
     path = os.path.expanduser(case["path"])
-    assert should_block(path, cwd=str(REPO_ROOT)) is case["blocked"], case["why"]
+    assert should_block(path, cwd=str(REPO_ROOT), reading=True) is case["blocked"], case["why"]
 
 
 @pytest.mark.parametrize("case", json.loads(CASES_FILE.read_text())["bash_cases"])
@@ -57,3 +57,16 @@ def test_bash_word_cases(case, tmp_path, monkeypatch):
         (tmp_path / name).touch()
     hook = load_hook("block-sensitive-paths")
     assert bool(hook.bash_blocked_target(case["command"], str(tmp_path))) is case["blocked"]
+
+
+@pytest.mark.parametrize(
+    ("command", "with_cwd"),
+    [
+        ("echo x > $DIR/secrets.txt", True),
+        ("echo x >> ./$(x)/secrets.txt", True),
+        ("echo x > secrets.txt", False),
+    ],
+)
+def test_an_output_target_the_lexer_cannot_resolve_is_judged_as_a_write(command, with_cwd, tmp_path):
+    hook = load_hook("block-sensitive-paths")
+    assert hook.bash_blocked_target(command, str(tmp_path) if with_cwd else None)

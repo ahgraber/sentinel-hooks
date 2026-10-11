@@ -50,11 +50,21 @@ Stop and report the following to the user immediately:
 RETRY_INSTRUCTIONS = f"""
 ---
 AI INSTRUCTIONS:
-The classifier stopped this call because the command does not match any form it can check for writes. Reading this path is allowed; writing to it needs the user's approval.
+The classifier stopped this call because the command does not match any form it can check. Reading this path is allowed with the commands listed above.
 
 If one of the commands listed above under "Recognized reads use" does what you need, run that instead.
 
 If none of them does, stop and report the following to the user:
+{_REPORT_POINTS}
+"""
+
+
+ABSOLUTE_PATH_INSTRUCTIONS = f"""
+---
+AI INSTRUCTIONS:
+This call names a relative path in a directory the hook cannot determine, so it could not check which file the path reaches. Restate every relative path in the command as an absolute path and run the command again; the restated command is checked in full.
+
+If the restated command is refused too, stop and report the following to the user:
 {_REPORT_POINTS}
 """
 
@@ -71,11 +81,13 @@ class Instruction(enum.StrEnum):
 
     STOP = "stop"
     RETRY = "retry"
+    ABSOLUTE_PATH = "absolute path"
 
 
 _INSTRUCTION_TEXT = {
     Instruction.STOP: STOP_INSTRUCTIONS,
     Instruction.RETRY: RETRY_INSTRUCTIONS,
+    Instruction.ABSOLUTE_PATH: ABSOLUTE_PATH_INSTRUCTIONS,
 }
 
 
@@ -87,11 +99,14 @@ def invoking_agent(invocation_path: str | None = None, payload: dict | None = No
         if marker in normalized:
             return agent
 
+    # An adapter's declaration comes first: VS Code also sends `transcript_path`.
+    declared = os.environ.get("AI_HOOK_AGENT", "").strip().lower()
+    if declared in _KNOWN_AGENTS:
+        return declared
+
     if payload is not None and "transcript_path" in payload:
         return CLAUDE
-
-    declared = os.environ.get("AI_HOOK_AGENT", "").strip().lower()
-    return declared if declared in _KNOWN_AGENTS else UNKNOWN
+    return UNKNOWN
 
 
 def supports_ask(agent: str, tool_name: str | None = None) -> bool:

@@ -31,6 +31,7 @@ GATED = "guarded"
 CREDENTIAL = "block"
 MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
 SENSITIVE_PATH_TOOLS = TOOL_VOCABULARY.group("sensitive-path")
+FILE_TOOLS = TOOL_VOCABULARY.group("file")
 
 
 def _ask_reason(target: str, tool_name: str) -> str:
@@ -46,7 +47,7 @@ def _unrecognized_reason(target: str, tool_name: str, syntax: str) -> str:
         f"This {tool_name} call targets '{target}' but is not recognized as an "
         "authorized action. It may write there. Approve only if you intend to "
         f"run it as written. Recognition stopped at {syntax}."
-    ) + (bash_commands.accepted_forms() if offers_accepted_forms(syntax) else "")
+    ) + _hint(syntax)
 
 
 def _unrecognized_refusal(target: str, tool_name: str, syntax: str) -> str:
@@ -54,7 +55,16 @@ def _unrecognized_refusal(target: str, tool_name: str, syntax: str) -> str:
         f"Blocked: {tool_name} on '{target}' is not recognized as an authorized "
         "action. It may write, and this agent cannot ask for the required "
         f"approval. Recognition stopped at {syntax}."
-    ) + (bash_commands.accepted_forms() if offers_accepted_forms(syntax) else "")
+    ) + _hint(syntax)
+
+
+def _hint(syntax: str) -> str:
+    """Name the rewrite that resolves the stop, where one exists."""
+    if offers_accepted_forms(syntax):
+        return bash_commands.accepted_forms()
+    if bash_commands.asks_for_absolute_paths(syntax):
+        return bash_commands.ABSOLUTE_PATH_HINT
+    return ""
 
 
 def _ancestor_reason(target: str, tool_name: str) -> str:
@@ -79,7 +89,7 @@ def _unanchored_refusal(operand: str, tool_name: str) -> str:
         f"Blocked: {tool_name} would remove, rename, replace, or change the permissions of the relative path "
         f"'{operand}', and this call supplies no working directory, or an earlier "
         "`cd` names one the hook cannot resolve, so whether it holds agent "
-        "enforcement is unknown. Written as an absolute path, it can be judged."
+        "enforcement is unknown."
     )
 
 
@@ -133,7 +143,8 @@ def _exec_through_script(token: str, cwd: str | None = None) -> bool:
 
 
 def _script_exec_segment(segment: list[Word], cwd: str | None = None) -> bool:
-    words = [word for word in segment if not bash_commands.descriptor_redirect(word)]
+    # `_reading_class` judges redirection targets by direction.
+    words = [word for word in segment if word.kind != "redirection target"]
     if not words or any(word.kind in bash_commands.OPAQUE_KINDS for word in words):
         return False
     name, *args = words
@@ -170,6 +181,39 @@ def _segment_class(segment: bash_commands.SegmentReading, cwd: str | None, opera
                     classes.append(GATED)
             classes.append(protected_class(path, operation=operation, cwd=cwd))
     return _most_restrictive(*classes)
+
+
+def _recognized(reading: bash_commands.Reading, segment: bash_commands.SegmentReading, cwd: str | None) -> bool:
+    """Whether a segment is a recognized read, a recognized run, or does nothing but redirect."""
+    return not reading.has_builder and (
+        segment.read_only or bash_commands.only_redirects(segment.words) or _script_exec_segment(segment.words, cwd)
+    )
+
+
+def _written_targets(segment: bash_commands.SegmentReading, cwd: str | None) -> list[str]:
+    """Paths the segment's output redirections open for writing."""
+    return [
+        path
+        for word in segment.words
+        if bash_commands.redirect_writes(word)
+        for path in bash_commands.word_paths(word, cwd)
+    ]
+
+
+def _redirected_write(reading: bash_commands.Reading, cwd: str | None) -> tuple[str, str] | None:
+    """Return the first gated output target of a fully recognized command, with its class.
+
+    A command with any unrecognized segment keeps the recognition reason, which
+    says it may do more than this write.
+    """
+    if not all(_recognized(reading, segment, cwd) for segment in reading.segments):
+        return None
+    for segment in reading.segments:
+        for path in _written_targets(segment, cwd):
+            cls = protected_class(path, cwd=cwd)
+            if cls is not None:
+                return path, cls
+    return None
 
 
 def destroys_a_guarded_ancestor(command: str, cwd: str | None = None) -> str | None:
@@ -253,7 +297,9 @@ def _reading_class(reading: bash_commands.Reading, cwd: str | None) -> str | Non
     for segment in reading.segments:
         if _segment_class(segment, cwd, "read") == CREDENTIAL:
             return CREDENTIAL
-        if not reading.has_builder and (segment.read_only or _script_exec_segment(segment.words, cwd)):
+        if _recognized(reading, segment, cwd):
+            # The read above judged every input target; an output target is a write.
+            classes.extend(protected_class(path, cwd=cwd) for path in _written_targets(segment, cwd))
             continue
         classes.append(_segment_class(segment, cwd))
         classes.extend(protected_class(target, operation="run", cwd=cwd) for target in segment.run_targets)
@@ -266,8 +312,8 @@ def _with_policy_findings(message: str) -> str:
     return message
 
 
-def _ask(message: str, agent: str, tool_name: str) -> NoReturn:
-    respond(Decision.ASK, _with_policy_findings(message), agent=agent, tool_name=tool_name)
+def _ask(message: str, agent: str, tool_name: str, instruction: Instruction = Instruction.STOP) -> NoReturn:
+    respond(Decision.ASK, _with_policy_findings(message), agent=agent, tool_name=tool_name, instruction=instruction)
 
 
 def _block(message: str, agent: str, instruction: Instruction = Instruction.STOP) -> NoReturn:
@@ -293,7 +339,7 @@ def gate(
     if cls == CREDENTIAL:
         _block(_credential_refusal(target, tool_name), agent)
     if supports_ask(agent, tool_name):
-        _ask(prompt or _ask_reason(target, tool_name), agent, tool_name)
+        _ask(prompt or _ask_reason(target, tool_name), agent, tool_name, instruction)
     _block(refusal or _degraded_refusal(target, tool_name), agent, instruction)
 
 
@@ -367,7 +413,7 @@ def main() -> None:
     if POLICY.error is not None:
         internal_error(ManifestError(f"guarded-paths.toml: {POLICY.error}"))
 
-    if tool_name in ("Read", "Write", "Edit"):
+    if tool_name in FILE_TOOLS:
         paths = _written_paths(tool_input)
         cls = _most_restrictive(
             *(protected_class(path, operation="read" if tool_name == "Read" else "write", cwd=cwd) for path in paths)
@@ -399,6 +445,10 @@ def main() -> None:
             reading = bash_commands.read(command, cwd)
             cls = _reading_class(reading, cwd)
             if cls is not None:
+                # A recognized command writing a gated file meets the write gate, not a recognition stop.
+                written = _redirected_write(reading, cwd) if cls != CREDENTIAL else None
+                if written is not None:
+                    gate(written[0], tool_name, written[1], agent)
                 target = _first_in_class(_paths_in(reading, cwd), cls) or command
                 syntax = reading.stopping_syntax()
                 gate(
@@ -408,7 +458,7 @@ def main() -> None:
                     agent,
                     prompt=_unrecognized_reason(target, tool_name, syntax),
                     refusal=_unrecognized_refusal(target, tool_name, syntax),
-                    instruction=Instruction.RETRY if offers_accepted_forms(syntax) else Instruction.STOP,
+                    instruction=bash_commands.refusal_instruction(syntax),
                 )
 
             # Read carve-outs do not permit removing their guarded ancestors.
@@ -423,15 +473,9 @@ def main() -> None:
                     refusal=_ancestor_refusal(ancestor, tool_name),
                 )
 
-            # TODO: this refusal ends with the stop instruction, so the agent
-            # reports to the user rather than restating the paths itself. If an
-            # agent that omits `cwd` makes it frequent, add a third refusal form
-            # to `hook-interface` `BlockAIGuidance` that tells the agent to
-            # restate every relative path absolutely and run again. That form is
-            # no more permissive, because the restated command is judged in full.
             unanchored = _unanchored_operand(reading, cwd)
             if unanchored is not None:
-                _block(_unanchored_refusal(unanchored, tool_name), agent)
+                _block(_unanchored_refusal(unanchored, tool_name), agent, instruction=Instruction.ABSOLUTE_PATH)
 
     if POLICY and POLICY.findings:
         respond(Decision.WARN, "\n".join(POLICY.findings), agent=agent)

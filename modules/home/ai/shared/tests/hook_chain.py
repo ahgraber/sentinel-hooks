@@ -21,7 +21,7 @@ HOOKS = (
     "block-sensitive-paths.py",
     "block-hook-tampering.py",
     "block-destructive-ops.py",
-    "block-secrets.py",
+    "block-leaks.py",
 )
 RANK = {"allow": 0, "ask": 1, "block": 2}
 

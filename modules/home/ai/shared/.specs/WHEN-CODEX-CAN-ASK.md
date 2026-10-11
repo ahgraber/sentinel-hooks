@@ -31,12 +31,12 @@ With a prompt, each of these becomes a secondary route or can be removed.
 | Growth of the admitted read-utility set, such as `rg` with `--no-config` | `RipgrepIsAdmittedWithItsConfigurationRefused`                           | Admits more reads because an unrecognized read is refused rather than asked |
 | The Codex reviewer's `USER_APPROVAL_REQUIRED` route                      | `GuardrailEditsRouteToTheUser`, the Codex `config*.toml` reviewer policy | Puts a guardrail edit to the user when the hook cannot                      |
 | The editor prompt as Copilot's escalation surface                        | `TheEditorPromptIsCopilotsEscalationSurface`                             | Same, for Copilot                                                           |
-| The degraded message in `block-secrets.py`                               | `block-secrets.py`                                                       | Tells the agent to have the user act outside the session                    |
+| The degraded message in `block-leaks.py`                                 | `block-leaks.py`                                                         | Tells the agent to have the user act outside the session                    |
 | The degraded refusal in `block-destructive-ops.py`                       | `block-destructive-ops.py`                                               | Turns an `ask` rule into a refusal with a note                              |
 | The two-form block contract in the test helpers                          | each agent's `tests/conftest.py`                                         | Asserts the exit-2 forms an agent with no prompt receives                   |
 
 ## Related defect
 
-`block-secrets.py` and `block-destructive-ops.py` call `supports_ask(agent)` with no tool name.
+`block-leaks.py` and `block-destructive-ops.py` call `supports_ask(agent)` with no tool name.
 For Copilot that returns false, so those two hooks refuse Copilot even on `Write` and `Edit`, where it can show a prompt.
 The archived `guardrail-ask-gate` change records this as an open, undecided task.

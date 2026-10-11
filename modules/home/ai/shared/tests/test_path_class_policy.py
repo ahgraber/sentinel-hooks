@@ -246,10 +246,12 @@ def test_construction_does_not_walk_carve_out_contents(policy_world, monkeypatch
     assert rules.verdict("~/skills/task.py", "run") == "exec-through"
 
 
-def test_unknown_exception_surface_is_a_manifest_failure(policy_world):
+@pytest.mark.parametrize("surface", ["misspelled-surface", "sensitive-path-nix-hook-wrapper"])
+def test_unknown_exception_surface_is_a_manifest_failure(policy_world, surface):
+    """A retired surface fails as a misspelled one does, so no entry under it is silently ignored."""
     home, repo, manifest = policy_world
     data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
-    data["exceptions"] = [{"surface": "misspelled-surface", "pattern": "~/file", "reason": "test"}]
+    data["exceptions"] = [{"surface": surface, "pattern": "~/file", "reason": "test"}]
     with pytest.raises(guarded_paths.ManifestError, match="surface"):
         guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
 

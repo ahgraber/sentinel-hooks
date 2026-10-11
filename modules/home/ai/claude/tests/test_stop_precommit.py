@@ -1,6 +1,7 @@
 """Tests for stop-precommit.sh, the end-of-turn pre-commit hook."""
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -231,6 +232,55 @@ def _end_turn(repo: Path) -> HookResult:
     return HookResult(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
+def _strict_runner(tmp_path: Path) -> dict[str, str]:
+    """Return an environment whose `prek` fails on any path it cannot open, as a real hook would."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    runner = bin_dir / "prek"
+    runner.write_text(
+        '#!/usr/bin/env bash\nshift 2\nfor f in "$@"; do [[ -e "$f" ]] || { echo "cannot open $f"; exit 1; }; done\n'
+    )
+    runner.chmod(0o755)
+    return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+
+class TestDeletedPathsNeverReachTheRunner:
+    """A runner handed a deleted path fails, so these fail if a deletion is selected."""
+
+    def _stop(self, repo: Path, env: dict[str, str], session: str | None) -> subprocess.CompletedProcess[str]:
+        payload = {"hook_event_name": "Stop", "stop_hook_active": False, "cwd": str(repo)}
+        if session:
+            payload["session_id"] = session
+        return subprocess.run(
+            ["bash", str(HOOK_PATH)],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+            check=False,
+        )
+
+    def test_without_a_snapshot(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", PASSING_CONFIG)
+        (repo / "tracked.txt").unlink()
+        (repo / "new.txt").write_text("new\n")
+
+        result = self._stop(repo, _strict_runner(tmp_path), None)
+
+        assert result.returncode == 0, result.stderr
+
+    def test_with_a_snapshot(self, tmp_path):
+        repo = _create_git_repo(tmp_path / "repo", PASSING_CONFIG)
+        _start_turn(repo)
+        (repo / "tracked.txt").unlink()
+        (repo / "new.txt").write_text("new\n")
+
+        result = self._stop(repo, _strict_runner(tmp_path), SESSION)
+
+        assert result.returncode == 0, result.stderr
+
+
 @requires_runner
 class TestTurnScope:
     """With a turn-start snapshot, only the files the turn changed reach the runner."""
@@ -312,6 +362,18 @@ class TestTurnScope:
             _start_turn(repo)
         finally:
             unreadable.chmod(0o644)
+
+        assert not snapshot.exists()
+
+    def test_a_turn_starting_with_no_head_drops_the_previous_snapshot(self, tmp_path):
+        """An orphan branch has no HEAD, so the turn takes no snapshot and keeps none."""
+        repo = _create_git_repo(tmp_path / "repo", PASSING_CONFIG)
+        _start_turn(repo)
+        snapshot = repo / ".git" / f"agent-snapshot-{SESSION}"
+        assert snapshot.is_file()
+        subprocess.run(["git", "-C", str(repo), "checkout", "-q", "--orphan", "fresh"], check=True)
+
+        _start_turn(repo)
 
         assert not snapshot.exists()
 

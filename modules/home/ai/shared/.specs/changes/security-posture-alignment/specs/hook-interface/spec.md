@@ -145,10 +145,10 @@ Serves: a-refusal-says-what-would-work, degradation-still-reaches-the-user
 
 Every block response (exit 2) SHALL include a structured AI instruction section appended after the human explanation.
 
-The section SHALL take one of two forms, and SHALL NOT combine them.
-Whether the block message lists commands the hook accepts SHALL decide which form.
+The section SHALL take one of three forms, and SHALL NOT combine them.
+What the block message offers the agent SHALL decide which form: commands the hook accepts, the restatement of relative paths as absolute paths, or nothing.
 
-A block whose message lists no accepted command SHALL use the stop form.
+A block whose message offers nothing SHALL use the stop form.
 It directs the AI to abandon the operation rather than rewrite it, and to give the user what they need to decide whether to run it themselves.
 
 ```text
@@ -171,10 +171,14 @@ The retry form SHALL state why the call stopped, and SHALL quote the words that 
 "Not recognized" repeats the explanation above it and gives the agent no next step.
 A pointer that says only "above" leaves the agent searching a paragraph of prose for the list.
 
+The retry form is shared by every hook that refuses a command its classifier could not check, so it SHALL state nothing that holds for one hook alone.
+What a write would need differs by hook: the tamper hook puts a write to its user, and the sensitive-path hook refuses one.
+Each hook's own explanation SHALL say what happens to a write.
+
 ```text
 ---
 AI INSTRUCTIONS:
-The classifier stopped this call because the command does not match any form it can check for writes. Reading this path is allowed; writing to it needs the user's approval.
+The classifier stopped this call because the command does not match any form it can check. Reading this path is allowed with the commands listed above.
 
 If one of the commands listed above under "Recognized reads use" does what you need, run that instead.
 
@@ -185,13 +189,32 @@ If none of them does, stop and report the following to the user:
 4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed
 ```
 
-The four reporting points SHALL be identical in both forms.
-Both request the same account of the same stopped call, so any difference between them is drift.
+A block whose classifier stopped only on relative paths in a directory the hook cannot determine SHALL use the absolute-path form.
+The stop is on the paths, not on what the command does: the same command with every path absolute is one the classifier can judge.
+The form SHALL direct the agent to restate every relative path as an absolute path and run the command again.
+
+```text
+---
+AI INSTRUCTIONS:
+This call names a relative path in a directory the hook cannot determine, so it could not check which file the path reaches. Restate every relative path in the command as an absolute path and run the command again; the restated command is checked in full.
+
+If the restated command is refused too, stop and report the following to the user:
+1. Your current task — what you were working on
+2. Your intended step — what you were trying to do and why
+3. What was blocked — the specific action blocked and the reason given above
+4. How the user can help — describe exactly what command or steps the user could run manually to complete this on your behalf, and explain why they might or might not want to proceed
+```
+
+The four reporting points SHALL be identical in every form.
+Each requests the same account of the same stopped call, so any difference between them is drift.
 
 The retry form is no more permissive than the stop form.
 Every command the hook accepts reads.
 None writes, and none runs a program the command leaves unnamed.
 An AI that intended to write therefore reaches the same four-point report by either route.
+
+The absolute-path form is no more permissive than the stop form.
+The restated command is judged in full, so a write it makes meets the gate it would have met had the agent written it absolutely the first time.
 
 Where the agent's adapter, rather than the hook, turns an `Ask` into a refusal, the `Ask` SHALL carry the instruction section in its reason.
 The hook cannot know whether that adapter will show the prompt, and a refusal the adapter builds from the reason is otherwise a refusal without the section.
@@ -213,6 +236,12 @@ The hook cannot know whether that adapter will show the prompt, and a refusal th
 - **GIVEN** a hook exits 2 with a message naming commands the hook accepts
 - **WHEN** the block message is written to stderr
 - **THEN** it contains a human explanation section followed by a `---` delimiter, `AI INSTRUCTIONS:` header, an instruction to run the command again in one of the named forms, and the four-point reporting directive for the case where none serves
+
+#### Scenario: AbsolutePathMessageFormat
+
+- **GIVEN** a hook exits 2 because its classifier stopped only on relative paths in a directory it cannot determine
+- **WHEN** the block message is written to stderr
+- **THEN** it contains a human explanation section followed by a `---` delimiter, `AI INSTRUCTIONS:` header, an instruction to restate every relative path absolutely and run the command again, and the four-point reporting directive for the case where the restated command is refused
 
 #### Scenario: AIDoesNotSeekWorkaround
 

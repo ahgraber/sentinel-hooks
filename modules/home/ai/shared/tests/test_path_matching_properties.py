@@ -73,6 +73,7 @@ def test_every_symlink_hop_reaches_a_declared_target(depth, name):
             assert locations.contains(hop), hop
 
 
+@settings(deadline=None)
 @given(order=st.permutations(["/base/", "/base/private/", "/other/"]), name=COMPONENT)
 def test_manifest_order_cannot_widen_a_guarded_subdirectory(order, name):
     manifest = {

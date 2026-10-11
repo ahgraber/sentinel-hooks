@@ -162,7 +162,7 @@ The representatives are evidence for a test, not policy, so they belong with the
 - Delete conformance entirely: gives up the test that caught the `secrets.d` glob miss.
 
 Superseded in part by `security-posture-alignment` `TheHooksAreAPackageIndependentOfAnyAgentConfiguration`: the block-class floor stays a requirement, but the three checks move from `test_secret_floor_declarations.py` into an assessment an agent runs against each configuration, because a test reading agent configuration pins the hooks package to one vendor's keys.
-The representatives stay in `tests/conformance.py` as the assessment's inputs.
+The representatives are the assessment's inputs and sit in `shared/skills/assess-agent-configuration/SKILL.md`.
 The `ConfigurationSurfacesCoverTheDeclarations` delta in this change is edited to say so.
 
 Reevaluated on 2026-10-06, and kept: the user decided that floor conformance does not broaden back over the guarded class.
@@ -362,6 +362,8 @@ The reader update is therefore committed unverified, and the port is judged when
 - Keep the check and accept a red `nix flake check` on every commit until the migration: an expected failure trains the operator to ignore the check.
 - Supply `shell-quote` to the check derivation: builds tooling for a port that is being deleted.
 
+Superseded by `security-posture-alignment` `PiRunsTheSharedHooksThroughAHookRunner`: the TypeScript port, `manifest.ts` included, is deleted, Pi runs the shared Python hooks, and `just apps test` runs the Pi suite again.
+
 ### Decision: TheOldChangeIsRenamedAndPostureAlignmentIsRevised
 
 **Chosen:** `changes/skill-script-exec-through` is renamed to `changes/guarded-path-classes` with `git mv`, and its requirements are restated here.
@@ -420,6 +422,36 @@ It gated only because the home was a `location-only` catch-all with no carve-out
 
 **Rationale:** the per-agent roots hold links into `~/.agents/skills/`, and a declaration does not follow the links inside the directory it names.
 Under the precedence rule an undeclared target would still allow the run, so the shared root is declared for the day it acquires a stricter declaration of its own, and so the validator has nothing to report.
+
+### Decision: TheManifestStaysOneFile
+
+**Chosen:** `guarded-paths.toml` stays one file.
+It is not split into a policy file and user or project files.
+
+**Rationale:** `hooks.nix` deploys the manifest as a symlink into the repository, so the deployed policy is the repository file and no upgrade can overwrite a local edit.
+Every declaration names a harness location or a path in this repository, and every user of this repository shares them, so a user file would be empty.
+A project file sits in the agent's working directory, where a cloned repository or the agent itself could write an exception that removes the guard on it; a safe project file needs a trust step or must only tighten.
+A project exception would also change only what the hooks decide: the Claude, Codex, and Pi sandboxes do not read the manifest and still refuse the path.
+The user decided on 2026-10-09 to revisit the split if this module becomes a general package used outside this repository.
+
+**Alternatives considered:**
+
+- A policy file that ships with the module, and a user file with additions and grants: separates the default from local edits, which matters only when the module is used outside this repository.
+- Project files in each repository: lets a project declare its own placeholder names, at the cost of a trust mechanism, and without effect on the sandbox layers.
+
+### Decision: TheHookWrapperExceptionIsRetired
+
+**Chosen:** the `sensitive-path-nix-hook-wrapper` surface, its one manifest entry, and the wrapper half of `guarded-surface` `NameHeuristicExceptionIsDeclared` are removed.
+An exception naming that surface now fails the manifest, as a misspelled surface does.
+
+**Rationale:** the surface existed for one file.
+Home Manager deployed `block-secrets.py` as a store link named `hm_blocksecrets.py`, which the name heuristic refused.
+`security-posture-alignment` `TheContentHookIsNamedForLeaks` renamed the hook, and no hook name now carries a heuristic word, so the entry excused nothing.
+An exception is a gap in a check, and a gap that excuses nothing keeps only its cost.
+
+**Alternatives considered:**
+
+- Keep the surface with no entry: ready for a future hook named with a heuristic word, at the cost of code and a spec clause that excuse nothing today.
 
 ## Architecture
 

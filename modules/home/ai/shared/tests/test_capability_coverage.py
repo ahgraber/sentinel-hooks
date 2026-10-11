@@ -43,7 +43,7 @@ CAPABILITIES: Mapping[str, Capability] = {
     "hook-interface": Capability("mechanism", ("hook_response.py",)),
     "hook-tampering-blocking": Capability("enforcement", ("block-hook-tampering.py",)),
     "path-matching": Capability("mechanism", ("guarded_paths.py",)),
-    "secret-access-blocking": Capability("enforcement", ("block-secrets.py",)),
+    "secret-access-blocking": Capability("enforcement", ("block-leaks.py",)),
     "sensitive-path-blocking": Capability("enforcement", ("block-sensitive-paths.py",)),
     "session-tool-checks": Capability(
         "enforcement",

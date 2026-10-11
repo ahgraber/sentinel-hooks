@@ -5,7 +5,9 @@ import io
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
 from types import ModuleType
 
 import pytest
@@ -55,6 +57,46 @@ def test_lifecycle_payload_without_tool_name_reaches_shared_hook(monkeypatch) ->
 
     assert adapter.main() == 0
     assert received == [{"session_id": "session-1"}]
+
+
+def _adapter_with_broken_vocabulary(tmp_path: Path) -> Path:
+    """Copy the adapter and the shared hooks into the layout it resolves, with an unparsable vocabulary."""
+    hooks = tmp_path / "modules/home/ai/shared/hooks"
+    shutil.copytree(REPO_ROOT / "modules/home/ai/shared/hooks", hooks, ignore=shutil.ignore_patterns("__pycache__"))
+    (hooks / "tool-vocabulary.toml").write_text("not = [valid\n")
+    adapter = tmp_path / "modules/home/ai/copilot/hooks/copilot-vscode-hook-adapter.py"
+    adapter.parent.mkdir(parents=True)
+    shutil.copy(ADAPTER_PATH, adapter)
+    return adapter
+
+
+def _run_adapter(adapter: Path, payload: dict) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(adapter), "block-dangerous-bash.sh"],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_an_unreadable_vocabulary_refuses_a_tool_call(tmp_path) -> None:
+    """Validates: UnreadableVocabularyRefusesEveryCall, through the adapter."""
+    result = _run_adapter(
+        _adapter_with_broken_vocabulary(tmp_path), {"tool_name": "read_file", "tool_input": {"filePath": "/tmp/x"}}
+    )
+
+    assert result.returncode == 2
+    assert "tool-vocabulary.toml" in result.stderr
+    assert "AI INSTRUCTIONS" in result.stderr
+
+
+def test_an_unreadable_vocabulary_still_runs_a_lifecycle_hook(tmp_path) -> None:
+    """The vocabulary names tools, so an event that carries none still reaches its hook."""
+    result = _run_adapter(_adapter_with_broken_vocabulary(tmp_path), {"hook_event_name": "SessionStart"})
+
+    assert "tool-vocabulary.toml" not in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_unmapped_tool_is_refused_before_shared_hook(monkeypatch, capsys) -> None:
@@ -250,6 +292,27 @@ def test_ask_response_passes_through_intact(monkeypatch, capsys) -> None:
     assert payload["permissionDecision"] == "ask"
     assert "Copilot" in payload["permissionDecisionReason"]
     assert "Claude" not in payload["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("order", [("ask", "block"), ("block", "ask")])
+def test_a_refusal_on_any_fanned_out_path_decides_the_call(monkeypatch, capsys, order) -> None:
+    """Validates: OutcomesAreDecodedInFull, across the paths one edit names."""
+    adapter = load_adapter()
+    ask = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=json.dumps({"hookSpecificOutput": {"permissionDecision": "ask"}}), stderr=""
+    )
+    block = subprocess.CompletedProcess(args=[], returncode=2, stdout="", stderr="Blocked: b\n")
+    outcomes = dict(zip(("/tmp/a", "/tmp/b"), (ask if name == "ask" else block for name in order), strict=True))
+    monkeypatch.setattr(adapter, "execute_hook", lambda _s, _a, payload: outcomes[payload["tool_input"]["file_path"]])
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps({"tool_name": "editFiles", "tool_input": {"files": ["/tmp/a", "/tmp/b"]}}))
+    )
+    monkeypatch.setattr("sys.argv", ["adapter", "block-sensitive-paths.py"])
+
+    assert adapter.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Blocked: b" in captured.err
 
 
 @pytest.mark.parametrize(

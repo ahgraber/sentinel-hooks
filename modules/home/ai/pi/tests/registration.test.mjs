@@ -184,7 +184,7 @@ for (const answer of [true, false]) {
 // the tool run alone on the payload Claude Code sends, the most restrictive decision
 // taken. The runner must reach the same decision from Pi's own tool name and input.
 
-const PYTHON_HOOKS = ["block-sensitive-paths.py", "block-hook-tampering.py", "block-destructive-ops.py", "block-secrets.py"]
+const PYTHON_HOOKS = ["block-sensitive-paths.py", "block-hook-tampering.py", "block-destructive-ops.py", "block-leaks.py"]
 const SHELL_HOOKS = ["block-dangerous-bash.sh", "bash-command-validator.sh"]
 const RANK = { allow: 0, ask: 1, block: 2 }
 

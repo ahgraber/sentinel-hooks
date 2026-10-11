@@ -14,12 +14,12 @@ Codex native read tools emit no PreToolUse and are not covered.
 
 import json
 import os
-from pathlib import Path
 import re
 import sys
 from typing import NoReturn
 
 import apply_patch
+import bash_commands
 from guarded_paths import (
     NAME_HEURISTIC_EXEMPT_RE,
     TOOL_VOCABULARY,
@@ -34,6 +34,7 @@ import shell_words
 
 SENSITIVE_PATH_TOOLS = TOOL_VOCABULARY.group("sensitive-path")
 MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
+FILE_TOOLS = TOOL_VOCABULARY.group("file")
 
 _EXPOSURE_RISK = (
     "Exposed credentials risk unauthorized access, account takeover, and data "
@@ -107,28 +108,11 @@ NAME_HEURISTIC_EXCEPTIONS = GuardedLocations(
     if exception.get("surface") == "sensitive-path-name-heuristic"
 )
 
-NIX_STORE = Path("/nix/store")
-NIX_HOOK_SOURCES = GuardedLocations(
-    exception["pattern"]
+DOTENV_PLACEHOLDERS = frozenset(
+    exception["pattern"].lower()
     for exception in _MANIFEST.get("exceptions", ())
-    if exception.get("surface") == "sensitive-path-nix-hook-wrapper"
+    if exception.get("surface") == "sensitive-path-dotenv-placeholder"
 )
-
-
-def is_nix_hook_wrapper(path: str) -> bool:
-    """Recognize a Home Manager store symlink to an explicitly excused hook."""
-    wrapper = Path(path)
-    if wrapper.parent != NIX_STORE or not wrapper.is_symlink():
-        return False
-    name = re.fullmatch(r"[0-9abcdfghijklmnpqrsvwxyz]{32}-(hm_.+)", wrapper.name)
-    if name is None:
-        return False
-    target = Path(os.path.realpath(wrapper))
-    if not NIX_HOOK_SOURCES.contains(str(target)):
-        return False
-    expected = "hm_" + re.sub(r"[^A-Za-z0-9+._?=]", "", target.name)
-    return name.group(1) == expected
-
 
 ZERO_ACCESS_FILES_RE = re.compile(
     r"(?:^|[/\\])\.(?:bash_history|zsh_history|sh_history|node_repl_history|python_history)$",
@@ -139,11 +123,18 @@ ZERO_ACCESS_FILES_RE = re.compile(
 NAME_PATTERN_RE = re.compile(r"credentials|secret", re.IGNORECASE)
 
 
-def is_zero_access(path: str) -> bool:
+def _dotenv_refuses(path: str, reading: bool) -> bool:
+    """Apply the dotenv rule; a declared placeholder name escapes it only on a read."""
+    if not DOTENV_RE.search(path):
+        return False
+    return not (reading and os.path.basename(path).lower() in DOTENV_PLACEHOLDERS)
+
+
+def is_zero_access(path: str, *, reading: bool = False) -> bool:
     """Return True if one spelling of a path matches a strong zero-access signal."""
     return bool(
         EXTENSION_RE.search(path)
-        or DOTENV_RE.search(path)
+        or _dotenv_refuses(path, reading)
         or ENVRC_RE.search(path)
         or ZERO_ACCESS_FILES_RE.search(path)
         or SSH_KEY_RE.search(path)
@@ -160,22 +151,83 @@ def is_named_for_secrets(path: str) -> bool:
         NAME_PATTERN_RE.search(os.path.basename(path))
         and not NAME_HEURISTIC_EXEMPT_RE.search(path)
         and not NAME_HEURISTIC_EXCEPTIONS.matches_hop(path)
-        and not is_nix_hook_wrapper(path)
     )
 
 
-def should_block(path: str, cwd: str | None = None) -> bool:
+# Names that suggest a credential without proving one: the file tools ask rather than refuse.
+SUGGESTIVE_NAME_RE = re.compile(r"token|password|passwd|api[_-]?key|auth_key|credential", re.IGNORECASE)
+SUGGESTIVE_EXTENSION_RE = re.compile(r"\.(?:keystore|jks)$", re.IGNORECASE)
+# An OAuth credential store asked about even inside a package directory, where the
+# name heuristic's exemption lets it through; `credentials.json` itself is refused.
+STRONG_CRED_FILE_RE = re.compile(r"(?:^|[/\\])\.credentials\.json$", re.IGNORECASE)
+
+
+def _candidates(path: str, cwd: str | None) -> list[str]:
+    """Return the spellings `should_block` judges for `path`."""
+    if not os.path.isabs(path) and not path.startswith("~"):
+        if cwd is None:
+            return [path]
+        path = os.path.join(cwd, path)
+    return list(spellings(path))
+
+
+def ask_reason(path: str, cwd: str | None = None) -> str | None:
+    """Return why a file tool should ask before touching `path`, or `None`.
+
+    The name heuristic's exemptions and declared exceptions excuse a suggestive
+    name here as they excuse a refused one, so a declaration holds for every rule.
+    """
+    for candidate in _candidates(path, cwd):
+        if STRONG_CRED_FILE_RE.search(candidate):
+            return f"This operation targets '{path}', a credential store file with OAuth tokens."
+        suggestive = SUGGESTIVE_NAME_RE.search(os.path.basename(candidate)) or SUGGESTIVE_EXTENSION_RE.search(
+            candidate
+        )
+        if (
+            suggestive
+            and not NAME_HEURISTIC_EXEMPT_RE.search(candidate)
+            and not NAME_HEURISTIC_EXCEPTIONS.matches_hop(candidate)
+        ):
+            return f"This operation targets '{path}', whose name suggests credentials, tokens, or key material."
+    return None
+
+
+def ask(path: str, tool: str, reason: str) -> NoReturn:
+    """Ask before a file tool touches a suggestively named file; refuse where no prompt exists."""
+    agent = _CALL["agent"]
+    exposure = f" Exposing it to the agent could let prompt injection send it to an attacker. {_EXPOSURE_RISK}"
+    if supports_ask(agent, tool):
+        respond(
+            Decision.ASK,
+            reason + exposure + " Approve only if you intentionally want the agent to access this material.",
+            agent=agent,
+            tool_name=tool,
+        )
+    respond(
+        Decision.BLOCK,
+        "Blocked: this agent cannot show a confirmation prompt for this action.\n"
+        + reason
+        + exposure
+        + " If this access is intentional, the user can perform it outside the agent session.",
+        agent=agent,
+    )
+
+
+def should_block(path: str, cwd: str | None = None, *, reading: bool = False) -> bool:
     """Return whether any spelling of `path` reaches a zero-access location.
 
-    Apply heuristics and exemptions to the same spelling.
+    Apply heuristics and exemptions to the same spelling. A caller that does
+    not state `reading` gets the write verdict.
     """
     if POLICY and POLICY.verdict(path, "read", cwd=cwd) == "block":
         return True
     if not os.path.isabs(path) and not path.startswith("~"):
         if cwd is None:
-            return is_zero_access(path) or is_named_for_secrets(path)
+            return is_zero_access(path, reading=reading) or is_named_for_secrets(path)
         path = os.path.join(cwd, path)
-    return any(is_zero_access(candidate) or is_named_for_secrets(candidate) for candidate in spellings(path))
+    return any(
+        is_zero_access(candidate, reading=reading) or is_named_for_secrets(candidate) for candidate in spellings(path)
+    )
 
 
 def _manifest_warning() -> str:
@@ -196,6 +248,21 @@ def block(path: str, tool: str) -> NoReturn:
         "a later tool call could disclose or use them."
         + (f"\n{_manifest_warning()}" if MANIFEST_ERROR is not None else "")
         + ("\n" + "\n".join(POLICY.findings) if POLICY and POLICY.findings else ""),
+    )
+
+
+def block_placeholder_form(path: str, command: str, cwd: str | None) -> NoReturn:
+    """Refuse a placeholder read for its command's form, naming the reads that would proceed."""
+    syntax = bash_commands.read(command, cwd).stopping_syntax()
+    offers = bash_commands.offers_accepted_forms(syntax)
+    respond(
+        Decision.BLOCK,
+        f"Blocked: Bash read of '{path}', a placeholder dotenv file. "
+        "A placeholder is readable by a command that only reads its arguments; writing to it is refused. "
+        f"Recognition stopped at {syntax}."
+        + (bash_commands.read_forms() if offers else "")
+        + (bash_commands.ABSOLUTE_PATH_HINT if bash_commands.asks_for_absolute_paths(syntax) else ""),
+        instruction=bash_commands.refusal_instruction(syntax),
     )
 
 
@@ -300,10 +367,11 @@ def _word_candidates(word):
     yield from word.paths
     if "=" in word.value:
         yield word.value.split("=", 1)[1]
-    if word.kind == "option":
-        attached = re.sub(r"^-{1,2}[A-Za-z][A-Za-z-]*", "", word.value)
-        if attached:
-            yield attached
+    if word.kind == "option" and not word.value.startswith("--"):
+        # Which letters of `-fvalue` are flags depends on the program, so every
+        # suffix may be the attached value.
+        for start in range(2, len(word.value)):
+            yield word.value[start:]
 
 
 def _input_redirect(word) -> bool:
@@ -344,7 +412,7 @@ def _read_words(segment):
 
 def _write_words(segment):
     for word in segment:
-        if (word.redirection and ">" in word.redirection) or word.value.startswith("of="):
+        if bash_commands.redirect_writes(word) or word.value.startswith("of="):
             yield word
     words = [word for word in segment if word.kind not in {"option", "redirection target"}]
     if not words:
@@ -358,32 +426,60 @@ def _write_words(segment):
         yield from words[2:]
 
 
+# Shell syntax that can end a file name in text the lexer cannot read: space,
+# quotes, operators, substitution brackets, and the `=` of `if=<file>`.
+_TEXT_PIECES = re.compile(r"[\s;&|()<>`'\"=]+")
+
+
 def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
     """Check strong rules on read words and name rules on paths only."""
+    refusal = _bash_refusal(command, cwd)
+    return None if refusal is None else refusal[0]
+
+
+def _bash_refusal(command: str, cwd: str | None) -> tuple[str, bool] | None:
+    """Return the refused path, and whether a recognized read of it would have proceeded.
+
+    A refusal another rule makes wins over one the command's form alone causes,
+    whatever order the words come in, so its stop instruction is the one given.
+    """
     segments = shell_words.lex(command, cwd)
     if segments is None:
-        # No shell reading exists for this command. Preserve strong-rule checks
-        # on the literal text; the tamper hook gates unresolved guarded text.
-        return command if is_zero_access(command) else None
+        # No shell reading exists for this command, which holds a newline or
+        # syntax the lexer refuses. Judge every piece of the text by the strong
+        # rules: they anchor at the end of a name, so judging the whole text
+        # would see only its last line. Whether a piece is read, written, or
+        # only mentioned is unknown, so a placeholder gets the write verdict.
+        # The tamper hook gates unresolved guarded text.
+        for piece in _TEXT_PIECES.split(command):
+            if piece and is_zero_access(piece):
+                return piece, False
+        return None
+    form_only = None
     for segment in segments:
         reads = _reads(segment)
+        # A placeholder is excused only where the utility cannot write what it names.
+        only_reads = bash_commands.read_only(segment)
         for word in _write_words(segment):
             for path in _word_candidates(word):
                 if should_block(path, cwd):
-                    return path
+                    return path, False
         for word in _read_words(segment):
             for path in _word_candidates(word):
                 resolved = path
                 if cwd and not os.path.isabs(path) and not path.startswith("~"):
                     resolved = os.path.join(cwd, path)
                 if POLICY and POLICY.verdict(path, "read", cwd=cwd) == "block":
-                    return path
+                    return path, False
                 forms = spellings(resolved)
-                if any(is_zero_access(form) for form in forms):
-                    return path
-                if _may_name_a_file(word, segment, reads) and any(is_named_for_secrets(form) for form in forms):
-                    return path
-    return None
+                named = _may_name_a_file(word, segment, reads) and any(is_named_for_secrets(form) for form in forms)
+                if any(is_zero_access(form, reading=only_reads) for form in forms):
+                    if named or any(is_zero_access(form, reading=True) for form in forms):
+                        return path, False
+                    form_only = form_only or (path, True)
+                elif named:
+                    return path, False
+    return form_only
 
 
 _CALL = {"tool_name": "", "agent": None}
@@ -435,21 +531,30 @@ def main() -> None:
     if tool_name not in SENSITIVE_PATH_TOOLS:
         sys.exit(0)
 
-    if tool_name in ("Read", "Write", "Edit"):
+    if tool_name in FILE_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("path", "")
-        if path and should_block(path, cwd or None):
+        if path and should_block(path, cwd or None, reading=tool_name == "Read"):
             block(path, tool_name)
+        if path and (reason := ask_reason(path, cwd or None)):
+            ask(path, tool_name, reason)
 
     elif tool_name == "apply_patch":
         command = tool_input.get("command", "")
-        for target in apply_patch.targets(command):
+        targets = apply_patch.targets(command)
+        for target in targets:
             if should_block(target, cwd or None):
                 block(target, "apply_patch")
+        for target in targets:
+            if reason := ask_reason(target, cwd or None):
+                ask(target, "apply_patch", reason)
 
     elif tool_name == "Bash":
         command = tool_input.get("command", "")
-        target = bash_blocked_target(command, cwd or None)
-        if target is not None:
+        refusal = _bash_refusal(command, cwd or None)
+        if refusal is not None:
+            target, form_only = refusal
+            if form_only:
+                block_placeholder_form(target, command, cwd or None)
             block(target, "Bash read")
 
     if MANIFEST_ERROR is not None:

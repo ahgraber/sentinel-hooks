@@ -129,18 +129,15 @@ FAULT_SITES = [
         {"command": f"{GUARDED_DIR}/helper"},
         id="executable-lookup",
     ),
-    pytest.param(
-        lambda patch: patch.setattr(gate, "invoking_agent", boom),
-        "Bash",
-        {"command": f"cat {GUARDED}"},
-        id="naming-the-agent",
-    ),
 ]
 
 
 def decide(patch: pytest.MonkeyPatch, tool_name: str, tool_input: dict, agent: str):
     """Run the hook over one payload in this process, returning its exit and output."""
     payload = {"tool_name": tool_name, "tool_input": tool_input}
+    # The hook records the call's tool and agent at module level; a run starts with none.
+    patch.setitem(gate._CALL, "tool_name", "")
+    patch.setitem(gate._CALL, "agent", "")
     patch.setenv("AI_HOOK_AGENT", agent)
     patch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
     out, err = io.StringIO(), io.StringIO()
@@ -177,6 +174,15 @@ class TestFailClosedOnInternalError:
     ) -> None:
         inject(monkeypatch)
         code, out, err = decide(monkeypatch, tool_name, tool_input, "codex")
+        assert code == 2
+        assert out == ""
+        assert "injected fault" in err
+
+    @pytest.mark.parametrize("agent", ["claude", "codex"])
+    def test_a_failure_naming_the_agent_refuses_a_mutating_call(self, monkeypatch: pytest.MonkeyPatch, agent) -> None:
+        """With no agent named, no prompt can be shown, so the call is refused."""
+        monkeypatch.setattr(gate, "invoking_agent", boom)
+        code, out, err = decide(monkeypatch, "Bash", {"command": f"cat {GUARDED}"}, agent)
         assert code == 2
         assert out == ""
         assert "injected fault" in err

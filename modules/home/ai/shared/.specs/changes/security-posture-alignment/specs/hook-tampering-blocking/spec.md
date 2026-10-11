@@ -17,9 +17,13 @@ The gate SHALL list the admitted commands in a refusal only when the classifier 
 The classifier stops on one of two things: the program, or the shape of the command.
 Substituting a program changes the first and leaves the second unchanged, so a refusal that stopped on shape lists commands the agent cannot use.
 
-The gate SHALL end a refusal that lists the admitted commands with the retry instruction, and every other refusal with the stop instruction.
+The gate SHALL end a refusal that lists the admitted commands with the retry instruction.
 Listing them is safe only while each one reads.
 An admitted utility that writes a file named as an operand would make the retry instruction a route to the write the gate just refused.
+
+A refusal whose classifier stopped only on relative paths in a directory the gate cannot determine SHALL tell the agent to name every path absolutely, and SHALL end with the absolute-path instruction.
+That shape stop has one rewrite that resolves it, and the restated command is judged in full.
+Every other refusal SHALL end with the stop instruction.
 
 A refusal SHALL state what the gate refused, rather than which category the command failed to match.
 The gate matches the command; it does not receive the agent's intent.
@@ -51,9 +55,15 @@ Neither explanation is required to name which agent owns the path, because enfor
 
 #### Scenario: TheClassifierStoppedOnTheShape
 
-- **GIVEN** the gate refuses because the classifier stopped on the shape of the command
+- **GIVEN** the gate refuses because the classifier stopped on the shape of the command, such as a substitution or program text
 - **WHEN** the gate writes the refusal
 - **THEN** the refusal names what stopped the classifier, omits the admitted commands, and ends with the stop instruction
+
+#### Scenario: TheClassifierStoppedOnARelativePath
+
+- **GIVEN** the gate refuses because the classifier stopped only on relative paths after a directory change
+- **WHEN** the gate writes the refusal
+- **THEN** the refusal names that stop, omits the admitted commands, tells the agent to name every path absolutely, and ends with the absolute-path instruction
 
 ### Requirement: FailureMode
 
@@ -105,6 +115,122 @@ Such a path is judged from the path as written, per `path-matching` `Unresolvabl
 - **GIVEN** a Write or Edit tool call is intercepted
 - **WHEN** the target cannot be resolved but as written denotes a protected path
 - **THEN** the gate applies
+
+### Requirement: UnrecognizedCommandsAreGated
+
+> Previously: any redirection kept a command from being recognized, as an effect the command text does not show.
+
+Where a Bash command names guarded locations, the system SHALL classify the command before gating it: a command recognized as a read SHALL proceed, a command recognized as a run of a program held in an exec-through location SHALL proceed, and any other command SHALL be gated with a reason that names the syntax that stopped recognition and, per `GateResponse`, the rewrite that would proceed where one exists: the admitted commands for a stop on the program, and absolute paths for a stop on relative paths.
+
+Serves: placeholder-files-are-readable, a-refusal-says-what-would-work
+
+One path in a block location SHALL refuse the whole command, whatever the rest of it does.
+One path outside every exec-through location SHALL gate a run, whatever the rest of it does.
+
+Recognition SHALL rest on the command text alone, as `shell-lexing` reads it.
+A command whose effect that text does not show SHALL NOT be recognized, because the classifier cannot judge what it cannot see: an unresolvable word, an assignment that picks which binary runs, program text handed to an interpreter, or a relative path after a change of directory.
+
+A redirection SHALL NOT keep a command from being recognized; its target SHALL be judged by its direction.
+An input target is judged as a read, and an output or read-write target as a write, so a recognized read that writes its output into a guarded location meets the write gate for that location.
+A redirection that duplicates or closes a descriptor names no file and is not judged.
+A segment that does nothing but redirect, such as `> file`, `: > file`, or `exec 3> file`, is judged by its targets alone, so it meets the write gate as the write it is.
+The command text names every target, so a redirection hides nothing the classifier needs.
+Refusing recognition for one refused a guarded read for writing its errors to `/dev/null`, a form agents write by habit, while a write the target class permits gained nothing from the refusal.
+
+A command with any segment whose program executes text it receives SHALL NOT be recognized, whatever its other segments do: `xargs`, `eval`, an interpreter given inline code, or a shell reading its standard input.
+The classifier SHALL identify the program through `time`, `timeout`, `stdbuf`, and `setsid`.
+A pipe-fed program outside the recognized read utilities SHALL be treated as a builder, including an interpreter or an unknown wrapper.
+Supported wrappers around recognized reads SHALL preserve read recognition unless their options permit writing output.
+A read segment that names a guarded path and pipes into such a program hands that path to a command the classifier never sees, so the read is not the whole of what the command does.
+
+The reason is what tells an agent what to rewrite.
+A refusal that names neither the syntax that stopped recognition nor a rewrite that proceeds, where one exists, leaves an agent whose gate is a refusal with nothing to do but try another route, which is the behavior every refusal in this module instructs against.
+A command whose every segment is recognized, stopped only by a write to a guarded location, is gated as that write, and its reason names the write rather than a syntax.
+A command with any unrecognized segment keeps the recognition reason, because it may do more than that write.
+
+#### Scenario: RecognizedRead
+
+- **GIVEN** a Bash tool call names guarded locations alone
+- **WHEN** the command is a recognized read
+- **THEN** the hook exits 0
+
+#### Scenario: RecognizedRun
+
+- **GIVEN** a Bash tool call names exec-through locations alone
+- **WHEN** the command runs a program held there
+- **THEN** the hook exits 0
+
+#### Scenario: EffectHiddenFromTheCommandText
+
+- **GIVEN** a Bash tool call names guarded locations alone
+- **WHEN** the command carries an unresolvable word or an assignment that picks which binary runs or program text handed to an interpreter
+- **THEN** the gate applies
+
+#### Scenario: RedirectionElsewhereLeavesAReadRecognized
+
+- **GIVEN** a Bash tool call is a recognized read of a guarded location
+- **WHEN** it redirects its output to a location the policy permits writing, or a descriptor, or reads the guarded location as an input redirection target
+- **THEN** the hook exits 0
+
+#### Scenario: RedirectionIntoAGuardedLocationIsAWrite
+
+- **GIVEN** a Bash tool call is a recognized read or run
+- **WHEN** an output or read-write redirection target is a guarded location
+- **THEN** the gate applies, with the reason for a write to that location
+
+#### Scenario: GitConfigurationNamingAGuardedPath
+
+- **GIVEN** a Bash tool call sets an executable Git configuration value that names a guarded path, such as `git -c core.pager='cat ~/base/private' log`
+- **WHEN** the command is judged
+- **THEN** the path inside the value is found and the gate applies
+
+#### Scenario: TextPipedIntoAShellNamingAGuardedPath
+
+- **GIVEN** a Bash tool call pipes text that names a guarded path into a shell, such as `echo 'rm ~/.claude/settings.json' | sh`
+- **WHEN** the command is judged
+- **THEN** the path inside the text is found and the gate applies
+
+#### Scenario: InlineProgramNamingAGuardedPath
+
+- **GIVEN** a Bash tool call gives an interpreter inline code that names a guarded path, such as `bash -c 'rm ~/.claude/settings.json'`
+- **WHEN** the command is judged
+- **THEN** the gate applies, because the path inside the program text is found and the command is not recognized
+
+#### Scenario: GuardedPathPipedIntoACommandBuilder
+
+- **GIVEN** a Bash tool call whose read segment names a guarded path and pipes into `xargs`, such as `echo ~/.claude/settings.json | xargs rm`
+- **WHEN** the command is judged
+- **THEN** the gate applies, though the builder segment names nothing guarded
+
+#### Scenario: RelativePathAfterADirectoryChange
+
+- **GIVEN** a Bash tool call changes directory and then reads a guarded location by a relative path
+- **WHEN** the command is judged
+- **THEN** the gate applies, and the reason instructs the agent to name the path absolutely
+
+#### Scenario: ReasonNamesTheAcceptedForms
+
+- **GIVEN** a Bash tool call names guarded locations alone
+- **WHEN** the command is neither a recognized read nor a recognized run, because of the program it runs
+- **THEN** the decision is `Ask`, and the reason names the read utilities and the interpreters that would have proceeded
+
+#### Scenario: ReasonNamesTheSyntaxThatStoppedRecognition
+
+- **GIVEN** a Bash tool call that would be a recognized read but for a newline or a substitution or a brace expansion
+- **WHEN** the command is gated
+- **THEN** the reason names that syntax
+
+#### Scenario: RunMixedWithAGuardedPath
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** the command runs a program in an exec-through location and names a guarded path outside every exec-through location
+- **THEN** the gate applies to the whole command
+
+#### Scenario: ReadMixedWithABlockPath
+
+- **GIVEN** a Bash tool call is intercepted
+- **WHEN** the command is a recognized read naming a guarded path and a block path
+- **THEN** the decision is `Block`
 
 ## ADDED Requirements
 
@@ -286,10 +412,10 @@ A removal, a rename, or a replacement is a write under `guarded-path-declaration
 An ancestor carries no declaration fragment, so it is found by resolving the path rather than by matching text.
 A relative spelling resolves against the working directory the tool call supplies, moved by any earlier `cd` in the command.
 Where no directory is supplied, or a `cd` names one the hook cannot resolve, the word is unresolvable, per `path-matching` `TextMatchingIsForTextThatMayHoldNoPath`.
-The system SHALL refuse a removal, rename, or replacement of such a word, with the stop instruction, on every agent.
+The system SHALL refuse a removal, rename, or replacement of such a word on every agent, with the absolute-path instruction of `hook-interface` `BlockAIGuidance`.
 It cannot be judged by its text: a `*` in a declaration matches almost any word, so judging its shape would refuse ordinary commands.
 It is not put to the user either, because the user has no more to place it by than the hook.
-The refusal SHALL say that an absolute path can be judged.
+The same command with the path written absolutely can be judged.
 
 The gate knows the operation from the program, so a program it does not list passes on an ancestor.
 So does a command assembled at run time, such as one `xargs` builds, and a branch switch, which changes every tracked file.
@@ -334,7 +460,7 @@ So does a command assembled at run time, such as one `xargs` builds, and a branc
 
 - **GIVEN** a tool call that supplies no working directory
 - **WHEN** its command removes, renames, or replaces a relative path
-- **THEN** the hook refuses it with the stop instruction on every agent, and the refusal says an absolute path can be judged
+- **THEN** the hook refuses it on every agent with the absolute-path instruction
 
 #### Scenario: AnAbsoluteOperandWithNoWorkingDirectory
 

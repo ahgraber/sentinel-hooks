@@ -24,7 +24,7 @@ import tomllib
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "flake.nix").is_file())
 DISPATCHER = REPO_ROOT / "modules" / "home" / "ai" / "pi" / "security" / "hook-dispatch.py"
 SHARED_HOOKS = REPO_ROOT / "modules" / "home" / "ai" / "shared" / "hooks"
-HOOK_NAMES = ("block-sensitive-paths.py", "block-hook-tampering.py", "block-destructive-ops.py", "block-secrets.py")
+HOOK_NAMES = ("block-sensitive-paths.py", "block-hook-tampering.py", "block-destructive-ops.py", "block-leaks.py")
 
 ALLOW = "import sys\nsys.exit(0)\n"
 WARN = "import sys\nsys.stderr.write('lint unavailable')\nsys.exit(1)\n"

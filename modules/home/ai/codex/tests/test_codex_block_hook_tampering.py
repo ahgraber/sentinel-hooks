@@ -59,7 +59,7 @@ class TestReadAccess:
         assert_allowed(read("~/.codex/config.toml"))
 
     def test_repo_hooks_and_rules_are_readable(self):
-        assert_allowed(read(repo_path("hooks", "block-secrets.py")))
+        assert_allowed(read(repo_path("hooks", "block-leaks.py")))
         assert_allowed(read(repo_path("rules", "default.rules")))
 
     def test_repo_platform_configs_are_readable(self):
@@ -68,7 +68,7 @@ class TestReadAccess:
 
     def test_read_through_symlink_to_repo_hook_is_allowed(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
-        alias.symlink_to(HOOKS_DIR / "block-secrets.py")
+        alias.symlink_to(HOOKS_DIR / "block-leaks.py")
 
         assert_allowed(read(str(alias)))
 
@@ -81,7 +81,7 @@ class TestMutationProtection:
         assert_block_contract(write("~/.codex/auth.json"), "auth.json")
 
     def test_repo_hook_edit_blocks(self):
-        assert_block_contract(edit(repo_path("hooks", "block-secrets.py")), "hooks")
+        assert_block_contract(edit(repo_path("hooks", "block-leaks.py")), "hooks")
 
     def test_user_config_write_blocks(self):
         assert_block_contract(
@@ -101,13 +101,13 @@ class TestMutationProtection:
 class TestBashCommandProtection:
     def test_bash_reading_repo_hook_proceeds(self):
         # Recognized reads of guarded hook sources proceed.
-        assert_allowed(bash(f"cat {repo_path('hooks', 'block-secrets.py')}"))
+        assert_allowed(bash(f"cat {repo_path('hooks', 'block-leaks.py')}"))
 
     def test_bash_touching_repo_hook_blocks(self):
         # Outside a recognized read, Bash still matches on mention, not intent:
         # a command's effect is not readable off its text.
         assert_block_contract(
-            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-secrets.py')}"),
+            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-leaks.py')}"),
             "hooks",
         )
 

@@ -101,7 +101,9 @@ Changing behavior without changing a spec is drift, whether or not a test catche
 The shared lexer assumes Bash.
 Pin Claude with `CLAUDE_CODE_SHELL=/run/current-system/sw/bin/bash`.
 Use absolute paths in Bash commands.
-The lexer follows a `cd` within a command, but not a `cd` to a variable, a `cd -`, or a `popd`.
+The lexer follows a `cd` within a command.
+It does not follow a `cd` to a variable, `cd -`, `cd -P`, `popd`, a `pushd` stack position, a `cd` inside a loop or a function, a `cd` after `eval`, `source`, or `trap`, or a bare relative `cd` while `CDPATH` is set.
+A relative path after one of these is judged as unresolvable.
 Hard links, links inside a declared directory, and routes that present no path remain limits; the sandbox and agent permissions are the boundary.
 
 A recorder comparison on 2026-09-16 found these Bash/zsh differences:

@@ -260,15 +260,37 @@ NOT_READS = [
     "find ~/.claude/skills -name SKILL.md -delete",
     "find ~/.claude/skills -name SKILL.md -exec rm {} ;",
     f"cp /tmp/replacement.md {SKILL_FILE}",
+    f"uv run {SKILL_FILE}",
+    f"echo pwned | tee {SKILL_FILE}",
+    "echo $(rm -rf ~/.claude/skills/sdd-sync)",
+]
+
+# A recognized read whose output redirection opens a guarded file meets the
+# write gate, so the refusal names the write rather than a recognition stop.
+REDIRECTED_WRITES = [
     f"cat /tmp/replacement.md > {SKILL_FILE}",
     f"cat {SKILL_FILE} >> ~/.claude/skills/sdd-sync/SKILL.md",
-    f"uv run {SKILL_FILE}",
     f"echo pwned > {SKILL_FILE}",
     f"echo pwned >{SKILL_FILE}",
     f"echo pwned >> {SKILL_FILE}",
     f"printf pwned > {SKILL_FILE}",
-    f"echo pwned | tee {SKILL_FILE}",
-    "echo $(rm -rf ~/.claude/skills/sdd-sync)",
+    f"cat <> {SKILL_FILE}",
+    # A segment that only redirects is judged by its targets alone.
+    f"> {SKILL_FILE}",
+    f": > {SKILL_FILE}",
+    f"true > {SKILL_FILE}",
+    f"exec 3> {SKILL_FILE}",
+    f"exec > {SKILL_FILE}",
+    f"cat /tmp/x &> {SKILL_FILE}",
+    f"cat /tmp/x &>> {SKILL_FILE}",
+    f"(cat /tmp/x) > {SKILL_FILE}",
+]
+
+# Each redirection target is judged by direction: an input as a read, an output as a write.
+REDIRECTED_READS = [
+    f"cat {SKILL_FILE} 2>/dev/null",
+    f"cat {SKILL_FILE} > /tmp/copy.md",
+    f"wc -l < {SKILL_FILE}",
 ]
 
 
@@ -291,6 +313,26 @@ class TestGuardedLocationReads:
     @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
     def test_anything_else_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
         assert_refused(bash(command, agent), "not recognized as an authorized action")
+
+    @pytest.mark.parametrize("command", REDIRECTED_READS, ids=lambda c: c[:40])
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_a_read_with_a_redirection_elsewhere_proceeds(self, command: str, agent: str) -> None:
+        assert_allowed(bash(command, agent))
+
+    @pytest.mark.parametrize("command", REDIRECTED_WRITES, ids=lambda c: c[:40])
+    def test_a_redirection_into_a_guarded_file_asks_as_a_write(self, command: str) -> None:
+        reason = ask_reason(bash(command, CLAUDE))
+        assert "would modify agent enforcement" in reason
+        assert "not recognized" not in reason
+
+    @pytest.mark.parametrize("command", REDIRECTED_WRITES, ids=lambda c: c[:40])
+    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    def test_a_redirection_into_a_guarded_file_refuses_as_a_write(self, command: str, agent: str) -> None:
+        assert_refused(bash(command, agent), "targets agent enforcement")
+
+    def test_a_redirected_write_beside_an_unrecognized_segment_keeps_the_recognition_reason(self) -> None:
+        reason = ask_reason(bash(f"cat /tmp/x > {SKILL_FILE}; rm {SKILL_DIR}/other.md", CLAUDE))
+        assert "not recognized" in reason
 
     def test_reading_skills_and_guarded_settings_proceeds(
         self,
@@ -435,6 +477,7 @@ class TestAnAdmittedUtilityWritesNoOperand:
 
 _STOP = "do not attempt to find alternative commands"
 _RETRY = "the classifier stopped this call"
+_ABSOLUTE = "restate every relative path"
 _REPORT = "how the user can help — describe exactly what command or steps"
 
 
@@ -449,14 +492,46 @@ class TestTheInstructionFormFollowsWhatTheRefusalOffers:
         assert _STOP not in stderr
 
     @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
+    def test_a_relative_path_after_a_directory_change_says_to_restate_it(self, agent: str) -> None:
+        stderr = bash(f"cd {SKILL_DIR} && cat ./sdd-spec-formats.md", agent).stderr.lower()
+        assert "recognized reads use:" not in stderr
+        assert _ABSOLUTE in stderr
+        assert _STOP not in stderr
+        assert _RETRY not in stderr
+
+    def test_a_pi_ask_for_a_relative_path_says_to_restate_it(self) -> None:
+        reason = ask_reason(bash(f"cd {SKILL_DIR} && cat ./sdd-spec-formats.md", "pi")).lower()
+        assert _ABSOLUTE in reason
+        assert _STOP not in reason
+
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
+    def test_a_substitution_after_a_directory_change_says_to_stop(self, agent: str) -> None:
+        stderr = bash(f"cd {SKILL_DIR} && cat ./$NAME", agent).stderr.lower()
+        assert _STOP in stderr
+        assert _ABSOLUTE not in stderr
+
+    def test_a_pi_ask_naming_accepted_commands_says_to_use_one(self) -> None:
+        """Pi refuses from the ask reason when it cannot prompt, so the reason carries the refusal's form."""
+        reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", "pi")).lower()
+        assert "recognized reads use:" in reason
+        assert _RETRY in reason
+        assert _STOP not in reason
+
+    def test_a_pi_ask_naming_none_says_to_stop(self) -> None:
+        reason = ask_reason(write(SKILL_FILE, "pi")).lower()
+        assert "recognized reads use:" not in reason
+        assert _STOP in reason
+        assert _RETRY not in reason
+
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_a_refusal_naming_none_says_to_stop(self, agent: str) -> None:
         stderr = write(SKILL_FILE, agent).stderr.lower()
         assert "recognized reads use:" not in stderr
         assert _STOP in stderr
         assert _RETRY not in stderr
 
-    # The classifier stops on the shape of each of these, so a different utility
-    # runs into the same stop and the refusal omits the accepted set.
+    # Each of these writes a guarded file or stops the classifier on its shape, so
+    # a different utility meets the same refusal and the refusal omits the accepted set.
     @pytest.mark.parametrize(
         "command",
         [
@@ -663,12 +738,13 @@ class TestRelativeOperandWithoutAWorkingDirectory:
 
     @pytest.mark.parametrize("command", DESTROYS_A_RELATIVE_OPERAND, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
-    def test_destroying_a_relative_operand_refuses_and_stops(self, command: str, agent: str) -> None:
+    def test_destroying_a_relative_operand_refuses_and_asks_for_absolute_paths(self, command: str, agent: str) -> None:
         """No prompt is offered: the user cannot judge a path the hook cannot place either."""
         result = bash(command, agent, cwd=None)
         assert_refused(result, "supplies no working directory")
-        assert "absolute path" in result.stderr
-        assert "Do NOT attempt to find alternative commands" in result.stderr
+        stderr = result.stderr.lower()
+        assert _ABSOLUTE in stderr
+        assert _STOP not in stderr
 
     @pytest.mark.parametrize("command", NAMES_EVERY_DESTROYED_OPERAND_ABSOLUTELY, ids=lambda c: c[:44])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
@@ -707,11 +783,11 @@ AGENT_HOME_READS = [
 
 AGENT_HOME_WRITES = [
     "echo x > ~/.claude/settings.json",
-    "cp /tmp/evil.py ~/.claude/hooks/block-secrets.py",
+    "cp /tmp/evil.py ~/.claude/hooks/block-leaks.py",
     "rm -rf ~/.codex/rules/",
     "sed -i s/a/b/ ~/.codex/config.toml",
     # Read-through is not exec-through.
-    "uv run ~/.claude/hooks/block-secrets.py",
+    "uv run ~/.claude/hooks/block-leaks.py",
 ]
 
 
@@ -753,7 +829,7 @@ class TestAgentHomeReadsProceed:
 
 
 PI_SOURCE = "modules/home/ai/pi/extensions/hooks/extension.ts"
-HOOK_SOURCE = "modules/home/ai/shared/hooks/block-secrets.py"
+HOOK_SOURCE = "modules/home/ai/shared/hooks/block-leaks.py"
 
 MODULE_TREE_READS = [
     f"cat {PI_SOURCE}",
@@ -807,7 +883,7 @@ class TestAgentModuleTreeReadsProceed:
     @pytest.mark.parametrize(
         "command",
         [
-            "cat ~/.claude/hooks/block-secrets.py",
+            "cat ~/.claude/hooks/block-leaks.py",
             "cat ~/.codex/rules/default.rules",
             "cat ~/.copilot/hooks/security-policy.json",
         ],
@@ -1062,7 +1138,7 @@ class TestReaderHint:
     def test_the_prompt_leaves_them_out_where_they_would_not_help(self) -> None:
         reason = ask_reason(bash(f"echo pwned > {SKILL_FILE}", CLAUDE))
         assert "recognized reads use" not in reason.lower()
-        assert "a redirection" in reason
+        assert "would modify agent enforcement" in reason
 
     def test_the_prompt_states_required_first_options(self) -> None:
         reason = ask_reason(bash(f"rg -n pattern {SKILL_FILE}", CLAUDE))

@@ -47,10 +47,10 @@ snapshot_tree() {
 
 case "${stage}" in
   init)
+    # A turn that takes no snapshot must not leave the previous turn's in place.
+    rm -f "${GIT_DIR}/agent-snapshot-${safe_id}"
     head_sha="$(git -C "${cwd}" rev-parse HEAD 2> /dev/null)" || exit 0
     printf '%s' "${head_sha}" > "${baseline}" || exit 0
-    # A failed snapshot must not leave the previous turn's in place.
-    rm -f "${GIT_DIR}/agent-snapshot-${safe_id}"
     tree="$(snapshot_tree)" && printf '%s' "${tree}" > "${GIT_DIR}/agent-snapshot-${safe_id}" || true
     ;;
   check)

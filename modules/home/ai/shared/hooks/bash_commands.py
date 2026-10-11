@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import os
 import re
 
+from hook_response import Instruction
 import shell_words
 from shell_words import Segment, Word
 
@@ -41,6 +42,7 @@ WRITE_OPTIONS = {
         ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fls", "-fprint",
          "-fprint0", "-fprintf"),
     ),
+    "file": ("zZC", ("--uncompress", "--uncompress-noreport", "--compile")),
     "rg": ("z", ("--pre", "--search-zip", "--hostname-bin")),
     "sort": ("o", ("--output", "--compress-program")),
 }  # fmt: skip
@@ -64,7 +66,9 @@ READ_WRAPPERS = frozenset({"time", "timeout", "stdbuf", "setsid"})
 SCRIPT_SUFFIXES = frozenset({".bash", ".cjs", ".js", ".mjs", ".pl", ".py", ".r", ".rb", ".sh", ".ts", ".zsh"})
 
 # A segment holding one of these says less about what it runs than its words do.
-OPAQUE_KINDS = frozenset({"unresolvable", "assignment", "redirection target"})
+# A redirection target is not among them: the command text names it, and a
+# caller judges it by direction, an input as a read and an output as a write.
+OPAQUE_KINDS = frozenset({"unresolvable", "assignment"})
 
 # Privilege wrappers, with the options that take a value.
 _PRIVILEGE_WRAPPERS = {"sudo": {"-u", "-g", "-U", "-h", "-p", "-C", "-D", "-r", "-t"}, "doas": {"-u", "-C"}}
@@ -77,22 +81,27 @@ _UNZIP_INSPECTS = frozenset({"-l", "-t", "-v", "-Z", "-z", "-Z1"})
 # The classifier stops on the program or on the command's shape. Substituting a
 # program clears the first; the second stays whatever program runs.
 UNKNOWN_PROGRAM = "a command or argument outside the recognized read and run forms"
+# A shape stop the agent can resolve: the same command with each path absolute is judged in full.
+RELATIVE_PATH = "a relative path after a directory change or without a known directory"
 
 
-def accepted_forms() -> str:
-    """Describe the commands this module reads, for a refusal that offers an alternative."""
+def read_forms() -> str:
+    """Describe the reads this module recognizes, for a refusal that offers one."""
     required_first = "".join(
         f" {utility} requires {option} as its first option."
         for utility, option in sorted(REQUIRED_FIRST_OPTION.items())
     )
+    return " Recognized reads use: " + ", ".join(sorted(READ_ONLY_UTILITIES)) + "." + required_first
+
+
+def accepted_forms() -> str:
+    """Describe the commands this module reads or runs, for a refusal that offers an alternative."""
     return (
-        " Recognized reads use: "
-        + ", ".join(sorted(READ_ONLY_UTILITIES))
-        + "."
-        + required_first
+        read_forms()
         + " Existing scripts can run directly or as file arguments to: "
         + ", ".join(sorted(INTERPRETERS))
-        + ". The classifier rejects redirection, environment assignments, "
+        + ". A redirection's target is judged by direction: an input as a read, an output as a write. "
+        "The classifier rejects environment assignments, "
         "inline code, variables, command substitutions, and brace expansions. "
         "Globs such as `*.md` are checked against their current matches. "
         "Name paths absolutely, especially after a directory change."
@@ -104,13 +113,45 @@ def offers_accepted_forms(syntax: str) -> bool:
     return syntax == UNKNOWN_PROGRAM
 
 
+def asks_for_absolute_paths(syntax: str) -> bool:
+    """Whether recognition stopped only on relative paths whose directory is unknown."""
+    return syntax == RELATIVE_PATH
+
+
+def refusal_instruction(syntax: str) -> Instruction:
+    """Choose the instruction a refusal for `syntax` ends with, per `hook-interface` `BlockAIGuidance`."""
+    if offers_accepted_forms(syntax):
+        return Instruction.RETRY
+    if asks_for_absolute_paths(syntax):
+        return Instruction.ABSOLUTE_PATH
+    return Instruction.STOP
+
+
+ABSOLUTE_PATH_HINT = " Name every path absolutely; the restated command is judged in full."
+
+
 def descriptor_redirect(word: Word) -> bool:
     """Whether a redirection operand duplicates or closes a descriptor instead of naming a file."""
-    return (
-        word.kind == "redirection target"
-        and (word.redirection or "").endswith("&")
-        and _DESCRIPTOR.fullmatch(word.value) is not None
-    )
+    return (word.redirection or "").endswith("&") and _DESCRIPTOR.fullmatch(word.value) is not None
+
+
+def redirect_writes(word: Word) -> bool:
+    """Whether a redirection opens the file it names for writing, as `>`, `>>`, `&>`, and `<>` do.
+
+    The operator decides, not the word's kind: a target the lexer cannot
+    resolve is still opened for writing.
+    """
+    return ">" in (word.redirection or "") and not descriptor_redirect(word)
+
+
+# A segment of only these and redirections runs nothing; its redirections are its whole effect.
+_NO_OP_PROGRAMS = frozenset({":", "true", "exec"})
+
+
+def only_redirects(segment: list[Word]) -> bool:
+    """Return whether a segment does nothing but redirect, as `> file`, `: > file`, and `exec 3> file` do."""
+    words = [word for word in segment if word.kind != "redirection target"]
+    return not words or (len(words) == 1 and words[0].kind == "command" and words[0].value in _NO_OP_PROGRAMS)
 
 
 def word_paths(word: Word, cwd: str | None) -> list[str]:
@@ -254,8 +295,11 @@ def _builder(segment: Segment, *, pipe_fed: bool) -> bool:
 
 
 def read_only(segment: list[Word]) -> bool:
-    """Return whether one pipeline segment runs a utility that only reads its arguments."""
-    words = [word for word in segment if not descriptor_redirect(word)]
+    """Return whether one pipeline segment runs a utility that only reads its arguments.
+
+    Redirections are left to the caller, which judges each target by direction.
+    """
+    words = [word for word in segment if word.kind != "redirection target"]
     # `invocation` only drops leading words, so one check covers what it returns.
     if any(word.kind in OPAQUE_KINDS for word in words):
         return False
@@ -502,15 +546,13 @@ class Reading:
         if self.has_builder:
             return "a command builder or a shell reading standard input"
         kinds = {word.kind for segment in self.segments for word in segment.words}
-        if "redirection target" in kinds:
-            return "a redirection"
         if "assignment" in kinds:
             return "an environment assignment"
-        if "unresolvable" in kinds:
-            return (
-                "an unresolved substitution, variable, brace expansion, or relative path "
-                "after a directory change or without a known directory"
-            )
+        unresolved = [word.value for segment in self.segments for word in segment.words if word.kind == "unresolvable"]
+        if unresolved and not any(char in value for value in unresolved for char in "$`{*?["):
+            return RELATIVE_PATH
+        if unresolved:
+            return "an unresolved substitution, variable, glob, or brace expansion"
         return UNKNOWN_PROGRAM
 
 

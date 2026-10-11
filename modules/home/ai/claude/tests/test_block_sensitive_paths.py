@@ -1,11 +1,14 @@
 """Tests for zero-access path blocking in the block-sensitive-paths.py hook."""
 
+import json
 import os
 
-from conftest import assert_allowed, assert_block_contract, assert_blocked, run_hook
+from conftest import SHARED_HOOKS_DIR, assert_allowed, assert_ask, assert_block_contract, assert_blocked, run_hook
+import pytest
 
 HOOK = "block-sensitive-paths.py"
 HOME = os.path.expanduser("~")
+REPO = SHARED_HOOKS_DIR.parents[4]
 
 
 def read(path: str):
@@ -325,3 +328,101 @@ class TestApplyPatch:
 
     def test_empty_command_allowed(self):
         assert_allowed(apply_patch(""))
+
+    def test_update_token_named_file_asks(self):
+        patch = "*** Begin Patch\n*** Update File: app/auth_token.json\n+{}\n*** End Patch"
+        assert_ask(apply_patch(patch), "auth_token.json")
+
+
+# Spec: hook-interface ExplanationContract. Any member of a set satisfies its concept.
+_EXPOSURE = {"expose", "exposing", "exposed"}
+_CREDENTIAL = {"credential", "credentials", "token", "tokens", "key", "keys", "password", "passwords"}
+_RISK = {"unauthorized access", "account takeover"}
+
+
+def assert_explained_ask(result, path: str) -> None:
+    """Assert an ask whose reason names the file and satisfies the explanation contract."""
+    assert_ask(result)
+    reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    lowered = reason.lower()
+    assert path in reason
+    assert any(word in lowered for word in _EXPOSURE), reason
+    assert any(word in lowered for word in _CREDENTIAL), reason
+    assert any(word in lowered for word in _RISK), reason
+
+
+class TestNamesThatSuggestACredentialAsk:
+    """A name that suggests a credential without proving one asks; it is not refused."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/project/auth_token.json",
+            "/project/passwords.txt",
+            "/project/passwd.bak",
+            "/project/api_key.cfg",
+            "/project/api-key.cfg",
+            "/project/auth_key",
+            "/project/credential.txt",
+            "/project/release.keystore",
+            "/project/release.jks",
+        ],
+    )
+    def test_read_asks(self, path):
+        assert_explained_ask(read(path), path)
+
+    def test_write_and_edit_ask(self):
+        assert_ask(write("/project/auth_token.json"))
+        assert_ask(edit("/project/auth_token.json"))
+
+    def test_a_strong_credential_file_asks_even_in_a_package_directory(self):
+        path = "/project/.venv/lib/python3.11/site-packages/pkg/.credentials.json"
+        assert_explained_ask(read(path), path)
+
+    def test_a_package_directory_excuses_a_suggestive_name(self):
+        assert_allowed(read("/project/.venv/lib/python3.11/site-packages/pkg/token.py"))
+
+    def test_a_bash_read_is_not_asked(self):
+        """The ask covers the file tools; a Bash read of the name is judged by the read rules."""
+        assert_allowed(bash("cat /project/auth_token.json"))
+
+    def test_an_ordinary_name_is_allowed(self):
+        assert_allowed(read("/project/src/main.py"))
+
+    def test_an_agent_that_cannot_prompt_is_refused_without_an_approval_line(self):
+        result = run_hook(
+            HOOK, "Read", {"file_path": "/project/auth_token.json"}, env={**os.environ, "AI_HOOK_AGENT": "codex"}
+        )
+        assert_blocked(result)
+        assert "approve" not in result.stderr.lower()
+
+
+class TestDeclaredReadsReachNoAsk:
+    """A declared placeholder or exception is readable: no rule in this hook asks on it."""
+
+    def test_a_dotenv_placeholder_is_readable(self):
+        assert_allowed(read("/project/apps/web/.env.example"))
+
+    def test_a_declared_name_exception_is_readable(self):
+        assert_allowed(read(f"{REPO}/scripts/mcp-secrets.sh"))
+
+
+class TestLinkedFilesInCredentialDirectories:
+    def test_a_declaratively_managed_file_is_still_in_the_directory(self, tmp_path):
+        """A symlinked file is judged by where it sits, not by where it resolves.
+
+        `programs.ssh` and sops-nix deploy these files as links out to the Nix store
+        or a secrets mount, so a rule that follows only the link finds nothing.
+        """
+        home = tmp_path / "home"
+        store = tmp_path / "store"
+        store.mkdir()
+        (store / "config-abc123").write_text("Host example\n")
+        (home / ".ssh").mkdir(parents=True)
+        (home / ".ssh" / "config").symlink_to(store / "config-abc123")
+
+        result = run_hook(
+            HOOK, "Read", {"file_path": str(home / ".ssh" / "config")}, env={**os.environ, "HOME": str(home)}
+        )
+
+        assert_blocked(result, "zero-access")

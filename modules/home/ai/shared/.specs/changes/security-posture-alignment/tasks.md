@@ -488,6 +488,40 @@ No spec pins either file's shape, so the change is to the files, their loaders, 
 - [x] Add tests for `PatternFileMissing`, `PatternFileUnparsable`, and `RuleIsInvalid` (unknown mode, missing field, pattern that does not compile, each with a command that matches a valid rule and one that matches none), and for `UnusableFileWhereNoPromptCanBeShown` on Codex — evidence for `ExternalPatternFile` and `hook-interface` `CommandHookCannotLoadItsRules`.
 - [x] Update the tests that pin the fail-open on a missing or unreadable file.
 
+## Read placeholder dotenv files by declaration
+
+- [x] Add `sensitive-path-dotenv-placeholder` to the exception surfaces, and make manifest validation reject a pattern on it that holds a separator, home notation, or a glob character — evidence for `guarded-surface` `ADotenvExceptionIsAFileName`.
+- [x] Declare `.env.example`, `.env.sample`, and `.env.template` under that surface, with a test that the shipped manifest names exactly those three — evidence for `guarded-surface` `EachPlaceholderNameIsDeclared`.
+- [x] Declare `.env.op` under that surface, extend the shipped-names test to the four names, and add a verdict case that a Bash read of `.env.op` proceeds — evidence for `EachPlaceholderNameIsDeclared` and `DeclaredPlaceholderIsReadable`.
+- [x] Make `block-sensitive-paths.py` excuse the dotenv rule for a declared name on a read only, on every spelling, with the `Read` tool and the Bash read words passing that they read — evidence for `DotenvPlaceholderReadIsExcusedOnlyByDeclaration`.
+- [x] Add shared verdict cases: a nested `.env.example` and a case variant are readable, `.env.local`, `.env.example.local`, and `.env.dist` are refused, a Bash read of a placeholder proceeds, a `.env.*` glob, a redirect into a placeholder, and a copy onto one are refused — evidence for `DeclaredPlaceholderIsReadable`, `UndeclaredVariantIsRefused`, `GlobIsJudgedByItsMatches`, and `PlaceholderWriteIsRefused`.
+- [x] Add tests that a `Write` and an `Edit` of a placeholder are refused, and that a placeholder linking to `.env` is refused on read — evidence for `PlaceholderWriteIsRefused` and `PlaceholderLinkToSecretIsRefused`.
+- [x] Re-allow the three names in `sandbox.filesystem.allowRead` of every Claude settings file, as `~/**/<name>`.
+  Done by the user on 2026-10-06, since the agent sandbox denies writes to those files.
+- [x] Restrict a placeholder pattern to `.env.<suffix>` with no whitespace, and test that `.env` itself is rejected — evidence for `guarded-surface` `ADotenvExceptionIsAFileName`.
+- [x] Refuse a placeholder read for its command's form with the retry form and the recognized reads, and keep the stop form for a write, a strong rule, and a placeholder linking to `.env` — evidence for `UnrecognizedPlaceholderReadNamesTheReadsThatProceed`.
+- [x] Add shared verdict cases for a glob whose matches are all placeholders and one that matches `.env.local`, an input redirection from a placeholder, and output redirections to `/dev/null`, to a file, and to `.env` — evidence for `GlobIsJudgedByItsMatches` and `PlaceholderReadThroughARedirection`.
+
+## Judge a redirection by its direction
+
+- [x] Make `bash_commands.read_only` leave redirections to its caller, add `redirect_writes` as the one definition of an output target, and drop "a redirection" as a recognition stop.
+- [x] Judge the output targets of a recognized read or run as writes in `block-hook-tampering.py`, gating a guarded one with the write prompt, and use `redirect_writes` for the sensitive-path hook's write words — evidence for `UnrecognizedCommandsAreGated` `RedirectionIntoAGuardedLocationIsAWrite`.
+- [x] Add tamper and class-table cases: a guarded read with `2>/dev/null`, an output to `/tmp`, and an input redirection proceed; an output or read-write redirection into a guarded file asks under Claude and refuses elsewhere with the write refusal; a recognized run writing a guarded file asks — evidence for `RedirectionElsewhereLeavesAReadRecognized` and `RedirectionIntoAGuardedLocationIsAWrite`.
+  The commands that wrote a guarded file through a redirection moved out of the unrecognized list, since they now meet the write gate, and `cat ~/base/file > ~/memory/note` now proceeds, as `echo x > ~/memory/note` already did.
+- [x] Make the retry form's first paragraph hold for every hook, in `hook_response.py` — evidence for `hook-interface` `BlockAIGuidance` `RetryMessageFormat`.
+- [x] Decide an output target by its operator rather than its word kind, so a target the lexer cannot resolve (`> $DIR/secrets.txt`, or any relative target with no working directory) is still a write, with tests for each.
+  A review found the sensitive-path hook had stopped refusing these once its write words came from the shared definition.
+- [x] Judge a segment that does nothing but redirect (`> file`, `: > file`, `exec 3> file`, and the second half of `cmd &> file`, which the lexer splits at `&`) by its targets, and give the write reason only when every segment is recognized — evidence for `RedirectionIntoAGuardedLocationIsAWrite`.
+- [x] Let a refusal another rule makes win over a placeholder refused for its command's form, whatever the word order, so `sed -n 1p .env.example .env.local` keeps the stop form — evidence for `DotenvPlaceholderReadIsExcusedOnlyByDeclaration`.
+
+## Close the newline gap in the zero-access check
+
+- [x] Refuse a zero-access read in a command the lexer cannot read, wherever the name sits in the text, with a test that `cat .env.local`, then a newline and `echo done`, is refused — evidence for `ZeroAccessPaths`.
+  The fallback ran the strong rules over the whole text, and the dotenv and extension rules anchor at its end, so a name before the last line passed; the credential-directory rule does not anchor and refused anywhere.
+  Found by review on 2026-10-07; present before this change.
+  The fallback now judges each piece of the text between shell syntax, and a placeholder there gets the write verdict, because the hook cannot tell a read from a write or a mention.
+  Parsing multi-line commands, which would retire this fallback for most of them, belongs to a change of its own.
+
 ## Organization
 
 - [x] Consider whether and how to expand property testing.
@@ -586,6 +620,30 @@ A linked file that git ignores is absent from a worktree and fails evaluation: l
 - [x] Confirm in a live Claude Code session and a live Codex session that `refuse-unlisted-tools.py` refuses a tool no vocabulary table lists and lets a passthrough tool proceed.
   2026-10-03: Codex was refused `collaborationspawn_agent` while it was unlisted, and ran it once listed; Claude Code ran `ToolSearch`, a passthrough tool.
   Claude Code 2.1.284 offers no unlisted tool, so its refusal is shown by tests, and by Pi's dispatcher refusing `mcpScript` live.
+
+## Close the 2026-10-09 verify findings
+
+The verify run on 2026-10-09 covered this change and `guarded-path-classes` together, and found these in the shared hooks.
+
+- [x] Keep the program in command position after a reserved word, so `{ … }`, `if … then`, `!`, and `while … do` cannot hide an inline program, an `eval`, or a `trap` from the tamper gate.
+- [x] Lex `&>` and `&>>` as one redirection, so `cd X &>/dev/null && …` keeps `X` for the segments after it.
+- [x] Leave a `~` bash does not expand as written, and mark a `[^…]` or POSIX bracket glob unresolvable, because Python's glob reads it differently.
+- [x] Check every suffix of a short option against the strong rules, so `grep -f<key file>` is refused as `grep -f <key file>` is.
+- [x] Name the agent from `AI_HOOK_AGENT` before `transcript_path`, which VS Code also sends.
+- [x] Carry the gate's instruction into a Pi ask, and end a refusal stopped only on relative paths with the absolute-path instruction.
+- [x] Refuse every tool call in the Copilot adapter when the vocabulary cannot be read, and let a refusal on any fanned-out path decide the call.
+- [x] Ask, naming the file, on a destructive-ops rule file that is not UTF-8, that mixes a top-level list with category tables, or that yields no rules.
+- [x] Remove the previous turn's snapshot before a turn start that takes none.
+- [x] Refuse `file -z`, `-Z`, and `-C` as reads.
+- [x] Move the file-path asks out of `block-secrets.py` into `block-sensitive-paths.py` as `SuggestiveNamesAsk`, so declared placeholders and exceptions are readable through every hook.
+- [x] Read the `file` tool group from the vocabulary in every hook, and widen the private-copy check to inline literals.
+- [x] Make the deleted-file tests able to fail, remove a test's dependence on test order, set the missing Hypothesis deadline, and delete the uncalled `verdict()`.
+- [x] Rename `block-secrets.py` to `block-leaks.py`, with its tests and every registration.
+  Its name met the sensitive-path name heuristic, so no agent could read or edit the hook or its tests.
+- [x] Remove the `sensitive-path-nix-hook-wrapper` exception surface, which excused only the old hook name.
+- [ ] Record the user's approval for each spec edit made after the proposal commits of this change and `guarded-path-classes`.
+- [ ] Run `assess-agent-configuration` and cite the dated record for `agent-configuration-floor` and `ConfigurationSurfacesCoverTheDeclarations`.
+- [ ] Decide whether the editor's `.github/hooks` location, the unix-socket allowances, the skills source tree, and the hard-coded profile layers need declarations.
 
 ## Merge and activate
 

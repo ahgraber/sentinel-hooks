@@ -74,7 +74,7 @@ class TestInstructionGuard:
 
     def test_markdown_link_blocks_even_where_the_target_does_not_exist(self, repo: Path):
         alias = hooks_of(repo) / "instructions" / "notes.md"
-        alias.symlink_to("../block-secrets.py")
+        alias.symlink_to("../block-leaks.py")
 
         assert HOOK.is_protected_path(str(alias))
 
@@ -125,7 +125,7 @@ class TestAttachedOperands:
             "echo x >>{target}",
             "echo x 2>{target}",
             "echo x &>{target}",
-            "cat <{target}",
+            "cat <>{target}",
             "tee --append={target}",
             "install --target={target}",
         ],
@@ -142,4 +142,7 @@ class TestAttachedOperands:
         markdown = hooks_of(repo) / "instructions" / "00-style.md"
         command = f"cat {markdown} >{tmp_path}/copy.md"
 
-        assert HOOK.command_mentions_protected_path(command)
+        assert not HOOK.command_mentions_protected_path(command)
+
+    def test_reading_a_guarded_file_through_an_attached_input_redirection_proceeds(self, alias: Path):
+        assert not HOOK.command_mentions_protected_path(f"cat <{alias / 'block-destructive-ops.py'}")

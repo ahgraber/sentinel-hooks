@@ -96,7 +96,11 @@ _AI_BLOCK_CHECKS = [
 # the operation, retry where the classifier did not recognize the command and
 # the message names commands that would work. Requiring the stop form of every
 # refusal contradicts a message that lists accepted commands.
-_CLOSING_INSTRUCTIONS = {"stop": "do not attempt", "retry": "the classifier stopped this call"}
+_CLOSING_INSTRUCTIONS = {
+    "stop": "do not attempt",
+    "retry": "the classifier stopped this call",
+    "absolute path": "restate every relative path",
+}
 
 
 def assert_block_contract(result: HookResult, message_substring: str = "") -> None:

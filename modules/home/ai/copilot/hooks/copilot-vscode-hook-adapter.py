@@ -23,8 +23,18 @@ SHARED_HOOKS_DIR = REPO_ROOT / "modules" / "home" / "ai" / "shared" / "hooks"
 if str(SHARED_HOOKS_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_HOOKS_DIR))
 
-from guarded_paths import TOOL_VOCABULARY  # noqa: E402
 from hook_response import STOP_INSTRUCTIONS  # noqa: E402
+
+VOCABULARY_FILE = SHARED_HOOKS_DIR / "tool-vocabulary.toml"
+# An unreadable vocabulary refuses every tool call in `main`, rather than ending this
+# script with a traceback the editor does not treat as a refusal.
+try:
+    from guarded_paths import TOOL_VOCABULARY
+except Exception as _vocabulary_error:  # noqa: BLE001
+    TOOL_VOCABULARY = None
+    VOCABULARY_ERROR: Exception | None = _vocabulary_error
+else:
+    VOCABULARY_ERROR = None
 
 # The shared hooks infer the agent from their invocation path, which this adapter bypasses.
 HOOK_ENV = {**os.environ, "AI_HOOK_AGENT": "copilot"}
@@ -37,7 +47,7 @@ SCRIPT_PATHS = {
     "block-hook-tampering.py": SHARED_HOOKS_DIR / "block-hook-tampering.py",
     "block-sensitive-paths.py": SHARED_HOOKS_DIR / "block-sensitive-paths.py",
     "block-destructive-ops.py": SHARED_HOOKS_DIR / "block-destructive-ops.py",
-    "block-secrets.py": SHARED_HOOKS_DIR / "block-secrets.py",
+    "block-leaks.py": SHARED_HOOKS_DIR / "block-leaks.py",
     "bash-command-validator.sh": SHARED_HOOKS_DIR / "bash-command-validator.sh",
     "stop-precommit.sh": SHARED_HOOKS_DIR / "stop-precommit.sh",
 }
@@ -47,7 +57,7 @@ SCRIPT_PATHS = {
 # answers with the most restrictive class in it, which fanning out would defeat.
 MULTI_PATH_TARGETS = {
     "block-sensitive-paths.py",
-    "block-secrets.py",
+    "block-leaks.py",
 }
 
 
@@ -248,6 +258,16 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         raw_data = {}
 
+    if TOOL_VOCABULARY is None:
+        if "tool_name" not in raw_data:
+            return run_hook(script_name, script_args, raw_data)
+        sys.stderr.write(
+            f"Blocked: the tool vocabulary at {VOCABULARY_FILE} could not be read ({VOCABULARY_ERROR}), "
+            "so no tool call can be checked. The user has to repair the file by hand.\n"
+            f"{STOP_INSTRUCTIONS}"
+        )
+        return 2
+
     try:
         normalized = normalize_payload(raw_data)
     except UnmappedToolError as error:
@@ -269,6 +289,7 @@ def main() -> int:
         and isinstance(file_paths, list)
         and len(file_paths) > 1
     ):
+        results = []
         for path in file_paths:
             per_path = deepcopy(normalized)
             per_path_input = _copy_dict(per_path.get("tool_input"))
@@ -277,11 +298,15 @@ def main() -> int:
             # Leaving the list behind would make every fanned-out call judge the whole set.
             per_path_input.pop("file_paths", None)
             per_path["tool_input"] = per_path_input
-            result = execute_hook(script_name, script_args, per_path)
-            if result.returncode != 0 or result.stdout:
-                emit_result(result)
-                return result.returncode
-        return 0
+            results.append(execute_hook(script_name, script_args, per_path))
+        # A refusal on any path decides the call; an earlier ask cannot soften it.
+        decisive = next((result for result in results if result.returncode == 2), None) or next(
+            (result for result in results if result.returncode != 0 or result.stdout), None
+        )
+        if decisive is None:
+            return 0
+        emit_result(decisive)
+        return decisive.returncode
 
     return run_hook(script_name, script_args, normalized)
 

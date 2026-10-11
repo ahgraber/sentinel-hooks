@@ -69,7 +69,7 @@ class _Token:
 
 
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-_REDIRECTION = re.compile(r"(?:[0-9]+)?(?:>>|<<|<>|>&|<&|>\||>|<)")
+_REDIRECTION = re.compile(r"&>>|&>|(?:[0-9]+)?(?:>>|<<|<>|>&|<&|>\||>|<)")
 # A path inside an unresolvable word starts where a word or an operator ends, as in
 # `${X:-/etc/file}`; a `/` after a name character or a `.` continues a relative path.
 _PATH = re.compile(r"(?<![\w.])[~/][^{}$(),`\"'\s]*")
@@ -78,6 +78,8 @@ _BREAKS = {";", "|", "||", "&", "&&", "(", ")"}
 _HOME_REFERENCE = re.compile(r"\$(?:\{HOME\}|HOME(?![A-Za-z0-9_]))")
 # A value the shell would split or glob cannot stand in as one literal word.
 _UNSPLIT = re.compile(r"[*?\[\s$]")
+# Bracket syntax bash matches and Python's glob does not: `^` negation and `[:`, `[=`, `[.` classes.
+_BRACKET_SYNTAX = re.compile(r"\[(?:\^|\[[:=.])")
 
 
 def _ansi_c(body: str) -> str:
@@ -190,6 +192,9 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
 
     def flush() -> None:
         nonlocal value, active, quoted, started, tilde, home_reference, literal_glob
+        # bash expands `~` only when nothing before the first unquoted `/` is quoted or expanded.
+        if tilde and any(char in command[word_start:index].split("/", 1)[0] for char in "'\"\\$`"):
+            tilde = False
         if started:
             words.append(
                 _Token(
@@ -220,9 +225,12 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
                 started = False
             flush()
             end = index + 1
-            if end < len(command) and command[index : end + 1] in {
+            if command[index : index + 3] == "&>>":
+                end += 2
+            elif end < len(command) and command[index : end + 1] in {
                 "&&",
                 "||",
+                "&>",
                 ">>",
                 "<<",
                 "<>",
@@ -345,6 +353,9 @@ def _resolve(token: _Token, roots: list[str | None], *, home_known: bool = True)
         value = name + "=" + os.path.expanduser(operand)
     if not active & set("*?["):
         return [value]
+    # Python's glob reads `[^...]` and POSIX bracket classes differently from bash.
+    if "[" in active and _BRACKET_SYNTAX.search(value):
+        return None
     if token.literal_glob or (not os.path.isabs(value) and None in roots):
         return None
     matches = {match for root in roots for match in glob.glob(value, root_dir=root)}
@@ -353,6 +364,9 @@ def _resolve(token: _Token, roots: list[str | None], *, home_known: bool = True)
 
 # Reserved words and wrappers that leave the word after them in command position.
 _RESERVED = {"!", "{", "}", "if", "then", "elif", "else", "fi", "while", "until", "do", "done", "time"}
+# Reserved words that are not the program they precede. `time` stays a word,
+# because readers treat it as a wrapper that takes options.
+_KEYWORDS = _RESERVED - {"time"}
 # Builtins that run text or change the shell in ways these words do not show.
 _OPAQUE = {"eval", "source", ".", "trap", "shopt"}
 # Assignments that change where `cd` goes or what `~` and `$HOME` mean.
@@ -600,7 +614,7 @@ class _Directories:
         self._select(operator if operator in {"&&", "||"} else ";")
 
 
-def _lex(command: str, cwd: str | None) -> list[Segment] | None:
+def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
     if any(char in command for char in ("\n", "\r", "\x00")):
         return None
     tokens = _split_words(command)
@@ -608,6 +622,8 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:
         return None
     segments: list[Segment] = []
     segment: list[Word] = []
+    # Reserved words before the command word; directory tracking reads them, consumers do not.
+    keywords: list[Word] = []
     redirect: str | None = None
     has_command = False
     directories = _Directories(cwd)
@@ -622,9 +638,12 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:
                 return None
             if segment:
                 segments.append(Segment(segment, token.value, directories.spelled()))
-            directories.follow(segment, token.value)
-            segment = []
+            directories.follow(keywords + segment, token.value)
+            segment, keywords = [], []
             has_command = False
+            continue
+        if not has_command and redirect is None and not token.quoted and token.value in _KEYWORDS:
+            keywords.append(Word(token.value, "plain word"))
             continue
         moved = directories.moved
         produced = _resolve(token, directories.roots(), home_known=directories.home_known)

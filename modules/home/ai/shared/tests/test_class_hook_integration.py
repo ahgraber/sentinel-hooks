@@ -73,7 +73,13 @@ def test_sensitive_relative_path_does_not_use_process_cwd(tmp_path, monkeypatch)
         ("Bash", "python ~/skills/task.py -o~/base/file", "ask"),
         ("Bash", "python -c 'print(1)' ~/base/file", "ask"),
         ("Bash", "cd ~/base; cat ./file", "ask"),
-        ("Bash", "cat ~/base/file > ~/memory/note", "ask"),
+        ("Bash", "cat ~/base/file > ~/memory/note", "allow"),
+        ("Bash", "cat ~/memory/note > ~/base/file", "ask"),
+        ("Bash", "cat < ~/base/file", "allow"),
+        ("Bash", "cat <> ~/base/file", "ask"),
+        ("Bash", "python ~/skills/task.py > /tmp/output", "allow"),
+        ("Bash", "python ~/skills/task.py > ~/base/file", "ask"),
+        ("Bash", "cat < ~/base/private", "block"),
         ("Bash", "bash -c 'rm ~/base/file'", "ask"),
         ("Bash", 'python3 -c\'open("~/base/file", "w")\'', "ask"),
         ("Bash", "perl -e'unlink \"~/base/file\"'", "ask"),
@@ -92,6 +98,24 @@ def test_sensitive_relative_path_does_not_use_process_cwd(tmp_path, monkeypatch)
         ("Bash", "echo ~/base/file | sh", "ask"),
         ("Bash", "cat ~/base/file; eval 'true'", "ask"),
         ("Bash", "python ~/skills/task.py | xargs rm", "ask"),
+        # A reserved word leaves the word after it in command position.
+        ("Bash", "{ bash -c 'rm ~/base/file'; }", "ask"),
+        ("Bash", "if true; then bash -c 'rm ~/base/file'; fi", "ask"),
+        ("Bash", "! bash -c 'rm ~/base/file'", "ask"),
+        ("Bash", "while false; do eval 'rm ~/base/file'; done", "ask"),
+        ("Bash", "if true; then trap 'rm ~/base/file' DEBUG; fi; cat ~/base/file", "ask"),
+        ("Bash", "{ cat ~/base/file; }", "allow"),
+        ("Bash", "if true; then cat ~/base/private; fi", "block"),
+        # `file -z` may run an outside decompressor, and `-C` writes a compiled magic file.
+        ("Bash", "file ~/base/file", "allow"),
+        ("Bash", "file -z ~/base/file", "ask"),
+        ("Bash", "file -bZ ~/base/file", "ask"),
+        ("Bash", "file --uncompress ~/base/file", "ask"),
+        ("Bash", "file -C -m ~/base/file", "ask"),
+        # `&>` redirects both streams; it does not end the command.
+        ("Bash", "cd ~/base &>/dev/null && echo x > file", "ask"),
+        ("Bash", "cat ~/base/file &> /tmp/out", "allow"),
+        ("Bash", "echo x &>> ~/base/file", "ask"),
     ],
 )
 def test_class_outcomes(world, monkeypatch, capsys, tool, target, expected):
@@ -225,11 +249,10 @@ def test_two_hooks_one_reading(world, monkeypatch, command):
     [
         ("bash -c 'rm ~/base/file'", "program text"),
         ("echo ~/base/file | xargs rm", "command builder"),
-        ("cat ~/base/file > /tmp/output", "redirection"),
         ("cat ~/base/file\necho done", "newline"),
         ("cat ${FILE:-~/base/file}", "substitution"),
         ("cat ~/base/{file,other}", "brace"),
-        ("cd ~/base; cat ./file", "directory change"),
+        ("cd ~/base; cat ./$NAME", "substitution"),
     ],
 )
 def test_unrecognized_reason_names_syntax(world, command, syntax):
@@ -239,9 +262,24 @@ def test_unrecognized_reason_names_syntax(world, command, syntax):
     # The classifier stops on the shape of each of these, so the refusal omits
     # the accepted set: a different program meets the same stop.
     assert not hook.offers_accepted_forms(reason)
+    assert not hook.bash_commands.asks_for_absolute_paths(reason)
     for explain in (hook._unrecognized_reason, hook._unrecognized_refusal):
         message = explain(command, "Bash", reason)
         assert syntax in message
+        assert "Recognized reads use" not in message
+
+
+@pytest.mark.parametrize("command", ["cd ~/base; cat ./file", "cd ~/base && cat file other"])
+def test_a_relative_path_stop_asks_for_absolute_paths(world, command):
+    """Restating a relative path absolutely is the rewrite that resolves this stop."""
+    _, repo, hook = world
+    reason = hook.bash_commands.read(command, str(repo)).stopping_syntax()
+    assert "relative path" in reason
+    assert hook.bash_commands.asks_for_absolute_paths(reason)
+    assert not hook.offers_accepted_forms(reason)
+    for explain in (hook._unrecognized_reason, hook._unrecognized_refusal):
+        message = explain(command, "Bash", reason)
+        assert "Name every path absolutely" in message
         assert "Recognized reads use" not in message
 
 

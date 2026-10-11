@@ -538,6 +538,53 @@ It refuses a named class of command, so every call it judges is one it was regis
   The admitted set is finite, so the next unrecognized command meets the same contradiction.
   `git` cannot be admitted at all, because `git -c core.pager=<program>` runs a program.
 
+### Decision: ARelativePathStopAsksForAbsolutePaths
+
+**Chosen:** a third instruction form, the absolute-path form.
+A refusal whose classifier stopped only on relative paths in a directory the hook cannot determine names that stop, tells the agent to name every path absolutely, and ends with the absolute-path instruction.
+Every other shape stop keeps the stop instruction, and a stop on the program keeps the retry instruction.
+`UnrecognizedCommandsAreGated` defers to `GateResponse` for what the reason offers, so the two requirements state one rule.
+The ancestor gate's refusal of a relative operand with no known directory is the same stop, and takes the same form; the user chose this on 2026-10-10, after the spec audit found that refusal still ending with the stop instruction.
+
+**Rationale:** `UnrecognizedCommandsAreGated` required every gated reason to list the accepted forms and the absolute-path instruction, and `GateResponse` allowed the list only on a stop on the program.
+The code followed `GateResponse`, so a relative path after a `cd` got the stop instruction and no hint, although the same command with absolute paths is one the classifier can judge.
+The restated command is judged in full, so the form grants nothing the absolute spelling would not.
+The stop text for every other shape stop is unchanged, because a different program meets the same stop there.
+
+**Alternatives considered:**
+
+- Amend `UnrecognizedCommandsAreGated` to match `GateResponse` and keep two forms: a relative path after a `cd` ends in a report to the user for a rewrite the agent can make itself.
+- List the accepted commands on every stop: names commands the agent cannot use, which `GateResponse` exists to prevent.
+
+### Decision: OneHookJudgesCredentialPaths
+
+**Chosen:** `block-secrets.py` judges content and exfiltration only.
+Its file-path asks leave it: the names `block-sensitive-paths.py` already refuses are dropped, and the names it did not judge become that hook's `SuggestiveNamesAsk`.
+The hooks stay two, and every agent's registration is unchanged.
+
+**Rationale:** `block-secrets.py` asked on file names from a list of its own and never read the manifest.
+A declared placeholder such as `.env.example`, or the declared exception `scripts/mcp-secrets.sh`, passed `block-sensitive-paths.py` and then asked here, which every agent that cannot prompt turns into a refusal.
+Most of its names were names the other hook refuses outright, so its ask could fire only where that hook had allowed the path: on the declarations.
+Moving the rest beside the refusals gives every path rule one owner that reads the manifest, so a declaration holds for every rule.
+
+**Alternatives considered:**
+
+- Merge the two hooks: path policy would run on every tool call beside the content scan, one hook's defect would disable the other, and every agent's registration would change.
+- Teach `block-secrets.py` to read the manifest's declarations: two hooks would keep the same name rules and have to stay in step.
+- Delete only the duplicated names from `block-secrets.py`: leaves the remaining path asks in a hook that does not otherwise judge paths.
+
+### Decision: TheContentHookIsNamedForLeaks
+
+**Chosen:** `block-secrets.py` is renamed `block-leaks.py`, and its two test files with it.
+Decisions above that predate the rename use the old name.
+
+**Rationale:** once `OneHookJudgesCredentialPaths` left the hook judging content and exfiltration only, "leaks" names what it judges.
+The old name also met the sensitive-path name heuristic, so no agent could read or edit the hook or its tests, and every change to them went through the user.
+
+**Alternatives considered:**
+
+- Keep the name and declare a name-heuristic exception for the three files: adds exceptions to work around a name the hook no longer earns.
+
 ### Decision: TheRenderedSecretIsDeclaredRatherThanGuessedAt
 
 **Chosen:** `~/.config/mcp-secrets.env` joins `[block]`, and `<repo>/scripts/mcp-secrets.sh` is excused from the name heuristic by an `[[exceptions]]` table the hook now reads.
@@ -555,8 +602,6 @@ The script is the opposite case and needs the opposite treatment.
 The name heuristic guesses contents from a name, so it is the one class a file can be excused from by declaration, and this module already says a loosening belongs in `[[exceptions]]` with its reason.
 That table was read by tests and by nothing else, so an entry alone would have recorded an intention while changing no behavior.
 The hook now builds its exemption from it, matched one spelling at a time like every other rule there, so a link cannot borrow an excuse written for its target.
-`guarded-surface` also declares a second surface, `sensitive-path-nix-hook-wrapper`, which excuses a Home Manager store symlink by its verified target under conditions the declaration states.
-That is a surface of its own with its own rule; the per-spelling rule here is stated for the name-heuristic surface alone.
 
 **Alternatives considered:**
 
@@ -660,6 +705,80 @@ The user asked for the check on 2026-10-06.
 
 - Have the hooks derive the floor's hook directories from the registrations: no list to forget, at the cost of parsing four vendors' formats on every call.
 - Leave the deferral alone: a forgotten directory stays silently outside the floor until someone notices.
+
+### Decision: APlaceholderDotenvNameIsDeclaredAndReadOnly
+
+**Chosen:** the manifest declares `.env.example`, `.env.sample`, `.env.template`, and `.env.op` under a new exception surface, `sensitive-path-dotenv-placeholder`.
+Each pattern is a bare file name, matched without regard to case in any directory, and validation rejects a pattern holding a separator, home notation, or a glob character.
+`block-sensitive-paths.py` excuses the dotenv rule for a declared name only when the call reads, and judges every spelling, so a resolved form that the rule refuses is still refused.
+A caller states that it reads; one that does not gets the write verdict.
+The `Read` tool reads.
+A shell segment reads only where `bash_commands.read_only` accepts it, the criterion `hook-tampering-blocking` already applies, so `cat`, `grep`, `diff`, and `head` of a placeholder proceed.
+`sed`, `awk`, the editors, and `mv` stay refused: each can write the file it names, and the hook recognizes no in-place write.
+The rule is to refuse by the broad set and excuse by the narrow one: `READ_CMDS` lists every program that may read a file, and decides what the strong rules judge; `READ_ONLY_UTILITIES` lists the utilities that only read their arguments, and decides what an exemption admits.
+`git diff` and `git grep` of a placeholder stay refused, because `diff` and `grep` among the words make the segment a read and `git` is not a utility the criterion admits.
+The user chose on 2026-10-07 to leave that limit in place rather than widen the criterion the tamper hook shares; `git show HEAD:.env.example` and `git log -p` proceed.
+A glob is judged by its current matches, as every glob the hooks judge is, so `cat .env.*` proceeds where only placeholders match; the user chose on 2026-10-07 to keep that one rule for globs.
+A placeholder read refused only for its command's form carries the retry form with the recognized reads, and the user asked on 2026-10-07 that the refusal not misdirect the agent.
+A command the lexer cannot read, which includes every command with a newline, is judged piece by piece with no exemption, so a placeholder named in one is refused; the user chose on 2026-10-07 to close that fallback's gap now and to parse multi-line commands in a change of its own.
+The Claude sandbox re-allows the same names with `~/**/.env.example` and its three siblings in `sandbox.filesystem.allowRead`.
+
+**Rationale:** agent sessions failed routine commands on committed placeholder files.
+The Claude sandbox's `**/.env.*` deny hid them from every process, so even `git` could not stat a tracked file, and the hook refused any command whose words named one.
+`TheNameHeuristicIsExcusedOnlyByDeclaration` requires every loosening to be declared with its reason, and this is a loosening of a strong rule.
+The existing pattern syntax names a location, and a placeholder sits wherever its project keeps one, so this surface takes a file name.
+Writes stay refused because an agent can copy a live value into a placeholder that is then committed.
+The user chose the first three names on 2026-10-06 and left out `.env.dist`.
+The user added `.env.op` on 2026-10-09.
+Its values are 1Password secret references, so a read shows vault, item, and field names and no secret value.
+
+Each sandbox reopens these names differently.
+On macOS, Seatbelt applies the `allowRead` re-allow at each access.
+On Linux, `sandbox-runtime` expands both deny and allow globs to concrete files when the sandbox starts, and skips the `/dev/null` mask for a file the allow list names, so a placeholder present at session start is readable.
+That reading comes from the `sandbox-runtime` source and was not run on a Linux host.
+A relative `**/` entry in `sandbox.filesystem` resolves against the settings file's directory, which reached only `~/.claude`; the `~/**/` form reaches the home directory, matching the `.venv` key re-allow beside it.
+Codex refuses a path when any deny glob matches it, and a `read` entry cannot be a glob, so Codex keeps refusing these names.
+
+**Alternatives considered:**
+
+- Narrow `DOTENV_RE` to skip the placeholder names: one regex, with the reason only in a comment instead of a declaration.
+- Allow writes at the guarded default: the Claude permission layer's `Edit(**/.env.*)` deny refuses them regardless, so the hook would disagree with the layer beneath it.
+- Replace Codex's `**/.env.*` deny with a list of secret names: reopens the placeholders there and lets through any secret name the list omits.
+- Teach the criterion that `git diff`, `git grep`, `git show`, `git log`, and `git blame` only read their path arguments: deferred, because the tamper hook shares the criterion and widening it needs tests on that side.
+
+### Decision: ARedirectionTargetIsJudgedByDirection
+
+**Chosen:** a redirection no longer keeps a command from being recognized.
+`bash_commands.read_only` leaves every redirection to its caller, and each hook judges a target by its direction: an input target as a read, an output or read-write target as a write, and a descriptor duplicate not at all.
+`bash_commands.redirect_writes` is the one definition of an output target, and both hooks use it.
+The tamper hook judges the output targets of a recognized read or run against the write verdict, and gates a guarded one with the write prompt rather than a recognition stop.
+
+**Rationale:** the placeholder exemption made `cat .env.example 2>/dev/null` a refused read, and the same rule refused a guarded read written the same way.
+A filter local to the sensitive-path hook would have fixed one hook and left two definitions of "only reads".
+It could not move into `read_only` alone: the tamper hook skips write judgment for a segment `read_only` accepts, so `cat x > <guarded file>` would have passed as a read.
+The command text names every target, so the classifier can judge a redirection; it refused one only because it never judged targets by direction.
+The user chose the shared rule on 2026-10-07, and chose to judge input redirection by direction too, which reverses the earlier choice to keep `<` refused for a placeholder: that choice rested on leaving the shared criterion unchanged.
+
+**Alternatives considered:**
+
+- A filter in the sensitive-path hook alone: safe there, because that hook judges every output target, and a second definition a later edit could merge into the hole above.
+- Keep input redirection opaque: an asymmetry with no reason but history.
+
+### Decision: TheRetryFormIsHookNeutral
+
+**Chosen:** the retry form's first paragraph says only what holds for every hook that uses it: the classifier stopped the call, and reading is allowed with the listed commands.
+Each hook's explanation says what happens to a write.
+
+**Rationale:** the retry form was written for the tamper hook and said a write needs the user's approval.
+The sensitive-path hook refuses a write to a placeholder, so the same sentence would have sent an agent to ask for a write the policy refuses.
+The tamper hook's refusal already says it cannot ask for the required approval, so no hook loses information.
+
+`recursive-credential-read-refusal` restates the earlier retry text in its `hook-interface` delta and must take this text when it is applied.
+
+## Baseline Errors
+
+- `sensitive-path-blocking` names `block-secrets.py` as one of the boundaries past Bash read blocking.
+  The hook is `block-leaks.py` after `TheContentHookIsNamedForLeaks`; sync replaces the name.
 
 ## Architecture
 

@@ -169,6 +169,41 @@ def test_an_invalid_rule_asks_on_every_call_naming_the_rule(tmp_path: Path, inva
     assert_asks_naming(run_hook(hook_path, command), "invalid-rule")
 
 
+@pytest.mark.parametrize("command", ["synthetic-block", "safe command"])
+def test_a_rules_file_that_is_not_utf8_asks_naming_the_file(tmp_path: Path, command: str) -> None:
+    hook_path = install_hook(tmp_path)
+    (tmp_path / RULES_NAME).write_bytes(RULES.encode() + b"\n# \xff\xfe\n")
+
+    assert_asks_naming(run_hook(hook_path, command), RULES_NAME)
+
+
+@pytest.mark.parametrize("command", ["synthetic-block", "safe command"])
+def test_a_category_table_beside_top_level_rules_is_judged_too(tmp_path: Path, command: str) -> None:
+    """A top-level list cannot hide an invalid rule in a category table."""
+    hook_path = install_hook(tmp_path)
+    (tmp_path / RULES_NAME).write_text(RULES + "\n[[git.rules]]\n" + INVALID_RULES["unknown mode"])
+
+    assert_asks_naming(run_hook(hook_path, command), "invalid-rule")
+
+
+def test_a_category_rule_beside_top_level_rules_applies(tmp_path: Path) -> None:
+    hook_path = install_hook(tmp_path)
+    category = 'pattern = "category-block"\ndescription = "Category block"\nreason = "r"\nmode = "block"\n'
+    (tmp_path / RULES_NAME).write_text(RULES + "\n[[git.rules]]\n" + category)
+
+    assert run_hook(hook_path, "category-block").returncode == 2
+
+
+@pytest.mark.parametrize("text", ["", "[[git.rule]]\npattern = 'x'\n"], ids=["empty", "misnamed table"])
+@pytest.mark.parametrize("command", ["synthetic-block", "safe command"])
+def test_a_rules_file_that_yields_no_rules_asks_naming_the_file(tmp_path: Path, text: str, command: str) -> None:
+    """A file with no rules removes every protection, so it is as unusable as one that does not parse."""
+    hook_path = install_hook(tmp_path)
+    (tmp_path / RULES_NAME).write_text(text)
+
+    assert_asks_naming(run_hook(hook_path, command), RULES_NAME)
+
+
 def test_the_shipped_rules_are_all_valid() -> None:
     hook = _load_hook_module()
 

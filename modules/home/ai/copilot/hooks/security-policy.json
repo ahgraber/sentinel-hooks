@@ -47,7 +47,7 @@
       },
       {
         "type": "command",
-        "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py block-secrets.py",
+        "command": "$HOME/.copilot/hooks/copilot-vscode-hook-adapter.py block-leaks.py",
         "timeout": 30
       },
       {

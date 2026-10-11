@@ -32,7 +32,7 @@ PYTHON_HOOKS = (
     "block-sensitive-paths.py",
     "block-hook-tampering.py",
     "block-destructive-ops.py",
-    "block-secrets.py",
+    "block-leaks.py",
 )
 
 _RANK = {"allow": 0, "warn": 0, "ask": 1, "block": 2}

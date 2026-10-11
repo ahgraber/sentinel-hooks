@@ -158,24 +158,9 @@ The manifest SHALL declare, as an exception for the name-heuristic surface, the 
 Serves: posture-and-mechanism-are-separate
 
 The program is named for the file it renders, and `sensitive-path-blocking` `TheNameHeuristicIsExcusedOnlyByDeclaration` excuses a name only where the manifest says so.
-The manifest SHALL also declare the hook source whose Home Manager store wrapper needs a name-heuristic exception.
-That exception applies only to a symlink directly under `/nix/store`, with a valid store hash and the exact `hm_` name produced by Home Manager's filename sanitization, whose target matches the declared source.
-An `hm_` prefix alone does not excuse a path, and strong rules still apply to every hop.
 
 #### Scenario: RendererIsReadable
 
 - **GIVEN** the declared renderer program
 - **WHEN** a tool call reads it
 - **THEN** the call proceeds
-
-#### Scenario: DeclaredHookWrapperIsReadable
-
-- **GIVEN** a Home Manager store wrapper with the exact sanitized name and a target matching the declared hook source
-- **WHEN** a tool call reads it
-- **THEN** the name heuristic does not refuse the wrapper
-
-#### Scenario: UnverifiedWrapperIsNotExcused
-
-- **GIVEN** an `hm_` name outside `/nix/store`, a non-link, a mismatched sanitized name, or an undeclared source
-- **WHEN** a tool call reads it
-- **THEN** the wrapper exception does not apply
