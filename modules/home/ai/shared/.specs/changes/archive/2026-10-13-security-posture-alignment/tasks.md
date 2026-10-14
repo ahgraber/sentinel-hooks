@@ -28,7 +28,7 @@ The live checks need an activation, so they precede the merge.
 
 ## Guard the end-of-turn hook Claude runs
 
-`77eaff3` registered `~/.local/bin/clean-cc-writes` as a Stop hook in every Claude settings file.
+The end-of-turn cleanup of empty `.cc-writes` directories registered `~/.local/bin/clean-cc-writes` as a Stop hook in every Claude settings file.
 It is a Home Manager link to `modules/home/ai/claude/clean-cc-writes`, which sits beside the declared `modules/home/ai/claude/hooks/` rather than inside it, so a script Claude runs at the end of every turn is writable by any agent without a prompt.
 `guarded-surface` `RepositorySourcesAreGuarded` enumerates each agent's hook directory and names the cost of enumeration: a source added outside the directory is unguarded until listed.
 
@@ -37,7 +37,7 @@ It is a Home Manager link to `modules/home/ai/claude/clean-cc-writes`, which sit
   The `.sh` suffix matches the two hooks already there; the `~/.local/bin` name stays bare, because it is a command an operator types.
 - [x] Give every file in `modules/home/ai/claude/hooks/` a `home.file` entry in `claude/default.nix`.
   There was no hook-directory entry to deploy through: `shared/hooks.nix` enumerates `shared/hooks/` alone, and a Claude-owned hook is deployed only if it is named here.
-  `42b0f48` wired `reload-skills.sh` into the four settings files and added no entry, so the post-compaction catalog reload it introduced has never run.
+  The post-compaction skills catalog reload wired `reload-skills.sh` into the four settings files and added no entry, so that reload has never run.
 - [x] Point the four Claude settings files' Stop entry at the new path.
   The user commits that step, because the sandbox denies the agent those files.
 - [x] Add a case to `tests/test_guarded_surface.py`: a write to the moved script asks on every agent.
@@ -672,3 +672,16 @@ The verify run on 2026-10-12 covered this change and `guarded-path-classes` toge
 - [x] Let Copilot ask on `Bash`, after a live check on VS Code 1.141.0 that the editor shows the hook's reason in its confirmation, and move Copilot's shell cases from the refusal tests to the ask tests.
 - [x] State in `guarded-path-classes` `OneGlobForm` that `*` matches any run of characters within one segment, and test a whole-segment, a partial, and an empty match.
 - [x] Add tests: both path hooks on arbitrary text, an option-position word that names an existing file, a secret only gitleaks recognizes, and the suggestive-name ask, pattern-file faults, and single end-of-turn block through the Copilot adapter, the Pi dispatcher, and Codex.
+
+## Close the 2026-10-12 assessment findings
+
+- [x] Declare VS Code's `mcp.json` on macOS and Linux in `[block]`, deny it in every per-user surface, and add it to the shared verdict table.
+  The user adds the macOS entries to `users/mithras/home-manager/claude/settings.darwin.json`, which the agent sandbox denies.
+- [x] Record the Codex Linux hook trust, the Pi user-started children, and the `code-review-graph` plugin hooks as verification overrides.
+- [ ] Re-trust the Codex hooks on mithras's Linux host and nrl's host, and commit the `[hooks.state]` tables in `config.linux.toml` and nrl `config.toml`.
+- [ ] Remediate the Pi override: every subagent child loads the hooks and sandbox extensions, and both Pi settings files declare which extensions a child loads, delivered by `pi-subagent-enforcement`.
+- [x] Decide the `code-review-graph` plugin hooks: kept as a standing exception, with the unsandboxed-code risk recorded in the override.
+- [x] State in `GuardrailEditsRouteToTheUser` that a refusal no surface sees ends with the user, and add `NoSurfaceSeesTheRefusal`.
+- [x] Confirm live on VS Code 1.141.0 that a hook `ask` on `apply_patch` shows the editor's confirmation, then add `apply_patch` to `[ask] copilot` and move the Copilot and shared `apply_patch` refusal tests to ask tests.
+  2026-10-13, with an OpenAI model (Copilot offers `apply_patch` only to OpenAI models): the editor showed "PreToolUse hook required confirmation: This apply_patch call would modify agent enforcement at …"; skipping left the file unchanged, and allowing applied the edit.
+  A Claude model in the same chat edited through an `Edit`-mapped tool, which asked the same way; after a skip, the model reported a change it had not made.

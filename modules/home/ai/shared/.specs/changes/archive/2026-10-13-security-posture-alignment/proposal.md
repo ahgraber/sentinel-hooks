@@ -158,3 +158,7 @@ Feasibility was measured against a live `pi` before this was written — the gat
   Decided with the user.
 - 2026-10-12: Copilot asks on `Bash`, so an authorized shell guardrail edit reaches the user in the editor's prompt, after a live check on VS Code 1.141.0.
   Decided with the user.
+- 2026-10-12: `agent-configuration-floor` names the editor keys VS Code 1.141.0 declares: `NetworkReachIsUniformPerUser` names `chat.agent.sandbox.network.allowedDomains`, and `BypassModesAreRefused` drops `chat.agent.sandbox.allowAutoApprove` and `chat.experimental.permissionsSandboxToggle.enabled`, which that release removed.
+  Decided with the user.
+- 2026-10-13: where a hook's refusal reaches no review or escalation surface, as on Codex and on Pi with no UI, `GuardrailEditsRouteToTheUser` is met by a refusal that tells the agent to stop and report to the user; Copilot adds `apply_patch` to its ask list after a live check.
+  Decided with the user.

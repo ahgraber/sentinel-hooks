@@ -21,7 +21,7 @@ The floor conformance tests require every guarded declaration to be covered by t
 Those surfaces cannot express a gate with a carve-out beneath it, so a base-location declaration for an agent home cannot pass them, and every manifest edit reaches three settings files only the user can commit.
 The check earns its cost where a miss is unrecoverable, which is the block class, and nowhere else.
 
-The change that first declared `exec-through`, `skill-script-exec-through`, shipped as `2a77f4d` with specs that cannot verify or sync beside `security-posture-alignment`.
+The change that first declared `exec-through`, `skill-script-exec-through`, shipped with specs that cannot verify or sync beside `security-posture-alignment`.
 This change replaces it: its requirements are restated here against the new class model, and its directory is renamed rather than archived.
 
 ## User Stories

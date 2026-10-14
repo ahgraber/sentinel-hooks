@@ -1,5 +1,10 @@
 # Spec: secret-access-blocking
 
+## Purpose
+
+Credentials can leave the machine inside a tool call, typed into a command, sent over the network, or read from a credential store, without any protected file being read.
+These requirements cover which calls are scanned, how secret formats are recognized, and when a credential-store read or a send is refused or put to the user.
+
 ## Requirements
 
 ### Requirement: ToolScope
@@ -7,14 +12,17 @@
 The system SHALL evaluate ALL tool calls, regardless of tool name.
 
 Secrets can appear in any tool argument — a command string, file content, a URL, a grep pattern, a file path.
-Rather than enumerating specific tools and fields, the hook SHALL scan the serialized `tool_input` object for every invocation.
+The hook SHALL check every field of `tool_input` on every call, so it detects a secret in any argument.
+It does not list specific tools or fields.
 
 Tool-specific handling is layered on top of the universal scan:
 
 - `Bash`: additional context-aware analysis (network-sending detection, credential store reads, localhost exemption)
-- `Read`: file path heuristics for likely-secret files
-- `Write`/`Edit`: file path heuristics (same as Read) plus content payload scanning
+- `Write`/`Edit`: content payload scanning, through the universal scan
 - All other tools: universal scan only
+
+This hook does not judge a file path as a location.
+Which paths hold credentials is `sensitive-path-blocking`'s judgment, made from the manifest, so a declared exception or placeholder holds for every hook.
 
 ### Requirement: UniversalSecretScan
 
@@ -102,15 +110,6 @@ The system SHALL ask (confirm) when a Bash command reads from a system credentia
 
 This covers legitimate debugging: checking which credentials are stored, verifying a token value, or inspecting a credential helper.
 
-Whether a supplied path denotes a credential store SHALL be determined according to `path-matching`.
-A store reached by a differing letter case on a case-insensitive filesystem is the same store, and SHALL prompt.
-
-#### Scenario: CaseVariantCredentialStore
-
-- **GIVEN** a Read tool call is intercepted on a case-insensitive filesystem
-- **WHEN** the target is a credential store named under a differing letter case
-- **THEN** the hook asks
-
 #### Scenario: KeychainReadLocal
 
 - **GIVEN** a Bash tool call is intercepted
@@ -122,75 +121,6 @@ A store reached by a differing letter case on a case-insensitive filesystem is t
 - **GIVEN** a Bash tool call is intercepted
 - **WHEN** the command reads from the macOS Keychain and pipes the result to a network command
 - **THEN** the hook exits 2 (block — handled by `BlockSecretExfiltration`)
-
-### Requirement: AskOnSecretFileAccess
-
-The system SHALL ask (confirm) when a `Read`, `Write`, or `Edit` tool call targets a file whose content is likely to contain secrets, **except** where `sensitive-path-blocking` has already hard-blocked the path.
-
-Because `block-sensitive-paths.py` runs before this hook and hard-blocks `Read`, `Write`, and `Edit` to zero-access paths, paths such as `~/.ssh/id_ed25519` or `~/.aws/credentials` will never reach this hook's ask logic.
-This hook's `ask` for credential-dir reads remains the protection layer for paths outside the zero-access list (e.g., `~/.netrc`) that are not hard-blocked by `block-sensitive-paths.py`.
-
-Every ask response produced by this requirement SHALL comply with the `ExplanationContract` defined in `hook-interface`: the `permissionDecisionReason` MUST state both what the operation would do (read/write a likely-secret file) and what the specific danger is (exposure of credentials to Claude's context window, enabling potential downstream exfiltration).
-It SHALL name the specific file.
-
-Location matching SHALL be determined according to `path-matching`.
-Basename matching in this requirement applies case-insensitively and is unaffected.
-
-Detection uses two independent heuristic checks:
-
-**Check 1 — Credential file names:**
-
-Files with names matching common credential file patterns:
-
-- Key and certificate extensions: `*.key`, `*.pem`, `*.p12`, `*.pfx`, `*.keystore`, `*.jks`
-- SSH key names: `id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`
-- Credential config files: `.npmrc`, `.netrc`, `.git-credentials`
-- Files whose basename contains `token`, `password`, `passwd`, `api_key`, or `auth_key` (case-insensitive)
-- Files whose basename contains `secret` or `credential` (case-insensitive), subject to the `PackageDirExemption` defined in `sensitive-path-blocking`
-
-**Check 2 — Credential directory prefixes:**
-
-Any file within well-known credential directories:
-
-- `~/.ssh/` — SSH keys, known hosts, agent sockets
-- `~/.aws/` — AWS credentials and config
-- `~/.kube/` — Kubernetes cluster credentials
-- `~/.gnupg/` — GPG keyrings and trust databases
-
-Note: this requirement overlaps with `sensitive-path-blocking` and with sandbox `denyRead` rules.
-Where `sensitive-path-blocking` hard-blocks a path (for Read, Write, or Edit), that takes precedence and this hook's ask logic is not reached for that path.
-Where sandbox `denyRead` blocks reads to a directory, the sandbox block takes precedence.
-This requirement applies `ask` to paths that are not already blocked by either mechanism but still likely to contain secrets — for example, `Read(~/.netrc)` is not in the zero-access list and not blocked by sandbox `denyRead`, so this hook's ask is the only protection.
-
-#### Scenario: ReadSshPrivateKey
-
-- **GIVEN** a Read tool call is intercepted by this hook
-- **WHEN** `tool_input.file_path` matches `~/.ssh/id_*`
-- **THEN** the hook exits 0 with `permissionDecision: "ask"` and a reason that names the file, describes that it likely contains a private key, and warns that reading it places the key in Claude's context where it could be incorporated into a subsequent command or network call
-
-#### Scenario: ReadNetrcFile
-
-- **GIVEN** a Read tool call is intercepted by this hook
-- **WHEN** `tool_input.file_path` is `~/.netrc` (not in the zero-access list, so not blocked by `block-sensitive-paths.py`)
-- **THEN** the hook exits 0 with `permissionDecision: "ask"` and a reason that names the file, describes that it contains plaintext usernames and passwords for remote hosts, and warns that reading it places those credentials in Claude's context where they could be incorporated into a subsequent command or network call
-
-#### Scenario: ReadTokenFileInProject
-
-- **GIVEN** a Read tool call is intercepted by this hook
-- **WHEN** `tool_input.file_path` matches `*token*` in the project directory (not in a package dir)
-- **THEN** the hook exits 0 with `permissionDecision: "ask"` and a reason that names the file, explains why its name suggests it may contain an access token, and notes that the token could be read into context and used in subsequent operations
-
-#### Scenario: ReadSecretsJsonInProject
-
-- **GIVEN** a Read tool call is intercepted
-- **WHEN** `tool_input.path` is `secrets.json` in the project directory (not in a package dir)
-- **THEN** the hook exits 0 with `permissionDecision: "ask"`
-
-#### Scenario: ReadCredentialsModuleInVenv
-
-- **GIVEN** a Read tool call is intercepted
-- **WHEN** `tool_input.path` matches `*credentials*` but contains `.venv/` in the path
-- **THEN** the hook exits 0 silently (package-dir exemption applies)
 
 ### Requirement: SecretFormats
 
@@ -217,61 +147,43 @@ They SHALL be chosen so that a match is almost always a real secret.
 
 ### Requirement: TieredSecretDetection
 
-The system SHALL use a two-tier detection model that balances coverage against latency.
+The system SHALL detect the formats in `SecretFormats` in every tool call.
+If a Bash command sends data to a non-local destination and `gitleaks` is on `PATH`, the system SHALL also detect every format the default `gitleaks` rules detect.
+If `gitleaks` is not on `PATH`, detection in that case covers `SecretFormats` only, and the `SessionStart` hook warns the user (see `session-tool-checks`).
 
-**Tier 1 — Built-in patterns (all tool calls):**
+A secret missed in a network send can leak a credential to a remote host.
+A secret missed elsewhere costs only a missed confirmation prompt.
+So the wider coverage is required only where a leak is possible.
 
-A set of high-precision regex patterns covering the most common secret formats (API keys, PEM headers, bearer tokens, cloud provider credentials).
-These run on every tool call as part of the universal scan.
-Latency is negligible (~microseconds).
+Coverage by context:
 
-Built-in patterns are the primary detection mechanism for non-exfiltration contexts (local Bash commands, Read, Write, Edit, and all other tools).
-They are sufficient for the ask-mode use case, where the cost of a false negative is a missed confirmation prompt rather than a leaked secret.
-
-**Tier 2 — Gitleaks deep scan (Bash + network context only):**
-
-When a Bash command contains a network-sending context (and the target is not localhost), gitleaks is invoked for comprehensive scanning (~400+ rules).
-This is the exfiltration detection path, where a missed secret could result in credential leakage to a remote host.
-
-Gitleaks is NOT invoked on every tool call because:
-
-- Its startup cost (~100ms+) would compound across every tool invocation
-- The risk profile of non-network contexts (ask-mode prompts) does not justify the latency
-- Built-in patterns cover the high-confidence formats that appear in tool arguments
-
-When gitleaks is not available on `PATH`, the deep scan falls back to built-in patterns.
-Coverage is reduced for the exfiltration path, but the `SessionStart` hook warns the user (see `session-tool-checks`).
-
-Scan surfaces by tier:
-
-| Context                    | Tier 1 (built-in)                         | Tier 2 (gitleaks) |
-| -------------------------- | ----------------------------------------- | ----------------- |
-| Bash + network (non-local) | yes                                       | yes               |
-| Bash (local or no network) | yes                                       | no                |
-| Read / Write / Edit        | yes                                       | no                |
-| All other tools            | yes                                       | no                |
-| File path heuristics       | independent (see `AskOnSecretFileAccess`) | n/a               |
+| Context                    | `SecretFormats` | `gitleaks` rules, where installed |
+| -------------------------- | --------------- | --------------------------------- |
+| Bash + network (non-local) | yes             | yes                               |
+| Bash (local or no network) | yes             | not required                      |
+| Read / Write / Edit        | yes             | not required                      |
+| All other tools            | yes             | not required                      |
 
 #### Scenario: GitleaksAvailableWithNetwork
 
 - **GIVEN** a Bash tool call with a non-local network destination is intercepted
-- **WHEN** `gitleaks` is found on `PATH`
-- **THEN** the hook invokes gitleaks for deep scanning in addition to built-in patterns
+- **WHEN** `gitleaks` is found on `PATH`, and the command carries a secret in a format only the `gitleaks` rules detect
+- **THEN** the hook detects the secret
 
 #### Scenario: GitleaksAvailableWithoutNetwork
 
 - **GIVEN** a non-network tool call is intercepted
-- **WHEN** `gitleaks` is found on `PATH`
-- **THEN** the hook uses only built-in patterns (gitleaks is not invoked)
+- **WHEN** `gitleaks` is found on `PATH`, and the call carries a secret in a `SecretFormats` format
+- **THEN** the hook detects the secret
 
 #### Scenario: GitleaksMissing
 
-- **GIVEN** a tool call is intercepted
-- **WHEN** `gitleaks` is not found on `PATH`
-- **THEN** the hook uses built-in patterns for all contexts (deep scan is unavailable)
+- **GIVEN** a tool call is intercepted, a network send included
+- **WHEN** `gitleaks` is not found on `PATH`, and the call carries a secret in a `SecretFormats` format
+- **THEN** the hook detects the secret
 
 #### Scenario: GitleaksFindsSecret
 
-- **GIVEN** gitleaks is invoked on a Bash command with network context
-- **WHEN** gitleaks reports a finding
+- **GIVEN** a Bash command that sends to a non-local destination, with `gitleaks` on `PATH`
+- **WHEN** the command carries a secret the `gitleaks` rules detect
 - **THEN** the hook exits 2 (block — exfiltration vector confirmed)

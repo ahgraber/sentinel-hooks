@@ -1,10 +1,11 @@
 # Spec: bash-command-validator
 
+## Purpose
+
+Agents write shell commands in forms that fail under the user's shell, step around the project's chosen tools, or commit without the agent signing key, and each such command wastes a turn or lands work the project does not accept.
+These requirements cover the command forms the validator rejects or redirects, and that it reports every issue in a command at once.
+
 ## Requirements
-
-### Requirement: ToolScope
-
-The system SHALL only evaluate commands when `tool_name` is `Bash`.
 
 ### Requirement: ReviewHeredocsForBangHistory
 

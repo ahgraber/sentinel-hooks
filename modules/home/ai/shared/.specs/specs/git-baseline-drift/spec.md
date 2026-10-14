@@ -1,5 +1,10 @@
 # git-baseline-drift
 
+## Purpose
+
+A repository can move under an agent during a session, through a commit, branch switch, or rebase the agent did not make, and the agent then works from a picture of the code that is no longer true.
+These requirements cover recording the session's starting point, warning when it moves, and keeping the check out of the agent's way when it fails.
+
 ## Requirements
 
 ### Requirement: BaselineCapture
@@ -20,7 +25,8 @@ At the start of each agent turn, the hook SHALL record the current HEAD commit a
 
 ### Requirement: DriftWarning
 
-Before any tool call in {Bash, Write, Edit, apply_patch}, the hook SHALL inject model-visible context describing the HEAD displacement when and only when the current HEAD commit differs from the session baseline.
+Before any call to a tool in the declared `mutating` group, the hook SHALL inject model-visible context describing the HEAD displacement when and only when the current HEAD commit differs from the session baseline.
+An agent whose hook runner returns context with the result of the call, as Pi's does, delivers it after that call runs and before the model's next response.
 
 #### Scenario: NoDrift
 
@@ -33,6 +39,12 @@ Before any tool call in {Bash, Write, Edit, apply_patch}, the hook SHALL inject 
 - **GIVEN** a qualifying tool call is about to execute
 - **WHEN** the check stage runs and the current HEAD differs from the session baseline
 - **THEN** the hook exits 0 and writes JSON to stdout injecting model context that includes the abbreviated SHA before and after the move and the current branch name
+
+#### Scenario: ReadDoesNotQualify
+
+- **GIVEN** the current HEAD differs from the session baseline
+- **WHEN** the agent makes a call to a tool outside the `mutating` group, such as a read
+- **THEN** no drift warning is injected before that call
 
 ### Requirement: DriftWarningPersistence
 

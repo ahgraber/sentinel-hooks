@@ -1,7 +1,7 @@
 # When Codex can ask
 
 Codex runs a hook's `ask` response as a failure, so `supports_ask` in `hooks/hook_response.py` returns false for it and every `Ask` reaches Codex as a refusal.
-Copilot's terminal tool is in the same position: `[ask]` in `hooks/tool-vocabulary.toml` lists only `Write` and `Edit` for Copilot.
+Copilot shows a prompt only for the tools `[ask]` in `hooks/tool-vocabulary.toml` lists for it, `Bash`, `Write`, `Edit`, and `apply_patch`, and takes every other `Ask` as a refusal.
 A Pi session with no UI attached takes the refusal path too.
 
 The decisions below were made around that limit.
@@ -25,18 +25,18 @@ Each of these was narrowed, or left a refusal, because a prompt would have reach
 
 With a prompt, each of these becomes a secondary route or can be removed.
 
-| Mechanism                                                                | Where                                                                    | Purpose                                                                     |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| The retry instruction for an unrecognized command                        | `TheRefusalInstructionFollowsTheReason`, `BlockAIGuidance`               | Tells a refused agent to rerun in an accepted form, since it cannot ask     |
-| Growth of the admitted read-utility set, such as `rg` with `--no-config` | `RipgrepIsAdmittedWithItsConfigurationRefused`                           | Admits more reads because an unrecognized read is refused rather than asked |
-| The Codex reviewer's `USER_APPROVAL_REQUIRED` route                      | `GuardrailEditsRouteToTheUser`, the Codex `config*.toml` reviewer policy | Puts a guardrail edit to the user when the hook cannot                      |
-| The editor prompt as Copilot's escalation surface                        | `TheEditorPromptIsCopilotsEscalationSurface`                             | Same, for Copilot                                                           |
-| The degraded message in `block-leaks.py`                                 | `block-leaks.py`                                                         | Tells the agent to have the user act outside the session                    |
-| The degraded refusal in `block-destructive-ops.py`                       | `block-destructive-ops.py`                                               | Turns an `ask` rule into a refusal with a note                              |
-| The two-form block contract in the test helpers                          | each agent's `tests/conftest.py`                                         | Asserts the exit-2 forms an agent with no prompt receives                   |
+| Mechanism                                                                | Where                                                                    | Purpose                                                                                                                                                              |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The retry instruction for an unrecognized command                        | `TheRefusalInstructionFollowsTheReason`, `BlockAIGuidance`               | Tells a refused agent to rerun in an accepted form, since it cannot ask                                                                                              |
+| Growth of the admitted read-utility set, such as `rg` with `--no-config` | `RipgrepIsAdmittedWithItsConfigurationRefused`                           | Admits more reads because an unrecognized read is refused rather than asked                                                                                          |
+| The Codex reviewer's `USER_APPROVAL_REQUIRED` route                      | `GuardrailEditsRouteToTheUser`, the Codex `config*.toml` reviewer policy | Judges sandbox escalations no hook refused; a hook's refusal of a guardrail edit reaches Codex first and ends with the user (`ARefusalNoSurfaceSeesEndsWithTheUser`) |
+| The editor prompt as Copilot's escalation surface                        | `TheEditorPromptIsCopilotsEscalationSurface`                             | Same, for Copilot                                                                                                                                                    |
+| The degraded message in `block-leaks.py`                                 | `block-leaks.py`                                                         | Tells the agent to have the user act outside the session                                                                                                             |
+| The degraded refusal in `block-destructive-ops.py`                       | `block-destructive-ops.py`                                               | Turns an `ask` rule into a refusal with a note                                                                                                                       |
+| The two-form block contract in the test helpers                          | each agent's `tests/conftest.py`                                         | Asserts the exit-2 forms an agent with no prompt receives                                                                                                            |
 
 ## Related defect
 
 `block-leaks.py` and `block-destructive-ops.py` call `supports_ask(agent)` with no tool name.
-For Copilot that returns false, so those two hooks refuse Copilot even on `Write` and `Edit`, where it can show a prompt.
+For Copilot that returns false, so those two hooks refuse Copilot even on the tools where it can show a prompt.
 The archived `guardrail-ask-gate` change records this as an open, undecided task.

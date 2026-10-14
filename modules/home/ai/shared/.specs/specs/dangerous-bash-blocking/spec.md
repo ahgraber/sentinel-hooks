@@ -1,10 +1,11 @@
 # Spec: dangerous-bash-blocking
 
+## Purpose
+
+A shell command can open a reverse shell, run downloaded code, gain privileges, or install persistence, which turns an agent's session into access the user never granted.
+These requirements cover the command patterns refused for those reasons, including reaches into the clipboard, SSH keys, scheduled tasks, and the desktop.
+
 ## Requirements
-
-### Requirement: ToolScope
-
-The system SHALL only evaluate commands when `tool_name` is `Bash`.
 
 ### Requirement: BlockReverseSells
 

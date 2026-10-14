@@ -156,10 +156,12 @@ The registrations are vendor configuration, so the assessment compares them with
 Serves: degradation-still-reaches-the-user
 
 Where an agent cannot honor a hook's `Ask`, that agent's own review or escalation surface SHALL route a guardrail modification to explicit user authorization, and SHALL refuse a wholesale bypass outright.
+Where the hook's refusal reaches no such surface, the refusal SHALL tell the agent to stop and report to the user, and the modification SHALL NOT be made through that agent, authorized or not.
 
 `Ask` degrades to `Block` on an agent with no honored prompt encoding, per `hook-interface`.
 A refusal with no route to the user is where a guardrail gets disabled instead of consulted, which is the failure the ask gate was introduced to end.
 The agent's own escalation surface is the remaining route, so it carries that decision rather than deciding for the user.
+Where no surface sees the refused call, the report to the user is the route: the user makes the change outside that agent, and the guardrail stays closed until then.
 
 The distinction the surface must keep is between an edit and a removal.
 An edit to a guardrail is the user's to authorize; disabling enforcement wholesale is not, because no session-scoped approval makes it safe.
@@ -181,6 +183,12 @@ An edit to a guardrail is the user's to authorize; disabling enforcement wholesa
 - **GIVEN** an agent whose hook `Ask` degrades to a refusal
 - **WHEN** the modification would disable enforcement rather than change it
 - **THEN** it is refused, authorized or not
+
+#### Scenario: NoSurfaceSeesTheRefusal
+
+- **GIVEN** an agent whose hook refusal reaches no review or escalation surface, such as Codex, whose hooks run before its reviewer, or Pi with no UI attached
+- **WHEN** a hook refuses a guardrail modification the user authorized in this conversation
+- **THEN** the refusal tells the agent to stop and report to the user, and the modification is not made through that agent
 
 ### Requirement: NetworkReachIsUniformPerUser
 

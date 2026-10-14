@@ -150,9 +150,9 @@ Coverage is judged by the assessment, per `TheHooksAreAPackageIndependentOfAnyAg
 **Chosen:** for Copilot, the escalation surface `GuardrailEditsRouteToTheUser` requires is the editor's own tool-approval prompt: `chat.tools.terminal.enableAutoApprove` false puts every terminal command to the user, and the guarded-path `false` entries in `chat.tools.edits.autoApprove` put every guardrail edit to the user.
 The wholesale-bypass refusal is the floor: the values that would silence those prompts are the ones `BypassModesAreRefused` names.
 
-**Rationale:** Codex routes a refused guardrail edit through its reviewer policy, which is a surface Copilot does not have.
+**Rationale:** Codex has a reviewer policy, a surface Copilot does not have, though a hook's refusal reaches Codex before the reviewer does (`ARefusalNoSurfaceSeesEndsWithTheUser`).
 What Copilot has is an approval layer of its own, which the hooks sit in front of.
-Copilot honors a hook `Ask` for `Bash`, `Write`, and `Edit`, so a guardrail edit through any of them reaches the user in the editor's prompt, with the hook's reason in it.
+Copilot honors a hook `Ask` for `Bash`, `Write`, `Edit`, and `apply_patch`, so a guardrail edit through any of them reaches the user in the editor's prompt, with the hook's reason in it.
 
 Revised on 2026-10-12: the tool vocabulary listed `Bash` as a tool Copilot could not ask for, so a shell guardrail edit was refused even where the user authorized it, and the 2026-10-11 assessment failed `AuthorizedGuardrailEdit`.
 VS Code 1.141.0's source turns off auto-approval for a terminal call whose hook returns `ask` and puts the reason in the confirmation's disclaimer.
@@ -844,7 +844,9 @@ The user approved each rewording on the day it was made.
 
 ### Decision: CopilotStaysOnTheLocalHarness
 
-**Chosen:** both editor settings files pin `chat.defaultToCopilotHarness` and `chat.editor.preferCopilotHarness` to `false` and `chat.copilotHarnessIntroduction.mode` to `"off"`, so Copilot chat runs on the editor's local harness.
+**Chosen:** both editor settings files pin `chat.defaultToCopilotHarness`, `chat.editor.preferCopilotHarness`, `chat.terminal.agentHost.enabled`, and `chat.inlineChat.agentHost.enabled` to `false` and `chat.copilotHarnessIntroduction.mode` to `"off"`, so Copilot chat, Terminal Chat, and inline chat run on the editor's local harness.
+`agent-configuration-floor` names the keys VS Code 1.141.0 declares: `NetworkReachIsUniformPerUser` names the host list `chat.agent.sandbox.network.allowedDomains`, and `BypassModesAreRefused` no longer lists `chat.agent.sandbox.allowAutoApprove` or `chat.experimental.permissionsSandboxToggle.enabled`, which that release removed.
+With the toggle setting gone, the permissions picker can turn the sandbox off for the editor, and no setting hides that switch.
 
 **Rationale:** a 2026-10-12 read of VS Code 1.141.0 found that the Agent Host harness, which offers Assisted permissions, bypasses this repository's guardrails.
 `chat.hookFilesLocations` and `chat.useHooks` apply only to the local harness, and the hooks the Agent Host runtime discovers receive tool names the vocabulary does not map.
@@ -870,23 +872,35 @@ The user chose this on 2026-10-12.
 
 - Generate the registration matchers from the vocabulary in Nix: makes the original sentence true, but changes how the Claude settings files are built, which the user commits by hand; a change of its own.
 
+### Decision: ARefusalNoSurfaceSeesEndsWithTheUser
+
+**Chosen:** `GuardrailEditsRouteToTheUser` accepts, for an agent whose hook refusal reaches no review or escalation surface, a refusal that tells the agent to stop and report to the user; the user makes the change outside that agent.
+Copilot keeps the editor prompt as its surface, and `apply_patch` joins `[ask] copilot` after a live check.
+
+**Rationale:** the 2026-10-12 assessment found three routes where an authorized guardrail edit could not reach approval.
+On Codex, `PreToolUse` runs before the tool (`core/src/tools/registry.rs` in 0.162.1), so the tamper hook refuses before a sandbox escalation reaches the reviewer; this was read from source, not observed live.
+Pi with no UI attached has no approval surface at all.
+Both refusals fail closed: nothing is modified, and the stop instruction puts the decision to the user.
+The user makes guardrail edits from Claude, which honors `Ask`, so the lost route costs a step and opens nothing.
+Copilot's `apply_patch` is an oversight in the 2026-10-12 change that let Copilot ask on `Bash`.
+The user chose this on 2026-10-13.
+
+**Alternatives considered:**
+
+- Let the Codex tamper hook pass a call that requests sandbox escalation, so the reviewer judges it: the hook would let through any guardrail edit that asks for escalation, and the reviewer, a model, would decide it.
+- Give headless Pi an approval surface: Pi has none to configure; a change of its own.
+
 ## Spec Changes
 
 - 2026-10-12, `end-of-turn-precommit` `RepositoryWithNoCommits`: the changed set names the untracked files beside the staged ones.
   Source: `UntrackedFile` in the same requirement, which already passes an untracked file to the runner.
-  Approved by user: 2026-10-12.
-- 2026-10-12, `agent-configuration-floor` `NetworkReachIsUniformPerUser`: the editor's host list is named `chat.agent.sandbox.network.allowedDomains`.
-  Source: VS Code 1.141.0 renames `chat.agent.allowedNetworkDomains` to that key and migrates the value.
-  Approved by user: 2026-10-12.
-- 2026-10-12, `agent-configuration-floor` `BypassModesAreRefused`: the editor's sandbox values no longer list `chat.agent.sandbox.allowAutoApprove` or `chat.experimental.permissionsSandboxToggle.enabled`.
-  Source: VS Code 1.141.0 declares neither key, so neither has an effect.
   Approved by user: 2026-10-12.
 
 ## Baseline Errors
 
 - `sensitive-path-blocking` names `block-secrets.py` as one of the boundaries past Bash read blocking.
   The hook is `block-leaks.py` after `TheContentHookIsNamedForLeaks`; sync replaces the name.
-- On 2026-10-12, commit `cf35958` edited nine baseline specs directly, with the user's approval: `bash-command-validator`, `dangerous-bash-blocking`, `destructive-ops-blocking`, `git-baseline-drift`, `hook-interface`, `path-matching`, `secret-access-blocking`, `sensitive-path-blocking`, and `session-tool-checks`.
+- On 2026-10-12, one commit edited nine baseline specs directly, with the user's approval: `bash-command-validator`, `dangerous-bash-blocking`, `destructive-ops-blocking`, `git-baseline-drift`, `hook-interface`, `path-matching`, `secret-access-blocking`, `sensitive-path-blocking`, and `session-tool-checks`.
   The edits stand.
   Where a delta in this change or in `guarded-path-classes` replaces a requirement those edits touched, sync carries the edit into the replacement rather than overwriting it.
 
@@ -957,3 +971,29 @@ That is where the remaining divergence lives: an adapter holds no policy, so its
   Until the follow-up ships, Pi reaches every MCP tool without asking.
   **Follow-up task:** `changes/pi-subagent-enforcement/proposal.md`, the scope item that sets one MCP set run without asking in every agent.
   **Approved by:** user **Recorded:** 2026-10-12
+- **Finding:** `cross-agent-capability-parity` `EveryAgentImplementsEveryCapability` and `agent-configuration-floor` `RegistrationsRouteTheVocabulary` fail for Codex on mithras Linux and nrl in the 2026-10-12 assessment: no `[hooks.state]` hash in `config.linux.toml` or nrl `config.toml` matches its handler, so no shared hook runs there.
+  **Stage:** assessment **Reason:** trust is granted by running Codex on each host, which cannot be done from the Darwin checkout.
+  **Constraints:** Codex on Darwin trusts all 13 handlers; on the two Linux configurations the permission profile, sandbox, and reviewer still apply.
+  **Follow-up task:** `tasks.md`, "Re-trust the Codex hooks on mithras's Linux host and nrl's host".
+  **Approved by:** user **Recorded:** 2026-10-13
+- **Finding:** `cross-agent-capability-parity` `CapabilityCarriedByEveryAgent` fails for Pi in the 2026-10-12 assessment: a foreground child the user starts with `/run`, `/chain`, or `/parallel` loads no ambient extension, so it runs with no hooks and no sandbox.
+  `agent-configuration-floor` `ExperimentControlledSettingLeftUnset` fails for Pi on the same cause: neither Pi `settings.json` declares which extensions a child loads (`subagents.defaultSubagentOnlyExtensions`), a default pi-subagents changed between 0.58.0 and 0.75.0.
+  **Stage:** assessment **Reason:** loading the extensions into every child is new Pi behavior, scoped in `pi-subagent-enforcement`.
+  **Constraints:** the model cannot start such a child: `subagent`, `subagent_command`, and `watchdog_diff` are refused.
+  Both Pi packages are pinned, so no release changes the default again without an edit to the pin.
+  **Follow-up task:** `tasks.md`, "Remediate the Pi override", delivered by the `changes/pi-subagent-enforcement/proposal.md` scope item that loads the hooks and sandbox extensions into every subagent child.
+  **Approved by:** user **Recorded:** 2026-10-13
+- **Finding:** `agent-configuration-floor` `RegisteredHooksLieInTheEnforcementFloor` fails for Claude in the 2026-10-12 assessment: the enabled `code-review-graph` plugin registers a `SessionStart` and a `PostToolUse` hook from directories outside the floor.
+  **Stage:** assessment **Reason:** the user keeps the plugin as a deliberate exception.
+  The accepted risk is code running outside the sandbox: Claude Code runs hooks with the user's permissions and no sandbox, every Claude settings file grants `Edit(~/.claude/plugins/cache/**)` and `Edit(~/.local/share/uv/**)`, and the sandbox can write `~/.local/share/uv`, so an agent can change the plugin's code and the next `Write`, `Edit`, or `Bash` call runs it unsandboxed.
+  This was inferred from configuration and Claude Code's hook model, not exercised.
+  Neither hook can refuse a call, so changing them weakens no check.
+  **Constraints:** the override covers this plugin's two hooks only; any other hook outside the floor stays a failure.
+  **Follow-up task:** none; the exception stands until the user withdraws it, and each assessment reports it as `overridden`.
+  **Approved by:** user **Recorded:** 2026-10-13
+- **Finding:** `agent-configuration-floor` `NetworkReachIsUniformPerUser` fails `AgentsDisagree` in the 2026-10-12 assessment for a reason the MCP override does not cover: in `"auto"` mode, Claude's sandbox network classifier settles a sandboxed command's connection to a host outside `sandbox.network.allowedDomains` without asking the user.
+  This was read from the 2.1.296 build's source, not observed live; it applies to mithras and nrl, whose Claude files set `permissions.defaultMode = "auto"`.
+  **Stage:** assessment **Reason:** the user allows the classifier as a deliberate exception.
+  **Constraints:** the override covers Claude's auto-mode classifier only; the seven-host allowlists still agree across agents and stay required, and `"default"` mode, as for alex.graber, asks.
+  **Follow-up task:** none; the exception stands until the user withdraws it, and each assessment reports it as `overridden`.
+  **Approved by:** user **Recorded:** 2026-10-13
