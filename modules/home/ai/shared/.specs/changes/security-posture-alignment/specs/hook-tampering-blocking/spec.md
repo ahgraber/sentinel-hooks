@@ -75,7 +75,7 @@ The system SHALL choose what to do about a call it cannot judge by the tool the 
 
 Where the tool is one this hook does not cover, the decision is `Allow`.
 
-Where evaluation raises an unexpected error and the payload names a tool this hook gates, `Bash`, `Write`, `Edit`, or `apply_patch`, the decision is `Ask`, degrading to `Block` where the agent cannot show a prompt.
+Where evaluation raises an unexpected error and the payload names a tool this hook gates, a tool in the declared `mutating` group, the decision is `Ask`, degrading to `Block` where the agent cannot show a prompt.
 Every tool this hook gates can modify state, so a call it failed to judge is a mutation nothing checked.
 `Read` is registered so that a read of a block location is refused, and it cannot modify state: a failure while judging a `Read` lets the call proceed with the failure reported, as `hook-interface` requires of a read-only tool.
 `Ask` rather than `Block` because this hook runs on every such call and most of them reach nothing it guards: a fault that recurs would otherwise refuse every mutation the agent attempts, with no route left for the user to say otherwise.
@@ -100,7 +100,7 @@ Such a path is judged from the path as written, per `path-matching` `Unresolvabl
 
 #### Scenario: EvaluationRaisesOnAMutatingTool
 
-- **GIVEN** a `Bash`, `Write`, `Edit`, or `apply_patch` call is intercepted
+- **GIVEN** a call to a tool in the declared `mutating` group is intercepted
 - **WHEN** evaluation raises an unexpected error
 - **THEN** the gate applies, and the reason names the failure
 
@@ -127,7 +127,7 @@ Serves: placeholder-files-are-readable, a-refusal-says-what-would-work
 One path in a block location SHALL refuse the whole command, whatever the rest of it does.
 One path outside every exec-through location SHALL gate a run, whatever the rest of it does.
 
-Recognition SHALL rest on the command text alone, as `shell-lexing` reads it.
+Recognition SHALL rest on the command text alone, read as `shell-lexing` requires every path hook to read it.
 A command whose effect that text does not show SHALL NOT be recognized, because the classifier cannot judge what it cannot see: an unresolvable word, an assignment that picks which binary runs, program text handed to an interpreter, or a relative path after a change of directory.
 
 A redirection SHALL NOT keep a command from being recognized; its target SHALL be judged by its direction.
@@ -135,12 +135,11 @@ An input target is judged as a read, and an output or read-write target as a wri
 A redirection that duplicates or closes a descriptor names no file and is not judged.
 A segment that does nothing but redirect, such as `> file`, `: > file`, or `exec 3> file`, is judged by its targets alone, so it meets the write gate as the write it is.
 The command text names every target, so a redirection hides nothing the classifier needs.
-Refusing recognition for one refused a guarded read for writing its errors to `/dev/null`, a form agents write by habit, while a write the target class permits gained nothing from the refusal.
 
 A command with any segment whose program executes text it receives SHALL NOT be recognized, whatever its other segments do: `xargs`, `eval`, an interpreter given inline code, or a shell reading its standard input.
-The classifier SHALL identify the program through `time`, `timeout`, `stdbuf`, and `setsid`.
+The classifier SHALL identify the program through a wrapper known to run its operands unchanged, such as `time` or `timeout`; a command under any other wrapper is not recognized.
 A pipe-fed program outside the recognized read utilities SHALL be treated as a builder, including an interpreter or an unknown wrapper.
-Supported wrappers around recognized reads SHALL preserve read recognition unless their options permit writing output.
+A known wrapper around a recognized read SHALL preserve read recognition unless its options permit writing output.
 A read segment that names a guarded path and pipes into such a program hands that path to a command the classifier never sees, so the read is not the whole of what the command does.
 
 The reason is what tells an agent what to rewrite.
@@ -272,13 +271,7 @@ Both routes need the utility to match each option name exactly.
 A utility that accepts an abbreviation, or the same name in another case, gives a refused option more than one spelling.
 A check over whole tokens misses the spellings it does not list.
 
-Ripgrep meets both routes and is admitted.
-`--pre` and `--hostname-bin` name a program to run.
-`-z` and `--search-zip` run a decompressor that the command does not name and that is found on `PATH`.
-All four are refused.
-`RIPGREP_CONFIG_PATH` supplies options from a file, and one of those options can be `--pre`, so `rg pattern file` can run whatever that file names.
-`--no-config` turns that file off, so the command must supply `--no-config` first.
-This was tested against ripgrep 15.1.0, which does not match an abbreviated option name, or a differently-cased one.
+Ripgrep is admitted under both routes: its options that run a program are refused, and `--no-config` must come first.
 
 #### Scenario: UtilityDeterminedByItsCommandLine
 
@@ -336,9 +329,9 @@ Installed code does not run on its own.
 It runs beside every later command in the same shell, including the recognized read that follows it.
 The segment that installs it does not name a guarded location, so nothing judges it, and the installed code then runs without a prompt.
 
-The classifier SHALL read an installed body as program text.
-A body written as one quoted word reaches the word-level checks as a single word, so no path rule matches the guarded location inside it.
-Reading the body as program text judges the locations it names, and withdraws the read carve-out from the rest of the command.
+The hook SHALL find and judge a guarded location named inside an installed body, however the body is quoted.
+The read carve-out SHALL NOT apply to the rest of a command that installs a body.
+A body quoted as one word is one word to the shell, so a check of whole words misses the location inside it.
 
 A command that does not install a body SHALL keep the read carve-out.
 Listing the installed handlers, or resetting them, does not install anything and does not put code beside the read.

@@ -4,7 +4,7 @@
 
 ### Requirement: UnrecognizedCommandsAreGated
 
-> Previously: a command written across lines was never recognized, because the lexer reported it unresolvable as a whole.
+> Previously: a command written across lines was never recognized, because the hook treated it as unresolvable as a whole.
 
 Where a Bash command names guarded locations, the system SHALL classify the command before gating it: a command recognized as a read SHALL proceed, a command recognized as a run of a program held in an exec-through location SHALL proceed, and any other command SHALL be gated with a reason that names the syntax that stopped recognition, the forms that would have proceeded, and the instruction to name paths absolutely.
 
@@ -13,7 +13,7 @@ Serves: a-multi-line-command-is-read-line-by-line
 One path in a block location SHALL refuse the whole command, whatever the rest of it does.
 One path outside every exec-through location SHALL gate a run, whatever the rest of it does.
 
-Recognition SHALL rest on the command text alone, as `shell-lexing` reads it.
+Recognition SHALL rest on the command text alone, read as `shell-lexing` requires every path hook to read it.
 A command whose effect that text does not show SHALL NOT be recognized, because the classifier cannot judge what it cannot see: an unresolvable word, an assignment that picks which binary runs, program text handed to an interpreter, or a relative path after a change of directory.
 
 A redirection SHALL NOT keep a command from being recognized; its target SHALL be judged by its direction.
@@ -29,7 +29,7 @@ A pipe-fed program outside the recognized read utilities SHALL be treated as a b
 Supported wrappers around recognized reads SHALL preserve read recognition unless their options permit writing output.
 A read segment that names a guarded path and pipes into such a program hands that path to a command the classifier never sees, so the read is not the whole of what the command does.
 
-A command written across lines SHALL be classified on the segments and words `shell-lexing` reads in it, which are those of the same command on one line.
+A command written across lines SHALL be classified the same way as the same command written on one line.
 
 A here-document SHALL be data only where the command that reads it is a recognized read, or a sink that keeps its input as a record rather than acting on it: `git commit` and `git tag` given `-F -` or `--file=-`, `gh` given `--body-file -`, and `tee`, whose targets are judged as the writes they are.
 A path inside a data body is text, names no file, and is not judged; the command's own words and redirections are judged as they are on one line.
@@ -38,7 +38,7 @@ A here-document read by any other program SHALL be judged as program text handed
 The default is program text because the hazard is not limited to shells and interpreters.
 `xargs`, `sudo sh`, `source /dev/stdin`, `awk -f -`, `sed -f -`, `sqlite3`, `git apply`, `patch`, `crontab -`, and a remote shell each act on input whose effects are named only inside the body, and a list of such programs would refuse only the ones it remembered.
 This is the rule `ReadClassifierAdmitsOnlySelfDescribingUtilities` applies to a utility: a command is admitted when its command line states what it does.
-A body `shell-lexing` reports unresolvable, because bash expands part of it, is an unresolvable word like any other.
+If bash would expand any part of a body, the body is an unresolvable word, like any other.
 
 The reason is what tells an agent what to rewrite.
 A refusal that names neither the syntax that stopped recognition nor the forms that proceed leaves an agent whose gate is a refusal with nothing to do but try another route, which is the behavior every refusal in this module instructs against.

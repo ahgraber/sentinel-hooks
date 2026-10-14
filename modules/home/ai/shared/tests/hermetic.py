@@ -55,13 +55,24 @@ def build_world(tmp_path: Path, monkeypatch, hooks_relative: str = "hooks") -> t
     return home, repo, manifest
 
 
-def policy(world, guarded=(), block=(), run=(), write=()):
-    """A policy over `world` declaring the given paths in each class, with no exceptions."""
+def manifest_floor() -> list[str]:
+    """The enforcement floor the repository's manifest declares."""
     import guarded_paths  # importable only after conftest or load_hook puts the hooks directory on sys.path
+
+    return list(guarded_paths.load_manifest()["enforcement-floor"]["paths"])
+
+
+def policy(world, guarded=(), block=(), run=(), write=(), floor=None):
+    """A policy over `world` declaring the given paths in each class, with no exceptions.
+
+    The floor defaults to the one the repository's manifest declares.
+    """
+    import guarded_paths
 
     home, repo, manifest = world
     data = {
         "guarded": {"paths": list(guarded)},
+        "enforcement-floor": {"paths": manifest_floor() if floor is None else list(floor)},
         "block": {"paths": list(block)},
         "exec-through": {"paths": list(run)},
         "write-through": {"paths": list(write)},

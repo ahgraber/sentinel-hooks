@@ -101,7 +101,7 @@ The documentation states that sandboxing "is independent of the permission level
 That is why the sandbox is pinned rather than the prompts alone.
 
 Pinning it has a network consequence the switch does not advertise.
-With `allowNetwork` false, the sandbox applies `chat.agent.allowedNetworkDomains` and `chat.agent.deniedNetworkDomains` to terminal commands, and the documentation states that when both lists are empty, all domains are blocked.
+With `allowNetwork` false, the sandbox applies `chat.agent.sandbox.network.allowedDomains` and `chat.agent.sandbox.network.deniedDomains` (named `chat.agent.allowedNetworkDomains` and `chat.agent.deniedNetworkDomains` before VS Code 1.141) to terminal commands, and the documentation states that when both lists are empty, all domains are blocked.
 So the domain list is declared before the sandbox is switched on, or every terminal command loses the network the day the pin lands.
 That list is also the editor's side of `NetworkReachIsUniformPerUser`.
 
@@ -152,8 +152,13 @@ The wholesale-bypass refusal is the floor: the values that would silence those p
 
 **Rationale:** Codex routes a refused guardrail edit through its reviewer policy, which is a surface Copilot does not have.
 What Copilot has is an approval layer of its own, which the hooks sit in front of.
-`hook_response.py` records that Copilot honors a hook `Ask` for `Write` and `Edit` and refuses on `Bash`, so a shell-borne guardrail edit degrades to a refusal there as on Codex, and the editor prompt is what still reaches the user.
-The hooks documentation for this build says a `PreToolUse` `ask` is honored without naming an exception; if a re-measurement agrees, `supports_ask` widens for Copilot and the hook prompt becomes the route, which makes this decision a fallback rather than the surface.
+Copilot honors a hook `Ask` for `Bash`, `Write`, and `Edit`, so a guardrail edit through any of them reaches the user in the editor's prompt, with the hook's reason in it.
+
+Revised on 2026-10-12: the tool vocabulary listed `Bash` as a tool Copilot could not ask for, so a shell guardrail edit was refused even where the user authorized it, and the 2026-10-11 assessment failed `AuthorizedGuardrailEdit`.
+VS Code 1.141.0's source turns off auto-approval for a terminal call whose hook returns `ask` and puts the reason in the confirmation's disclaimer.
+On 2026-10-12 the user ran a terminal write to a repository hook source through Copilot: the confirmation showed "PreToolUse hook required confirmation" with the hook's reason, and skipping it left no file.
+A write under `~/.claude` stays refused by the editor's sandbox after approval, so for those paths the file tools are the route.
+The user chose on 2026-10-12 to add `Bash` to `[ask] copilot`.
 
 Per-path coverage of `chat.tools.edits.autoApprove` against the manifest is not asserted.
 `guarded-path-classes` dropped that floor because the surface cannot express an ask with a carve-out beneath it, and this requirement needs only the wholesale bypasses refused.
@@ -693,7 +698,8 @@ The earlier statement that a command hook reaches `Block` "because every call it
 
 ### Decision: TheAssessmentChecksTheFloorsHookDirectories
 
-**Chosen:** the assessment compares the directory of every hook an agent registers, and the repository directory each deployed link resolves to, with `HOOK_DIRECTORIES`, under the new requirement `RegisteredHooksLieInTheEnforcementFloor`.
+**Chosen:** the assessment compares the directory of every hook an agent registers, and the repository directory each deployed link resolves to, with the floor's hook directories, under the new requirement `RegisteredHooksLieInTheEnforcementFloor`.
+Since 2026-10-11 those are the directory entries of the manifest's `[enforcement-floor]` table (`guarded-path-classes` `TheFloorIsDeclaredInTheManifest`).
 
 **Rationale:** `guarded-path-classes` defers a rule that discovers hook directories, because a glob for this repository's layout pins the floor to it and deriving the floor from declared paths let a permissive spelling escape it.
 Until that rule exists, a directory left out of the code-held list is outside the floor, and nothing reports it.
@@ -775,10 +781,114 @@ The tamper hook's refusal already says it cannot ask for the required approval, 
 
 `recursive-credential-read-refusal` restates the earlier retry text in its `hook-interface` delta and must take this text when it is applied.
 
+### Decision: PiSubagentsAreRefused
+
+**Chosen:** the tool vocabulary refuses Pi's `subagent`, with the child-side `subagent_command` and `watchdog_diff`.
+
+**Rationale:** pi-subagents runs a foreground child inside the Pi process and does not load the parent's extensions in it, so the child's calls reach neither the hooks nor the sandbox.
+A live check on 2026-10-11 confirmed it: a foreground `worker` child ran `python3 -c` and found a `[block]` file readable.
+`subagents.defaultSubagentOnlyExtensions` would load both extensions, but an agent definition overrides it, and a session can write one through the `subagent` tool's `create` action or a plain write to a project `.pi/agents/` file.
+The user chose on 2026-10-11 to refuse the tool and lose Pi subagents until a session cannot opt a child out.
+
+**Alternatives considered:**
+
+- Set `subagents.defaultSubagentOnlyExtensions`: an ordinary child is checked, and any session can still launch an unchecked one.
+
+### Decision: SandboxedCommandsReachTmuxAlone
+
+**Chosen:** on macOS, Codex's `guarded_workspace` profile lists the tmux socket directories in `network.unix_sockets` instead of allowing every socket, as Claude Code's `sandbox.network.allowUnixSockets` already does.
+On Linux, Codex and Claude Code keep every socket open.
+
+**Rationale:** the sockets were opened on 2026-09-06 so an agent can drive the user's tmux sessions, and allowing every socket was a workaround for Codex having no per-socket option then.
+Every socket includes Docker's, which gives root-equivalent access, and SSH agents, which sign as the user.
+Codex 0.162.1 applies the per-socket list on macOS: on 2026-10-11 the user ran `tmux ls` through `codex sandbox` under the deployed list and it listed the sessions.
+On Linux neither agent offers a per-socket list, and the user chose on 2026-10-11 to keep driving tmux there.
+
+**Alternatives considered:**
+
+- Close every socket on Linux: no tmux control on the Linux hosts.
+
+### Decision: TheEndOfTurnRunChecksOnlyWhatTheTurnChanged
+
+**Chosen:** `git-baseline.sh init` records a working-tree snapshot at the turn's start, and `stop-precommit.sh` passes the runner only the files whose content differs between that snapshot and the end of the turn.
+Where no snapshot exists, it passes every file the working tree presents as changed.
+Where neither `prek` nor `pre-commit` is installed, the turn ends with no run and no message.
+
+**Rationale:** the baseline contradicted itself.
+`RunsAtEndOfTurn` said "the files a turn changed", and `ChangedFileSelection` said "the files the working tree presents as changed".
+The code followed the second, so a Pi turn that changed nothing linted every uncommitted file in the worktree.
+A file changed before the turn is not the turn's to fix: checking it can block a turn on problems the agent did not cause, and invites it to edit files it was not asked to touch.
+The user chose to check only the changed files on 2026-10-03.
+
+A missing runner is an environment fault, not a guardrail: this hook formats and lints, and no posture rests on it.
+The 2026-10-02 verify run found the spec claimed a run the code did not make without a runner, and the user approved stating the condition.
+The user chose on 2026-10-10 to keep the silent skip.
+
+**Alternatives considered:**
+
+- Check every uncommitted file, as the code did: blocks a turn on work it did not do.
+- Check the files the agent's tools named: misses a file a shell command writes.
+- Warn when no runner is installed: a message on every turn of every session in a repository without one.
+
+### Decision: SpecTextStatesRulesAndOutcomes
+
+**Chosen:** requirement text states the general rule a sentence protects, not the single bug that prompted it, and states the outcome a requirement guarantees, not the internal route that produces it.
+On 2026-10-11 this rewording covered `hook-tampering-blocking`, `hook-interface`, `sensitive-path-blocking`, `agent-configuration-floor`, and `end-of-turn-precommit`; on 2026-10-12 it covered `cross-agent-capability-parity`, `secret-access-blocking`, `sensitive-path-blocking`, `hook-tampering-blocking`, `hook-interface`, and `destructive-ops-blocking`.
+
+**Rationale:** a sentence written for one bug reads as the whole rule and misses the next case, and a sentence that names a module, script, or storage path has to change for a refactor that changes no verdict.
+The user approved each rewording on the day it was made.
+
+**Alternatives considered:**
+
+- Leave the text as written: each refactor and each new case reopens the spec.
+
+### Decision: CopilotStaysOnTheLocalHarness
+
+**Chosen:** both editor settings files pin `chat.defaultToCopilotHarness` and `chat.editor.preferCopilotHarness` to `false` and `chat.copilotHarnessIntroduction.mode` to `"off"`, so Copilot chat runs on the editor's local harness.
+
+**Rationale:** a 2026-10-12 read of VS Code 1.141.0 found that the Agent Host harness, which offers Assisted permissions, bypasses this repository's guardrails.
+`chat.hookFilesLocations` and `chat.useHooks` apply only to the local harness, and the hooks the Agent Host runtime discovers receive tool names the vocabulary does not map.
+Its sandbox reads `chat.agent.sandbox.fileSystem.userConfiguredPaths`, not the `.mac` and `.linux` lists, and auto-approves every sandboxed shell command.
+Under Assisted, the model's approval comes before the `false` entries in `chat.tools.edits.autoApprove` and before `chat.tools.terminal.enableAutoApprove`.
+All three settings default to the local harness, but experiments control the defaults, so `ExperimentControlledDefaultsAreDeclared` requires declaring them.
+The user asked on 2026-10-12 for an Assisted mode like Claude's auto mode, and chose to stay on the local harness once the read showed these gaps.
+
+**Alternatives considered:**
+
+- Move Copilot to the Agent Host harness with Assisted approvals: needs hooks in a format that runtime loads, the SDK tool names in the vocabulary, the deny lists ported to `userConfiguredPaths`, sandbox credentials turned off, and a prompt floor only enterprise policy can set; `BypassModesAreRefused` forbids `approvals: "assisted"` today.
+
+### Decision: TheAssessmentHoldsRegistrationsToTheVocabulary
+
+**Chosen:** `ToolVocabularyIsDeclared` covers how an implementation judges the calls that reach it.
+The new requirement `RegistrationsRouteTheVocabulary` holds each agent's hook registration to the vocabulary, and the assessment checks it.
+
+**Rationale:** the 2026-10-12 verify run found the requirement promised that an edit to the vocabulary changes what every implementation gates with no other edit, while Pi's `hooks.json` and the Claude and Codex settings select calls by tool name before any hook runs.
+The registrations are vendor configuration, which the assessment judges and no test reads.
+The user chose this on 2026-10-12.
+
+**Alternatives considered:**
+
+- Generate the registration matchers from the vocabulary in Nix: makes the original sentence true, but changes how the Claude settings files are built, which the user commits by hand; a change of its own.
+
+## Spec Changes
+
+- 2026-10-12, `end-of-turn-precommit` `RepositoryWithNoCommits`: the changed set names the untracked files beside the staged ones.
+  Source: `UntrackedFile` in the same requirement, which already passes an untracked file to the runner.
+  Approved by user: 2026-10-12.
+- 2026-10-12, `agent-configuration-floor` `NetworkReachIsUniformPerUser`: the editor's host list is named `chat.agent.sandbox.network.allowedDomains`.
+  Source: VS Code 1.141.0 renames `chat.agent.allowedNetworkDomains` to that key and migrates the value.
+  Approved by user: 2026-10-12.
+- 2026-10-12, `agent-configuration-floor` `BypassModesAreRefused`: the editor's sandbox values no longer list `chat.agent.sandbox.allowAutoApprove` or `chat.experimental.permissionsSandboxToggle.enabled`.
+  Source: VS Code 1.141.0 declares neither key, so neither has an effect.
+  Approved by user: 2026-10-12.
+
 ## Baseline Errors
 
 - `sensitive-path-blocking` names `block-secrets.py` as one of the boundaries past Bash read blocking.
   The hook is `block-leaks.py` after `TheContentHookIsNamedForLeaks`; sync replaces the name.
+- On 2026-10-12, commit `cf35958` edited nine baseline specs directly, with the user's approval: `bash-command-validator`, `dangerous-bash-blocking`, `destructive-ops-blocking`, `git-baseline-drift`, `hook-interface`, `path-matching`, `secret-access-blocking`, `sensitive-path-blocking`, and `session-tool-checks`.
+  The edits stand.
+  Where a delta in this change or in `guarded-path-classes` replaces a requirement those edits touched, sync carries the edit into the replacement rather than overwriting it.
 
 ## Architecture
 
@@ -834,3 +944,16 @@ That is where the remaining divergence lives: an adapter holds no policy, so its
 - **Each turn hashes the working tree twice.**
   The turn-start and turn-end snapshots add every changed and untracked file that is not ignored to the object store, so a large untracked file slows every turn and leaves unreachable objects until `git gc`.
   Mitigation: the snapshots copy the real index, so unchanged tracked files are not hashed again; ignore large generated files.
+- **Two cases fall outside the turn's file selection.**
+  In a repository with no commits, a file staged and then deleted is still selected, and a filename holding a newline is not read correctly.
+  Mitigation: none; both are rare in the repositories these hooks run in.
+
+## Verification Overrides
+
+- **Finding:** `agent-configuration-floor` `NetworkReachIsUniformPerUser` fails `AgentsDisagree` in the 2026-10-11 assessment: the MCP tools that run without asking differ per agent.
+  Claude admits context7 and the local code-review-graph server, Codex admits jina's two web searches and the local semble search, and Pi admits every MCP tool, including jina's `read_url`, which fetches any URL.
+  **Stage:** verify **Reason:** Pi has no rule that asks on an MCP tool, and adding one is new hook behavior that belongs with Pi's other gaps.
+  **Constraints:** the override covers MCP tools only; the sandbox host allowlists still agree and stay required.
+  Until the follow-up ships, Pi reaches every MCP tool without asking.
+  **Follow-up task:** `changes/pi-subagent-enforcement/proposal.md`, the scope item that sets one MCP set run without asking in every agent.
+  **Approved by:** user **Recorded:** 2026-10-12

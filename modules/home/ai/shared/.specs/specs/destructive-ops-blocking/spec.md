@@ -42,7 +42,7 @@ The hook exits 2 with the rule description and no path to proceeding in the curr
 **`ask`** — the operation is potentially dangerous and requires explicit user confirmation.
 The hook exits 0 and writes a `permissionDecision: "ask"` JSON object to stdout (see `hook-interface`).
 Claude Code presents a permission dialog; the user may approve once, always allow, or deny.
-If the user selects "always allow", that choice MAY be persisted to `settings.json` via a `PermissionRequest` hook so future invocations are not re-prompted.
+If the user selects "always allow", that choice MAY be remembered so the user is not asked again.
 
 #### Scenario: BlockModeMatch
 
@@ -186,7 +186,8 @@ The pattern file SHALL define rules covering at minimum the following operations
 Note: the `ssh` pattern SHALL match the `ssh` command invocation (followed by whitespace) but SHALL NOT match compound command names like `ssh-keygen`, `ssh-agent`, or `ssh-copy-id`.
 
 The pattern file SHALL NOT include overly broad patterns that match common words in non-command contexts.
-Specifically, a bare `\bdeploy\b` pattern is too broad (matches filenames, log messages, documentation); deployment should be covered by vendor-specific patterns (e.g., `firebase deploy`, `vercel deploy`) rather than a catch-all.
+A command that mentions `deploy` SHALL NOT match unless it runs a vendor deploy command, such as `firebase deploy` or `vercel deploy`.
+A filename, a log message, or documentation that contains the word is not a deployment.
 
 ### Requirement: CaseSensitivity
 

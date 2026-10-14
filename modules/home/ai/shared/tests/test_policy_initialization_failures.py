@@ -36,7 +36,7 @@ def test_enforcement_scan_failure_uses_tool_specific_response(monkeypatch, capsy
     code = _run(monkeypatch, agent, tool, MUTATING_PAYLOADS[tool])
     result = capsys.readouterr()
     assert "cannot scan enforcement directory" in result.out + result.err
-    if agent == "claude" or (agent == "copilot" and tool in {"Write", "Edit"}):
+    if agent == "claude" or (agent == "copilot" and tool in {"Bash", "Write", "Edit", "apply_patch"}):
         assert code == 0
         assert json.loads(result.out)["hookSpecificOutput"]["permissionDecision"] == "ask"
     else:

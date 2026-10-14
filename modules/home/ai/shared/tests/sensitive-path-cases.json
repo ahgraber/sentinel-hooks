@@ -347,6 +347,21 @@
       "why": "the same file under a name carrying no heuristic term, showing the declaration rather than the name is what blocks it"
     },
     {
+      "path": "~/Library/Application Support/Code/User/mcp.json",
+      "blocked": true,
+      "why": "VS Code's MCP server list on macOS, which holds API keys in plain text, declared in [block]"
+    },
+    {
+      "path": "~/.config/Code/User/mcp.json",
+      "blocked": true,
+      "why": "VS Code's MCP server list on Linux, declared in [block]"
+    },
+    {
+      "path": "users/mithras/home-manager/pi/mcp.json",
+      "blocked": false,
+      "why": "an MCP server list that names its keys by environment variable; the declaration, not the file name, blocks"
+    },
+    {
       "path": "scripts/mcp-secrets.sh",
       "blocked": false,
       "why": "declared in [[exceptions]]: a program named for the secret file it renders, holding none itself"

@@ -9,7 +9,7 @@ shell = ["Bash"]
 file = ["Read", "Write", "Edit"]
 
 [ask]
-copilot = ["Write", "Edit"]
+copilot = ["Bash", "Write", "Edit", "apply_patch"]
 
 [mappings.claude]
 Bash = "Bash"
@@ -69,7 +69,7 @@ grep = "Read"
 # entry reaches them.
 
 [passthrough.claude]
-source = "Claude Code 2.1.284"
+source = "Claude Code 2.1.293"
 
 [[passthrough.claude.tools]]
 tool = "Glob"
@@ -220,11 +220,31 @@ tool = "ReportFindings"
 reason = "reports review findings to the editor"
 
 [[passthrough.claude.tools]]
+tool = "OfferChromeSetup"
+reason = "shows the user a browser setup card and asks before acting"
+
+[[passthrough.claude.tools]]
 tool = "mcp__*"
 reason = "every MCP tool, which Claude Code names `mcp__<server>__<tool>`"
 
 [passthrough.codex]
-source = "Codex 0.157.0; a namespaced tool reaches the hooks as namespace and name joined, such as `collaborationspawn_agent`"
+source = "Codex 0.161.0; a namespaced tool reaches the hooks as namespace and name joined, such as `collaborationspawn_agent`, except that `spawn_agent` in the default or `multi_agent_v1` namespace reaches them bare"
+
+[[passthrough.codex.tools]]
+tool = "spawn_agent"
+reason = "starts a subagent whose own tool calls reach the hooks"
+
+[[passthrough.codex.tools]]
+tool = "get_goal"
+reason = "reads the thread's persisted goal"
+
+[[passthrough.codex.tools]]
+tool = "create_goal"
+reason = "records a goal for the thread in Codex's own state, not a repository file"
+
+[[passthrough.codex.tools]]
+tool = "update_goal"
+reason = "records a goal for the thread in Codex's own state, not a repository file"
 
 [[passthrough.codex.tools]]
 tool = "collaborationspawn_agent"
@@ -606,7 +626,7 @@ tool = "mcp_*"
 reason = "every MCP tool, which the editor names `mcp_<server>_<tool>`"
 
 [passthrough.pi]
-source = "Pi 1.0.0 with its built-in MCP support, pi-subagents 0.58.0, and pi-intercom 0.12.0"
+source = "Pi 1.0.0 with its built-in MCP support, pi-subagents 0.75.0, and pi-intercom 0.16.0"
 
 [[passthrough.pi.tools]]
 tool = "find"
@@ -615,10 +635,6 @@ reason = "a read-only built-in that lists names"
 [[passthrough.pi.tools]]
 tool = "ls"
 reason = "a read-only built-in that lists names"
-
-[[passthrough.pi.tools]]
-tool = "subagent"
-reason = "starts a Pi process that loads the hooks, so the child's calls are checked"
 
 [[passthrough.pi.tools]]
 tool = "intercom"
@@ -633,6 +649,18 @@ tool = "mcp__*"
 reason = "every MCP tool, which Pi names `mcp__<server>__<tool>` and sends through the tool pipeline the hooks judge"
 
 [[passthrough.pi.tools]]
+tool = "list_mcp_resources"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.pi.tools]]
+tool = "list_mcp_resource_templates"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.pi.tools]]
+tool = "read_mcp_resource"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.pi.tools]]
 tool = "tool_search"
 reason = "loads tool declarations into the session"
 
@@ -641,12 +669,16 @@ tool = "codemode"
 reason = "runs a script in a QuickJS sandbox with no Node APIs; each tool it calls reaches the hooks as its own call"
 
 [[passthrough.pi.tools]]
-tool = "subagent_wait"
-reason = "waits for a subagent"
+tool = "subagents_enable"
+reason = "activates the subagent tools in the session; `subagent` itself stays refused"
+
+[[passthrough.pi.tools]]
+tool = "bg_wait"
+reason = "waits for a background subagent; none starts while `subagent` is refused"
 
 [[passthrough.pi.tools]]
 tool = "subagent_supervisor"
-reason = "manages running subagents, whose own tool calls reach the hooks"
+reason = "manages running subagents; none starts while `subagent` is refused"
 
 [[passthrough.pi.tools]]
 tool = "structured_output"
@@ -682,6 +714,10 @@ reason = "manages a claude.ai page that `Artifact` publishes and a public link c
 tool = "ArtifactCheck"
 reason = "manages a claude.ai page that `Artifact` publishes and a public link can share"
 
+[[refused.claude.tools]]
+tool = "PublishPlugin"
+reason = "uploads a local plugin folder to an organization's library on claude.ai, and no hook or sandbox checks the folder"
+
 [refused.copilot]
 
 [[refused.copilot.tools]]
@@ -693,3 +729,15 @@ reason = "a placeholder in this build whose input names no file the adapter can 
 [[refused.pi.tools]]
 tool = "powershell"
 reason = "Pi's optional Windows shell; the shell hooks read a command as Bash"
+
+[[refused.pi.tools]]
+tool = "subagent"
+reason = "a foreground child runs inside the Pi process without the hooks or the sandbox, and the tool can write an agent definition that opts any child out of them"
+
+[[refused.pi.tools]]
+tool = "subagent_command"
+reason = "controls a subagent child's commands; children are refused with `subagent`"
+
+[[refused.pi.tools]]
+tool = "watchdog_diff"
+reason = "a subagent child's review tool; children are refused with `subagent`"

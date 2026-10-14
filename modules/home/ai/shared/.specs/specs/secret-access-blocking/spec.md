@@ -18,7 +18,7 @@ Tool-specific handling is layered on top of the universal scan:
 
 ### Requirement: UniversalSecretScan
 
-The system SHALL serialize `tool_input` to a string and scan it for secret patterns on every tool call.
+The system SHALL detect a secret in any field of `tool_input` on every tool call.
 
 This catch-all ensures secrets are detected regardless of which tool or argument they appear in — a URL containing an API key in WebFetch, a grep pattern containing a private key header, or any future tool with arguments we haven't anticipated.
 
@@ -27,13 +27,13 @@ A finding from the universal scan is always `ask` mode, since without tool-speci
 #### Scenario: SecretInAnyToolArg
 
 - **GIVEN** any tool call is intercepted
-- **WHEN** the serialized `tool_input` contains a string matching a known secret pattern
+- **WHEN** a field of `tool_input` contains a string matching a known secret format
 - **THEN** the hook exits 0 with `permissionDecision: "ask"`
 
 #### Scenario: CleanToolInput
 
 - **GIVEN** any tool call is intercepted
-- **WHEN** no secret patterns are found in the serialized `tool_input`
+- **WHEN** no field of `tool_input` contains a known secret format
 - **THEN** the hook exits 0 (allow)
 
 ### Requirement: RuleModes
@@ -53,7 +53,8 @@ The `ask` path ensures they are not locked out of their own secrets while still 
 
 The system SHALL block (deny) Bash commands that transmit secrets over the network.
 
-This is a Bash-specific escalation: the universal scan finds the secret (ask), but if the Bash command also contains a network-sending context, the mode escalates to block.
+A Bash command that carries a secret in a network-sending context SHALL be blocked.
+Without that context, the hook asks the user about the same secret, per `UniversalSecretScan`.
 
 This includes:
 
@@ -210,9 +211,9 @@ Secret formats include API tokens, private key material, and certificates — an
 - GPG private key blocks (`-----BEGIN PGP PRIVATE KEY BLOCK-----`)
 - Client certificate material (`-----BEGIN CERTIFICATE-----`)
 
-The built-in pattern set SHALL be curated for high precision (minimizing false positives) rather than exhaustive coverage.
-Gitleaks provides comprehensive coverage on the deep-scan path (see `TieredSecretDetection`).
-The built-in patterns are a focused safety net, not a replication of the gitleaks corpus.
+The listed formats SHALL be detected on every tool call.
+They SHALL be chosen so that a match is almost always a real secret.
+`TieredSecretDetection` adds coverage on network sends.
 
 ### Requirement: TieredSecretDetection
 

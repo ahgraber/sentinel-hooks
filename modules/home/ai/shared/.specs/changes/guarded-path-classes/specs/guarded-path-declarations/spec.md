@@ -6,21 +6,17 @@
 
 > Previously: the manifest declared the gated protected classes split into deployed and source lists, the agent credential class, the instruction layers, the location-only roots, and the secret-floor representatives, and the read-through and exec-through locations were declared with no requirement recording them.
 
-The system SHALL declare the guarded surface in one manifest as one guarded list and the deltas to it: the block class, the exec-through class, the write-through class, and the declared exceptions.
+The system SHALL declare the guarded surface in one manifest as one guarded list and the deltas to it: the enforcement floor, the block class, the exec-through class, the write-through class, and the declared exceptions.
 
 Serves: one-list-then-deltas
 
-Every enforcement implementation SHALL take these declarations from the manifest rather than carrying a copy.
-A copy is a second authoring surface, and a second authoring surface is where one platform or one implementation gets left behind.
+A change to the manifest SHALL change the verdict of every enforcement implementation, with no edit to any implementation.
+If a declaration could be written in two places, one platform or one implementation would eventually miss an update.
 
 The manifest SHALL carry nothing that exists only to steer how an implementation matches.
 A table that exempts an entry from one matcher, or that lists locations a read may proceed under, encodes the implementation rather than the policy, and an operator reading it cannot tell what was decided.
 
-#### Scenario: TwoImplementationsOneSource
-
-- **GIVEN** two implementations of the tamper policy in different languages
-- **WHEN** each judges the same path
-- **THEN** they reach the same verdict, because both read the same declarations
+<!-- modified-removes: TwoImplementationsOneSource -->
 
 #### Scenario: AddedPathReachesEveryConsumer
 
@@ -32,7 +28,7 @@ A table that exempts an entry from one matcher, or that lists locations a read m
 
 - **GIVEN** the manifest
 - **WHEN** its tables are enumerated
-- **THEN** each is one of the guarded list, the block class, the exec-through class, the write-through class, or the exceptions
+- **THEN** each is one of the guarded list, the enforcement floor, the block class, the exec-through class, the write-through class, or the exceptions
 
 ### Requirement: ConfigurationSurfacesCoverTheDeclarations
 
@@ -53,7 +49,7 @@ An unprompted edit to a guarded location is recoverable through version control,
 Coverage SHALL be judged against concrete representative paths, not by comparing pattern text.
 A pattern that looks right and does not match is the failure this requirement exists to catch.
 The representatives SHALL include paths standing for the operating-system secret stores the block class does not enumerate, held beside the assessment that judges the surfaces rather than in the manifest, because they are evidence for the floor and not policy.
-The judgment is an assessment of each agent's configuration against this requirement, not a test in the hooks package: the package is independent of any agent's configuration, per `security-posture-alignment`.
+The judgment is an assessment of each agent's configuration against this requirement, not a test in the hooks package, because the package does not read any agent's configuration.
 
 <!-- modified-removes: EditApprovalFloor -->
 
@@ -263,7 +259,8 @@ Which to write is a posture choice, recorded in `guarded-surface`, and the manif
 
 ### Requirement: OneGlobForm
 
-A declaration MAY carry `*`, which SHALL match exactly one path segment in whichever component it appears, including the last; no other glob form SHALL be recognized; and a trailing `/` SHALL declare the directory and everything beneath it.
+A declaration MAY carry `*` in any component, including the last; it SHALL match any run of characters within that one path segment, including none, and SHALL NOT match a `/`.
+No other glob form SHALL be recognized, and a trailing `/` SHALL declare the directory and everything beneath it.
 
 Serves: one-list-then-deltas
 
@@ -284,6 +281,12 @@ A glob in the last component narrows a declaration to files of one shape directl
 - **WHEN** a path matches it directly within the directory
 - **THEN** the path is covered, and a path nested one directory deeper is not
 
+#### Scenario: GlobWithinASegment
+
+- **GIVEN** a declaration such as `settings*.json`, with `*` inside a segment
+- **WHEN** a path fills the `*` with any characters, or with none
+- **THEN** the path is covered
+
 #### Scenario: GlobDoesNotSpanSegments
 
 - **GIVEN** a declaration with `*`
@@ -300,9 +303,11 @@ At session start, only a grant lying at or inside the floor SHALL be reported, b
 
 Serves: one-list-then-deltas
 
-The floor SHALL be derived independently of user declarations from the guard's implementation and launch locations and known harness enforcement locations.
-It covers the manifest, hook implementations and dependencies, harness permission and settings files and their profile layers, their repository sources, project-local permission settings, and every hop of their link chains.
-Instruction text is outside the floor.
+The floor SHALL be the locations the manifest declares in its enforcement floor, together with the manifest itself and the guard's own implementation and launch locations, which no manifest edit removes.
+A guarded, exec-through, or write-through declaration SHALL NOT extend or reduce the floor.
+A floor declaration MAY be anchored at the working directory and every directory above it, for the settings a project carries; no other class uses that anchor.
+The declared floor covers hook implementations and dependencies, harness permission and settings files and their profile layers, their repository sources, project-local permission settings and hook files, and every location a harness loads hooks from; the floor covers every hop of their link chains.
+Instruction text is outside the floor; where no declaration covers it, it SHALL be guarded.
 A broad home or project grant permits content changes without permitting the permission rules themselves to be rewritten without approval.
 
 #### Scenario: WriteThroughOverTheManifest
@@ -351,6 +356,36 @@ A broad home or project grant permits content changes without permitting the per
 
 - **GIVEN** a broad project grant and project-local permission settings
 - **WHEN** a tool writes those settings
+- **THEN** the decision is `Ask`, even if the manifest declares no guarded paths
+
+#### Scenario: AFloorDeclarationHoldsAgainstAGrant
+
+- **GIVEN** a location declared in the enforcement floor, and a grant covering it
+- **WHEN** a tool writes or runs a file there
+- **THEN** the decision is `Ask`, and without the floor declaration the grant decides
+
+#### Scenario: AnEmptyFloorKeepsTheGuard
+
+- **GIVEN** a manifest whose enforcement floor declares nothing, and a grant covering the manifest and the running hook
+- **WHEN** a tool writes either
+- **THEN** the decision is `Ask`
+
+#### Scenario: ProjectAnchorOutsideTheFloorDoesNotLoad
+
+- **GIVEN** a guarded, block, exec-through, or write-through declaration anchored at the working directory
+- **WHEN** the manifest is loaded
+- **THEN** loading fails
+
+#### Scenario: UncoveredInstructionTextIsGuarded
+
+- **GIVEN** instruction text inside a floor directory, with no declaration covering it
+- **WHEN** a tool writes it
+- **THEN** the decision is `Ask`, and a grant covering it permits the write
+
+#### Scenario: ProjectHookFilesAreEnforcement
+
+- **GIVEN** a broad project grant
+- **WHEN** a tool writes a file in a directory a harness loads project hooks from, such as `.github/hooks/`
 - **THEN** the decision is `Ask`, even if the manifest declares no guarded paths
 
 ### Requirement: ConflictingDeclarationsAreReported

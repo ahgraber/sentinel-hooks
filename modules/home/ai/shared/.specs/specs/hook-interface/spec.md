@@ -34,7 +34,8 @@ The system SHALL express its outcome as one of four decisions:
 A decision is the shared vocabulary.
 Its encoding is not.
 
-Every hook SHALL reach its outcome through this vocabulary rather than by writing an exit code of its own.
+Every hook SHALL emit the same encoding for the same decision, tool, and invoking agent.
+The explanation it emits SHALL meet `ExplanationContract`.
 A hook that encodes its own outcome carries its own copy of the explanation contract and its own view of what each agent understands, and those copies drift.
 
 The system SHALL encode a decision according to the agent that invoked the hook.
@@ -118,7 +119,8 @@ Established empirically against the VS Code surface on 2026-08-27.
 
 ### Requirement: AgentIdentification
 
-The system SHALL determine which agent invoked it, and SHALL do so in one place.
+The system SHALL determine which agent invoked it.
+Every hook SHALL identify the same agent for the same invocation.
 
 Identification SHALL NOT require an addition to each agent's hook registration.
 A registration is enforcement configuration, so every entry added to it is another place a rename can silently drop protection.

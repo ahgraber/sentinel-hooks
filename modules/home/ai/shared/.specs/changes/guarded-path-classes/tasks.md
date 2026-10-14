@@ -33,12 +33,12 @@ Groups run in build-dependency order: the pending change is revised first so the
   A redirection target keeps its own kind; the hooks apply their path rules to path candidates and redirection targets alike.
 - [x] Keep the paths an unresolvable word holds available on the `Word`, as `_candidate_words` finds them today, so the text check has them.
 - [x] Add `tests/test_shell_words.py` with parametrized examples, one table per kind: an attached redirection target, an assignment before a command, a quoted operator that does not split, a bare word that names no entry, the same word once an entry exists, a word with a separator naming no file, an input-redirection operand — evidence for `EveryWordHasAKind`, `APathCandidateDenotesAFile`, and `SegmentsFollowControlOperators`.
-- [x] Move the differential, metamorphic, and totality properties from `tests/test_classifier_properties.py` into `tests/test_shell_words_properties.py`, stated over `shell_words.lex` rather than the hook, with `shellprobe` unchanged — evidence for `AWordTheShellRewritesIsResolvedOrRefused` (the containment scenario) and `LexingIsTotal`.
+- [x] Move the differential, metamorphic, and totality properties from `tests/test_classifier_properties.py` into `tests/test_shell_words_properties.py`, stated over `shell_words.lex` rather than the hook, with `shellprobe` unchanged — evidence for `AWordTheShellRewritesIsResolvedOrRefused` (the containment scenario) and `EveryCommandReachesAVerdict`.
   Leave in `test_classifier_properties.py` the properties that are about the hook's verdict: a guarded operand never makes a verdict more permissive, and a trailing separator does not change it.
 - [x] Add the parametrized examples for each resolution form: a quoted word, an ANSI-C quoted word, a pattern that matches, a pattern that matches nothing, a substitution, a brace expansion, a path inside an unresolvable word, and a newline — evidence for the remaining `AWordTheShellRewritesIsResolvedOrRefused` scenarios and `ANewlineRefusesTheCommand`.
 - [x] Add the hermetic fixture: a temporary home, a temporary repository, and a substituted manifest, so a case states the world it needs rather than depending on what exists on the machine.
   Use it for every existence-dependent case in this change.
-- [x] Add `tests/test_class_hook_integration.py::test_two_hooks_one_reading`: run both hooks over the command forms in the lexer example tables and assert each hook's recorded segments and words are the lexer's — evidence for `OneLexerForEveryHook`.
+- [x] Add `tests/test_class_hook_integration.py::test_two_hooks_one_reading`: run both hooks over the command forms in the lexer example tables and assert each hook's recorded segments and words are the lexer's — evidence for `OneReadingForEveryHook`.
 - [x] Establish whether backslash line continuation reaches the option-injection divergence, and record in the lexer's docstring what is refused and what is judged.
   A newline anywhere in the command still refuses it, so this is reachable only once that is narrowed to an unquoted newline.
 
@@ -276,7 +276,7 @@ That is the common spelling of the second group, so the saving is real for file 
   `guarded_paths.load_policy` returns a `PathPolicy` either way, carrying the load failure as `.error`, so `install_policy` sets one name and the warning is gone.
 - [x] Extract the Bash command classifier from `block-hook-tampering.py` into its own module, and have it return the stopping reason with the class.
   `_stopping_syntax` re-runs `_defines_function`, `_program_text`, and `_builder_segment` over segments the classifier already processed, so a drift between the two orderings names a reason that was not the reason.
-  This is the shape `OneLexerForEveryHook` gave the lexer, applied to the classifier above it.
+  This is the shape `OneReadingForEveryHook` gave the lexer, applied to the classifier above it.
   `hooks/bash_commands.py` holds the reading; `block-hook-tampering.py` holds the policy and dropped from 772 to 406 lines.
   `read()` classifies once and `Reading.stopping_syntax()` reports from that pass, so the hook lexes a Bash command once where it lexed three times.
   `_builder_segment` and `_piped_programs` now share `_reads_stdin_program` instead of one re-deriving the other through the pipe-fed rule, which they disagreed about.

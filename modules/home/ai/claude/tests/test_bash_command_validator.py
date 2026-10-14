@@ -1,5 +1,7 @@
 """Behavioral tests for bash-command-validator.sh."""
 
+import shutil
+
 from conftest import assert_allowed, assert_blocked, run_hook
 import pytest
 
@@ -22,11 +24,20 @@ class TestInput:
     def test_safe_command_is_allowed(self):
         assert_allowed(bash("echo hello world"))
 
-    def test_malformed_json_returns_error(self):
+    def test_malformed_json_is_refused(self):
         result = run_hook(HOOK, stdin_text="not json")
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "invalid json" in result.stderr.lower()
+
+    def test_a_missing_dependency_is_refused(self, tmp_path):
+        for program in ("bash", "cat", "jq"):
+            (tmp_path / program).symlink_to(shutil.which(program))
+
+        result = run_hook(HOOK, "Bash", {"command": "echo hello"}, env={"PATH": str(tmp_path)})
+
+        assert result.exit_code == 2
+        assert "requires perl" in result.stderr
 
 
 class TestZshCommandHazards:

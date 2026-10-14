@@ -5,7 +5,7 @@ import os
 import shutil
 import subprocess
 
-from hermetic import HOOKS_DIR, dump_manifest
+from hermetic import HOOKS_DIR, dump_manifest, manifest_floor
 import pytest
 
 
@@ -17,6 +17,7 @@ def session(tmp_path):
     home.mkdir()
     data = {
         "guarded": {"paths": ["~/guarded/"]},
+        "enforcement-floor": {"paths": manifest_floor()},
         "block": {"paths": []},
         "exec-through": {"paths": []},
         "write-through": {"paths": []},

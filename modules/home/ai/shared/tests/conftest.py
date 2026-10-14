@@ -19,7 +19,7 @@ for directory in (HOOKS_DIR, TESTS_DIR):
         sys.path.insert(0, str(directory))
 
 from guarded_paths import PathPolicy  # noqa: E402
-from hermetic import build_world, install_policy, load_hook  # noqa: E402
+from hermetic import build_world, install_policy, load_hook, manifest_floor  # noqa: E402
 import pytest  # noqa: E402
 
 
@@ -40,6 +40,7 @@ def world(tmp_path, monkeypatch):
     policy = PathPolicy(
         {
             "guarded": {"paths": ["~/base/", "~/other-agent/"]},
+            "enforcement-floor": {"paths": manifest_floor()},
             "block": {"paths": ["~/base/private"]},
             "exec-through": {"paths": ["~/skills/"]},
             "write-through": {"paths": ["~/base/notes/*.md", "~/memory/"]},

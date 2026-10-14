@@ -35,7 +35,10 @@ An extension that holds its own pattern, path list, or rule for which tool calls
 The test is removal: take away the shared hooks and their registration, and a harness extension refuses nothing for what a call does.
 It may still refuse a call because a hook it runs failed to answer, since that refusal is how it carries the hook's failure direction, not a rule of its own.
 
-The package side of this requirement is checked by test: every capability has a kind and, for every kind but configuration, an artifact that exists, in `hooks/` for the first three kinds and in `tests/` for conformance, and every hook in the package is claimed by a capability.
+A test checks the package side of this requirement.
+Every capability has a kind.
+Every capability that is not configuration has an artifact that exists in the package: a hook, module, or declaration for the first three kinds; a test for the conformance kind.
+Every hook in the package belongs to a capability.
 A hook that enforces nothing, deployed beside the others for an agent's convenience, is listed as tooling and is outside every capability; the check accepts what that list names and nothing else.
 The agent side is judged by the assessment, because it reads each agent's registration, which is that agent's configuration.
 
@@ -120,7 +123,8 @@ What can be checked is the verdict, so every such surface SHALL be judged agains
 
 Serves: every-agent-carries-the-policy
 
-Every agent SHALL map every tool its harness can emit onto the declared tool vocabulary or find it among the tools the declaration lists as passthrough for that harness, and SHALL refuse a tool name that is neither rather than let it reach the shared implementation unjudged.
+Every agent SHALL map each tool name its harness can send onto the declared tool vocabulary, or find the tool in the declaration's passthrough list for that harness.
+The agent SHALL refuse a tool name that is in neither.
 An agent whose harness reaches the hooks through an adapter refuses at the adapter.
 An agent whose harness sends its tool names to the hooks directly refuses through the hook `unlisted-tool-refusal` specifies.
 
@@ -158,7 +162,7 @@ A pattern admits every later tool its name matches, including one that writes, s
 
 - **GIVEN** a tool name the adapter has no mapping for, and the declaration does not list as passthrough
 - **WHEN** the adapter normalizes the payload
-- **THEN** the call is refused, and the unmapped name does not reach the shared implementation
+- **THEN** the call is refused
 
 #### Scenario: HarnessGainsATool
 
@@ -170,7 +174,10 @@ A pattern admits every later tool its name matches, including one that writes, s
 
 Serves: every-agent-carries-the-policy
 
-The tool vocabulary the shared implementation gates on SHALL be declared once, in a file beside the manifest that the shared implementation and every adapter read, with each harness's spelling of each tool mapped onto it, and every implementation SHALL read that declaration rather than carry its own copy.
+The tool vocabulary that the shared implementation gates on SHALL be declared once, in a file beside the manifest.
+The file SHALL map each harness's spelling of each tool onto the vocabulary.
+An edit to that file SHALL change how every implementation judges the calls that reach it, with no edit to the implementation.
+Which calls reach a hook is set by each agent's hook registration, which is agent configuration; `agent-configuration-floor` `RegistrationsRouteTheVocabulary` holds the registrations to the vocabulary, so a new spelling can also need a registration edit.
 
 It is not a table of the manifest: `guarded-path-declarations` `OnlyPolicyTablesExist` holds that file to path policy, and a harness spelling is not a path.
 
@@ -178,20 +185,14 @@ A vocabulary spelled in code is one authoring surface per implementation, and ea
 Undeclared, the vocabulary also has no owner: it becomes whichever harness's spellings the shared code happened to be written against, so every other harness is described by its difference from that one rather than on its own terms.
 Declaring it makes each harness's spelling a statement about that harness, and makes the mapping something a test can check.
 
-#### Scenario: VocabularyReadFromTheDeclaration
-
-- **GIVEN** the declared tool vocabulary
-- **WHEN** an implementation decides whether it gates a tool
-- **THEN** it judges against the declaration rather than against a literal it carries
-
 #### Scenario: SpellingDeclaredOnceReachesEveryConsumer
 
 - **GIVEN** a harness spelling added to the declaration
 - **WHEN** each implementation and conformance check runs
-- **THEN** every one of them honors it with no further edit
+- **THEN** every implementation that receives a call using it, and every conformance check, honors it with no edit to the implementation
 
-#### Scenario: ImplementationCarriesItsOwnCopy
+#### Scenario: SpellingRemovedFromTheDeclaration
 
-- **GIVEN** an implementation holding a tool vocabulary of its own
-- **WHEN** conformance checks it against the declaration
-- **THEN** conformance fails
+- **GIVEN** a harness spelling removed from the declaration
+- **WHEN** any implementation judges a call that uses it
+- **THEN** no implementation gates the call as that tool

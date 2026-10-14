@@ -4,19 +4,24 @@
 
 ### Requirement: AMultiLineCommandReachesItsOneLineVerdict
 
-A Bash command written across lines SHALL reach the verdict its one-line form reaches, as `shell-lexing` reads it, and the strong rules SHALL judge the unparsed text piece by piece only where the lexer reports the command unresolvable.
+A Bash command written across lines SHALL reach the same verdict as its one-line form.
+If the hook cannot read the command as a whole, and any strong rule refuses a path anywhere in the text, the hook SHALL refuse the command.
+No exemption applies.
 
 Serves: a-multi-line-command-is-read-line-by-line
 
-The hook judges the words of each segment, so a command the lexer reads across lines is judged by the same rules on the same words as its one-line form.
+The hook judges the words of each segment.
+So a command read across lines gets the same rules on the same words as its one-line form.
 A placeholder dotenv file read on one line of a multi-line command therefore proceeds as it does alone, and a write to it is refused as it is alone.
 
 A here-document is data, and names no file, only where `hook-tampering-blocking` `UnrecognizedCommandsAreGated` says so: where a recognized read or a named sink reads it.
 A secret-looking name inside a data body is therefore not refused.
-A body any other program reads is program text, and each piece of it SHALL be judged by the strong rules, as the text of a command the lexer cannot read is, because the hook does not know what that program does with it.
+If any other program reads the body, the body is program text.
+If any strong rule refuses a path anywhere in the body, the hook SHALL then refuse the command.
+The hook treats the body as it treats a command it cannot read, because it does not know what that program does with the body.
 
-Where the lexer cannot read a command, which it reports as a whole, the hook cannot tell what it reads, writes, or only mentions.
-Each piece of the text between shell syntax is then judged by the strong rules with no exemption, because the rules anchor at the end of a name, and judging the whole text would see only its last line.
+If the hook cannot read a command as a whole, it cannot tell what the command reads, writes, or only mentions.
+So no exemption applies.
 
 #### Scenario: ASecretReadOnAnyLineIsRefused
 
@@ -44,6 +49,6 @@ Each piece of the text between shell syntax is then judged by the strong rules w
 
 #### Scenario: UnreadableTextIsJudgedPieceByPiece
 
-- **GIVEN** a command the lexer reports as a whole as unresolvable
+- **GIVEN** a command that cannot be read as a whole, such as one with an unclosed quote
 - **WHEN** any piece of its text names a zero-access path, a placeholder included
 - **THEN** it is refused

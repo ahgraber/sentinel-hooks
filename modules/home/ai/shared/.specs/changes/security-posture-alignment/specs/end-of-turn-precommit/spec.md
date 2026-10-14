@@ -25,7 +25,6 @@ The system SHALL select the files the turn changed: each file whose content diff
 It SHALL exclude files the run cannot act on.
 Where no snapshot of the turn's start exists, it SHALL select every file the working tree presents as changed.
 A file changed before the turn is not the turn's to fix, and checking it can block a turn on work the agent did not do.
-Two cases fall outside the selection: in a repository with no commits, a file staged and then deleted is still selected, and a filename holding a newline is not read correctly.
 
 A file's tracking state does not determine whether a linter should see it; whether the file exists and is not ignored does.
 
@@ -75,7 +74,7 @@ A file's tracking state does not determine whether a linter should see it; wheth
 
 - **GIVEN** a repository with no `HEAD`
 - **WHEN** the turn ends
-- **THEN** the staged contents are the changed set
+- **THEN** the staged files and the untracked files are the changed set
 
 ### Requirement: NoWorkMeansNoRun
 

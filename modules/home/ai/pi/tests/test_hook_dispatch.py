@@ -12,6 +12,7 @@ import itertools
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from types import ModuleType
@@ -312,3 +313,55 @@ class TestSharedHooks:
         assert result.returncode == 2
         assert "'futureTool' has no declared mapping" in result.stderr
         assert "AI INSTRUCTIONS" in result.stderr
+
+    def test_a_read_of_a_suggestive_name_reaches_the_runner_as_an_ask(self, tmp_path) -> None:
+        """Validates: SuggestiveNamesAsk, through the dispatcher."""
+        result = run_dispatcher({"tool_name": "read", "cwd": str(tmp_path), "tool_input": {"path": "auth_token.json"}})
+        assert result.returncode == 0, result.stderr
+        reply = json.loads(result.stdout)["hookSpecificOutput"]
+        assert reply["permissionDecision"] == "ask"
+        assert "auth_token.json" in reply["permissionDecisionReason"]
+
+
+RULES_NAME = "block-destructive-ops-patterns.toml"
+INVALID_RULE = '[[rules]]\npattern = "invalid-rule"\ndescription = "Unknown mode"\nreason = "r"\nmode = "deny"\n'
+PATTERN_FILE_FAULTS = {
+    "missing": (None, RULES_NAME),
+    "unparsable": ("[[rules]\n", RULES_NAME),
+    "invalid rule": (INVALID_RULE, "invalid-rule"),
+}
+
+
+def _dispatcher_beside_rules(tmp_path: Path, rules: str | None) -> Path:
+    """Copy the dispatcher and the shared hooks into the layout it resolves, with `rules` as the pattern file.
+
+    `None` removes the pattern file. The real rules file is never touched.
+    """
+    hooks = tmp_path / "shared" / "hooks"
+    shutil.copytree(SHARED_HOOKS, hooks, ignore=shutil.ignore_patterns("__pycache__"))
+    if rules is None:
+        (hooks / RULES_NAME).unlink()
+    else:
+        (hooks / RULES_NAME).write_text(rules)
+    dispatcher = tmp_path / "pi" / "security" / DISPATCHER.name
+    dispatcher.parent.mkdir(parents=True)
+    shutil.copy(DISPATCHER, dispatcher)
+    return dispatcher
+
+
+@pytest.mark.parametrize(("rules", "named"), PATTERN_FILE_FAULTS.values(), ids=PATTERN_FILE_FAULTS.keys())
+@pytest.mark.parametrize("command", ["ls", "rm -rf build"])
+def test_a_pattern_file_fault_reaches_the_runner_as_an_ask_naming_the_fault(tmp_path, rules, named, command) -> None:
+    """Validates: ExternalPatternFile faults, through the dispatcher, whether or not the command is destructive."""
+    dispatcher = _dispatcher_beside_rules(tmp_path, rules)
+    result = subprocess.run(
+        [sys.executable, str(dispatcher)],
+        input=json.dumps({"tool_name": "bash", "cwd": str(tmp_path), "tool_input": {"command": command}}),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    reply = json.loads(result.stdout)["hookSpecificOutput"]
+    assert reply["permissionDecision"] == "ask"
+    assert named in reply["permissionDecisionReason"]

@@ -65,15 +65,24 @@ def test_vocabulary_declares_each_harness_mapping() -> None:
     assert [entry["tool"] for entry in vocabulary["passthrough"]["pi"]["tools"]] == [
         "find",
         "ls",
-        "subagent",
         "intercom",
         "contact_supervisor",
         "mcp__*",
+        "list_mcp_resources",
+        "list_mcp_resource_templates",
+        "read_mcp_resource",
         "tool_search",
         "codemode",
-        "subagent_wait",
+        "subagents_enable",
+        "bg_wait",
         "subagent_supervisor",
         "structured_output",
+    ]
+    assert [entry["tool"] for entry in vocabulary["refused"]["pi"]["tools"]] == [
+        "powershell",
+        "subagent",
+        "subagent_command",
+        "watchdog_diff",
     ]
 
 
@@ -89,7 +98,8 @@ def test_vocabulary_loader_exposes_groups_mappings_and_ask_support() -> None:
     assert vocabulary.normalize("pi", "write") == "Write"
     assert vocabulary.normalize("copilot", "unknownTool") is None
     assert vocabulary.supports_ask("copilot", "Write") is True
-    assert vocabulary.supports_ask("copilot", "Bash") is False
+    assert vocabulary.supports_ask("copilot", "Bash") is True
+    assert vocabulary.supports_ask("copilot", "Read") is False
     assert vocabulary.is_passthrough("copilot", "mcp_context7_query-docs") is True
     assert vocabulary.is_passthrough("copilot", "edit_files") is False
     assert vocabulary.normalize("copilot", "edit_files") is None

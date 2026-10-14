@@ -91,6 +91,31 @@ def test_assignment_tilde_expansion(lexer, shell_world, command):
     assert f"DEST={home}/notes" in [word.value for word in words]
 
 
+@pytest.mark.parametrize("prefix", ["~+", "~-", "~1", "~+1", "~-2"])
+def test_a_directory_stack_tilde_is_unresolvable(lexer, shell_world, prefix):
+    _, repository = shell_world
+    for word in (f"{prefix}/notes", prefix):
+        assert lexer.lex(f"cat {word}", str(repository))[0][1].kind == "unresolvable"
+
+
+def test_assignment_tilde_after_a_colon_expands(lexer, shell_world):
+    home, repository = shell_world
+    words = lexer.lex("DEST=/tmp:~/notes cat", str(repository))[0]
+    assert words[0].value == f"DEST=/tmp:{home}/notes"
+
+
+def test_assignment_directory_stack_tilde_is_unresolvable(lexer, shell_world):
+    _, repository = shell_world
+    for command in ("DEST=~+/notes cat", "DEST=/tmp:~-/notes cat"):
+        assert lexer.lex(command, str(repository))[0][0].kind == "unresolvable"
+
+
+def test_an_option_keeps_its_kind_where_an_entry_of_that_name_exists(lexer, shell_world):
+    _, repository = shell_world
+    (repository / "-n").touch()
+    assert lexer.lex("cat -n notes", str(repository))[0][1].kind == "option"
+
+
 def test_quoted_assignment_tilde_is_literal(lexer, shell_world):
     _, repository = shell_world
     words = lexer.lex("DEST='~/notes' cat", str(repository))[0]

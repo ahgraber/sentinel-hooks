@@ -13,12 +13,12 @@ A guarded location that one hook refuses and another permits is not guarded.
 
 A caller of this capability SHALL declare the locations it guards.
 
-A guarded location SHALL be declared once, in one form, and SHALL serve every use the caller makes of it.
-Where a caller both matches a path against a fragment and compares it against a resolved location, both SHALL derive from the same declaration.
+A guarded location SHALL be declared once.
+A change to that declaration SHALL change every judgment about the location, for shell text and for resolved paths, with no other edit.
 
 This exists to remove a failure mode that has occurred: the same location written twice, in two shapes, and one of the two updated when it moved.
 
-Every use a caller makes of a declaration SHALL derive from it, including any narrower rule that applies within a guarded location.
+The same SHALL hold for any narrower rule that applies within a guarded location: when the location changes, the rule SHALL move with it.
 A carve-out that restates the location it applies within is the same failure mode in a different layer.
 
 ### Requirement: RepositoryContainment

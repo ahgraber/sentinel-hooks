@@ -13,7 +13,10 @@ Serves: one-lexer, reads-are-frictionless
 This enforcement matters most on Linux, where the OS sandbox (bubblewrap) ignores glob deny rules such as `Read(**/.env)` and so does not stop a plain `cat ./project/.env`; on macOS the Seatbelt sandbox honors those globs.
 The hook makes read blocking uniform across platforms.
 
-The command SHALL be read through `shell-lexing`, so that quoting, escapes, and a word the shell would rewrite reach this hook resolved or reported, and never as written.
+This hook is a `shell-lexing` path hook.
+When a command uses quoting, escapes, or words the shell rewrites, the hook SHALL judge the words bash would produce.
+If the hook cannot work them out, it SHALL treat them as unresolvable.
+It SHALL NOT judge them as written.
 
 Where any word of a segment names a recognized read utility, every word in that segment SHALL be judged by the strong rules, whatever its kind: an extension, a credential directory, a key filename, a dotenv name, and a declared block path each name a file wherever they appear, so `-f.env`, `if=.env`, and `sudo -u root cat .env` all block.
 An unresolvable word SHALL be judged by the paths it holds.
@@ -98,5 +101,5 @@ Read-from-path forms in Bash include:
 #### Scenario: AZeroAccessPathInsideAnUnresolvableWord
 
 - **GIVEN** a Bash tool call is intercepted
-- **WHEN** a read command receives a word the lexer cannot resolve that holds a zero-access path
+- **WHEN** a read command receives an unresolvable word that holds a zero-access path
 - **THEN** the hook exits 2

@@ -17,6 +17,7 @@ def test_redundant_guarded_bases_preserve_equivalent_policies(name, child, opera
         manifest_path = Path(directory) / "manifest.toml"
         base = {
             "guarded": {"paths": ["/base/"]},
+            "enforcement-floor": {"paths": []},
             "block": {"paths": ["/base/private"]},
             "exec-through": {"paths": [f"/base/{name}/scripts/"]},
             "write-through": {"paths": [f"/base/{name}/notes/"]},
@@ -78,6 +79,7 @@ def test_every_symlink_hop_reaches_a_declared_target(depth, name):
 def test_manifest_order_cannot_widen_a_guarded_subdirectory(order, name):
     manifest = {
         "guarded": {"paths": list(order)},
+        "enforcement-floor": {"paths": []},
         "block": {"paths": []},
         "exec-through": {"paths": []},
         "write-through": {"paths": ["/base/"]},
@@ -109,6 +111,7 @@ class LinkRetargeting(RuleBasedStateMachine):
         self.policy = PathPolicy(
             {
                 "guarded": {"paths": [str(self.root / "guarded") + "/"]},
+                "enforcement-floor": {"paths": []},
                 "block": {"paths": [str(self.root / "blocked")]},
                 "exec-through": {"paths": []},
                 "write-through": {"paths": [str(self.root / "memory") + "/"]},

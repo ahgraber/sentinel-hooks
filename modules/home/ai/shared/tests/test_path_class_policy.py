@@ -250,7 +250,7 @@ def test_construction_does_not_walk_carve_out_contents(policy_world, monkeypatch
 def test_unknown_exception_surface_is_a_manifest_failure(policy_world, surface):
     """A retired surface fails as a misspelled one does, so no entry under it is silently ignored."""
     home, repo, manifest = policy_world
-    data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
+    data = {name: {"paths": []} for name in ("guarded", "enforcement-floor", "block", "exec-through", "write-through")}
     data["exceptions"] = [{"surface": surface, "pattern": "~/file", "reason": "test"}]
     with pytest.raises(guarded_paths.ManifestError, match="surface"):
         guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
@@ -259,7 +259,7 @@ def test_unknown_exception_surface_is_a_manifest_failure(policy_world, surface):
 def test_a_capability_coverage_exception_loads_and_changes_no_verdict(policy_world):
     """The assessment reads it; no path verdict does."""
     home, repo, manifest = policy_world
-    data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
+    data = {name: {"paths": []} for name in ("guarded", "enforcement-floor", "block", "exec-through", "write-through")}
     data["block"]["paths"] = ["~/file"]
     data["exceptions"] = [{"surface": "capability-coverage", "pattern": "~/file", "reason": "test"}]
     policy = guarded_paths.PathPolicy(data, home=str(home), repo_root=str(repo), manifest_path=manifest)
@@ -270,13 +270,31 @@ def test_real_manifest_validation_returns_diagnostics():
     assert guarded_paths.validate() == []
 
 
-@pytest.mark.parametrize("missing", ["guarded", "block", "exec-through", "write-through", "exceptions"])
+@pytest.mark.parametrize(
+    "missing", ["guarded", "enforcement-floor", "block", "exec-through", "write-through", "exceptions"]
+)
 def test_missing_table_diagnostic_identifies_only_missing_table(missing):
-    data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
+    data = {name: {"paths": []} for name in ("guarded", "enforcement-floor", "block", "exec-through", "write-through")}
     data["exceptions"] = []
     del data[missing]
     with pytest.raises(guarded_paths.ManifestError, match=f"missing tables: {missing}$"):
         guarded_paths.PathPolicy(data)
+
+
+@pytest.mark.parametrize(
+    ("declaration", "candidate", "covered"),
+    [
+        ("~/base/*/notes", "~/base/one/notes", True),
+        ("~/base/*/notes", "~/base/one/two/notes", False),
+        ("~/base/settings*.json", "~/base/settings.json", True),
+        ("~/base/settings*.json", "~/base/settings.local.json", True),
+        ("~/base/settings*.json", "~/base/sub/settings.json", False),
+        ("~/base/settings*.json", "~/base/settings/x.json", False),
+    ],
+)
+def test_a_glob_matches_any_run_of_characters_within_one_segment(policy_world, declaration, candidate, covered):
+    rules = policy(policy_world, guarded=[declaration], floor=[])
+    assert (rules.verdict(candidate, "write") == "guarded") is covered
 
 
 def test_exec_through_beneath_guarded(policy_world):

@@ -10,13 +10,13 @@ At the start of each agent turn, the hook SHALL record the current HEAD commit a
 
 - **GIVEN** a UserPromptSubmit event fires and the session working directory is within a git repository
 - **WHEN** the init stage runs
-- **THEN** a baseline file is written to the per-worktree git directory containing the current HEAD SHA
+- **THEN** the session baseline is the current HEAD
 
 #### Scenario: NonGitDirectory
 
 - **GIVEN** a UserPromptSubmit event fires and the session working directory is not within a git repository
 - **WHEN** the init stage runs
-- **THEN** no file is written and the hook exits 0 with no output
+- **THEN** no baseline is recorded, and the hook exits 0 with no output
 
 ### Requirement: DriftWarning
 
@@ -58,7 +58,7 @@ After any agent-run Bash command completes, the session baseline SHALL reflect t
 
 - **GIVEN** a Bash tool call completes in a session whose working directory is within a git repository
 - **WHEN** the update stage runs
-- **THEN** the baseline file is overwritten with the current HEAD SHA
+- **THEN** the session baseline is the current HEAD
 
 ### Requirement: BaselineScoping
 
@@ -68,39 +68,40 @@ The session baseline SHALL be scoped to a single session within a single worktre
 
 - **GIVEN** a single agent session is active
 - **WHEN** the init, check, and update stages run within that session
-- **THEN** all stages read and write the same baseline file
+- **THEN** the check and update stages see the baseline that session recorded
 
 #### Scenario: ConcurrentSessions
 
 - **GIVEN** two agent sessions with different session IDs are active in the same worktree simultaneously
 - **WHEN** each session's init stage writes its baseline
-- **THEN** each session writes to a distinct file and neither session's baseline read is affected by the other's write
+- **THEN** neither session's baseline is affected by the other's
 
 #### Scenario: ConcurrentWorktrees
 
 - **GIVEN** two git worktrees of the same repository each have an active agent session
 - **WHEN** each session's init stage writes its baseline
-- **THEN** each session writes to a path within its own worktree's git directory, and the two files are at distinct paths
+- **THEN** neither session's baseline is affected by the other's
 
 ### Requirement: SessionIdSafety
 
-The baseline filename SHALL be safe for use as a filesystem path component regardless of the characters present in the session ID.
+Whatever characters the session ID holds, the hook SHALL record the session's baseline inside its worktree's git directory.
+The hook SHALL NOT create or overwrite any file outside that directory.
 
 #### Scenario: AlphanumericId
 
 - **GIVEN** a session ID consisting only of alphanumeric characters and dashes
-- **WHEN** the baseline file path is constructed
-- **THEN** the session ID is used as-is in the filename
+- **WHEN** the init stage runs
+- **THEN** the baseline is recorded, distinct from every other session's baseline
 
 #### Scenario: SpecialCharId
 
 - **GIVEN** a session ID containing characters outside the alphanumeric-and-dash set
-- **WHEN** the baseline file path is constructed
-- **THEN** each such character is replaced with a dash before the filename is constructed
+- **WHEN** the init stage runs
+- **THEN** the baseline is recorded within the worktree's git directory, and no file outside it is created or overwritten
 
 ### Requirement: FailSilent
 
-The hook SHALL exit 0 and emit no output when the working directory is not a git repository, when no session baseline file exists, or when any internal error occurs.
+The hook SHALL exit 0 and emit no output when the working directory is not a git repository, when no baseline is recorded for the session, or when any internal error occurs.
 
 #### Scenario: NonGitDirectory
 
@@ -110,7 +111,7 @@ The hook SHALL exit 0 and emit no output when the working directory is not a git
 
 #### Scenario: NoBaseline
 
-- **GIVEN** the check or update stage runs and no baseline file exists for the current session
+- **GIVEN** the check or update stage runs and no baseline is recorded for the current session
 - **WHEN** the stage executes
 - **THEN** the hook exits 0 with no stdout or stderr output
 

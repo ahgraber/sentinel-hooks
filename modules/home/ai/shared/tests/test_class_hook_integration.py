@@ -63,6 +63,11 @@ def test_sensitive_relative_path_does_not_use_process_cwd(tmp_path, monkeypatch)
         ("Bash", "curl -o~/base/file https://example.invalid", "ask"),
         ("Bash", 'T=~/base/file; rm "$T"', "ask"),
         ("Bash", "rm '~/base/file'", "allow"),
+        # Bash expands these from the directory stack, which the hook does not know.
+        ("Bash", "cd ~; echo hi > ~+/base/file", "ask"),
+        ("Bash", "cd ~; rm -rf ~+/base", "ask"),
+        ("Bash", "echo hi > ~-/base/file", "ask"),
+        ("Bash", "echo hi > ~1/base/file", "ask"),
         ("Bash", "rm ~/base/file", "ask"),
         ("Bash", "mv /tmp/source ~/base/absent*", "ask"),
         ("Bash", "cat /tmp/backup/base/private", "allow"),

@@ -41,7 +41,8 @@ A program that renders a secret file is named for the file it renders, and a gua
 The strong rules are unaffected, because each recognizes a shape rather than a word.
 
 The exception is declared rather than written into the rule so that the reason travels with it, which is what this module already requires of every loosening.
-An entry no implementation reads records an intention and changes nothing, so each implementation SHALL build its exemption from the declaration.
+A declared exception that no implementation applies records an intention but has no effect.
+So a declared exception SHALL take effect in every implementation, with no other edit.
 
 Judging one spelling at a time is what keeps the exemption with the file it was written for.
 A link whose own name triggers the heuristic SHALL be refused even where its target is excused.
@@ -70,7 +71,8 @@ Serves: placeholder-files-are-readable
 
 A read of a file the dotenv rule refuses SHALL proceed only where the manifest declares an exception for the dotenv surface whose file name matches the file's name, without regard to case.
 Such an exception SHALL excuse reads only; a write SHALL still be refused.
-The exception SHALL be judged against every form `path-matching` produces, so a link named for a placeholder whose target the dotenv rule refuses is refused.
+The exception SHALL allow a read only if every spelling of the path carries a declared name: the path as written, and each path its links resolve through.
+So a link with a placeholder name is refused if the dotenv rule refuses its target.
 
 A project commits a file such as `.env.example` to list the variables it expects, with placeholder values.
 The dotenv rule recognizes `.env` followed by any suffix, so it refuses these files along with `.env.local` and `.env.production`, which hold live values.
@@ -117,7 +119,7 @@ A refusal any other rule makes SHALL keep the stop form, including a placeholder
 
 - **GIVEN** the declared placeholder names
 - **WHEN** a shell command reads `.env.*`
-- **THEN** the read proceeds where every current match is a declared placeholder, and is refused where a match is a refused name or nothing matches, because the glob is judged by its matches as `shell-lexing` reads it
+- **THEN** the read proceeds only if every current match is a declared placeholder; if any match is a refused name, or nothing matches, the read is refused
 
 #### Scenario: PlaceholderReadThroughARedirection
 
@@ -138,7 +140,7 @@ Serves: placeholder-files-are-readable, existing-guarantees-are-recorded
 A `Read`, `Write`, `Edit`, or `apply_patch` call SHALL reach `Ask` when a spelling of a target path it names is suggestive and no rule in this capability refuses the target.
 A name is suggestive when its basename contains `token`, `password`, `passwd`, `api_key`, `api-key`, `apikey`, `auth_key`, or `credential`, or ends in `.keystore` or `.jks`, matched without regard to letter case.
 The package-directory exemption and the declared name-heuristic exceptions SHALL excuse a suggestive name exactly as they excuse the name heuristic.
-A file named `.credentials.json` SHALL reach `Ask` inside a package directory too, where the exemption would otherwise let an OAuth credential store through.
+A name that identifies a credential store rather than suggesting one, such as `.credentials.json`, SHALL reach `Ask` inside a package directory too.
 
 These names suggest a credential without proving one, so the user decides rather than the hook refusing.
 They sit in this capability because it owns the judgment of which paths hold credentials, and it reads the manifest: one declaration then holds for every rule.
@@ -195,7 +197,8 @@ The following are OUT OF SCOPE and SHALL NOT be relied upon:
 - Symlink indirection (`ln -s <secret> link`, then reading `link`)
 - A recursive read of a directory holding a secret (`grep -r x ~`, `rg --hidden x ~`, `tar -c ~`, `cp -r ~/.config dest`), which reaches the files beneath the directory without naming them
 
-For these, the boundary is the OS sandbox's denies, which `guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds to the block class on every agent, the network egress allowlist, and `block-leaks.py`.
+For these forms, three other layers are the boundary: the OS sandbox's denies, the network egress allowlist, and `secret-access-blocking`.
+`guarded-path-declarations` `ConfigurationSurfacesCoverTheDeclarations` holds the sandbox denies to the block class on every agent.
 A secret only the name rules recognize, such as a `.env` file, has no declaration for that floor to cover, so on an agent whose sandbox does not deny it by name, these forms reach it.
 
 #### Scenario: RecursiveReadOfADeclaredCredential

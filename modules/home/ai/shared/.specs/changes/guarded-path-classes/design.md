@@ -267,6 +267,25 @@ A relative path joined onto a directory keeps its `..`, because `cd link && cat 
 A union of every directory any `cd` named was considered and rejected: it gates `cd /tmp && tar -xf archive.tar` by judging the extraction in the starting directory too.
 `shell-lexing` `EachSegmentCarriesTheDirectoriesItMayRunIn` states the rule, and the probe that checked it recorded 64 runs against bash with none outside the predicted set.
 
+### Decision: TheLexerResolvesHomeAndPartlyQuotedGlobs
+
+**Chosen:** a leading `$HOME` or `${HOME}`, quoted or not, resolves to the home the hook runs under, as a leading `~` does, until a command assigns `HOME`.
+A glob expands unless a glob character sits inside quotes or after a backslash; quotes around literal text in the word do not stop it.
+
+**Rationale:** both forms reached a file the hooks never saw.
+A substitution is unresolvable, and an unresolvable word is judged by the text it holds, so `cat "$HOME"/.config/*` named no file the name rules recognize.
+`$HOME` is the one variable whose value the hook knows to equal bash's, so resolving it judges the file bash opens.
+The read property in `security-posture-alignment` found the first form; the user chose to resolve `$HOME` on 2026-10-04.
+
+`cat ~/.config/"mcp"*` was allowed and printed `mcp-secrets.env`, because a partly quoted word was never expanded.
+Bash expands it, because the quotes cover only literal text, so the lexer now does what bash does and the name rules see each match.
+A review requested by the user on 2026-10-05 found it; the user chose the fix that day.
+
+**Alternatives considered:**
+
+- Leave both unresolvable: the paths inside are judged only by their text, and a glob's matches are not seen at all.
+- Resolve every variable from the hook's environment: the agent's shell loads a profile the hook does not, so most values would differ from bash's.
+
 ### Decision: EnforcementCarveOutsAreInert
 
 **Chosen:** the guard derives an enforcement floor independently of manifest declarations from its implementation and launch locations and known harness enforcement locations, including project-local permission settings and repository sources.
@@ -286,6 +305,8 @@ Deriving part of the floor from declared paths ending in `hooks` was tried and r
 - Treat it as a load failure: under `AnUnloadableManifestAsksOnMutatingTools` every mutating call would ask for a declaration that has no effect, which is disproportionate to a defect the tests already keep out of the tree.
 - Report every overlap at session start: the noisier option, rejected for the reason above.
 - Discover hook directories from the filesystem, for example every `hooks/` directory under the agent module tree: deferred, because a glob written for this repository's layout pins the floor to it, and the generic rule is not yet known.
+
+Superseded in part by `TheFloorIsDeclaredInTheManifest`: the floor's locations moved from the code-held lists to the manifest's `[enforcement-floor]` table.
 
 ### Decision: AnUnloadableManifestAsksOnMutatingTools
 
@@ -452,6 +473,95 @@ An exception is a gap in a check, and a gap that excuses nothing keeps only its 
 **Alternatives considered:**
 
 - Keep the surface with no entry: ready for a future hook named with a heuristic word, at the cost of code and a spec clause that excuse nothing today.
+
+### Decision: EveryEditorHookSourceIsEnforcement
+
+**Chosen:** `<project>/.github/hooks/`, `~/.agents/hooks/`, and `~/.vscode/agent-plugins/` join the enforcement floor.
+
+**Rationale:** the editor loads hooks from all three, and the 2026-10-11 assessment found none of them in the floor, so an agent could write a hook the editor then runs.
+`.github/hooks/` sits in every project, so it follows the project permission files: judged relative to the working directory and every directory above it, not as a name.
+Plugin hooks load from `~/.vscode/agent-plugins/` whatever `chat.hookFilesLocations` says.
+The user chose on 2026-10-11 to guard these sources rather than turn them off, keeping project-shipped hooks and plugins.
+
+**Alternatives considered:**
+
+- Turn the sources off in the editor settings: closes the route, and drops every project's own Copilot hooks and every plugin.
+
+### Decision: TheFloorIsDeclaredInTheManifest
+
+**Chosen:** the manifest declares the enforcement floor in an `[enforcement-floor]` table, which replaces the code-held lists `HOOK_DIRECTORIES`, `PERMISSION_FILES`, and `PROJECT_PERMISSION_FILES`.
+A `<project>/` anchor, valid in that table alone, stands for the working directory and every directory above it.
+The manifest itself, the running hook's directory, and the launcher's directory stay in the floor from code.
+Guarded entries that a floor entry covers are removed.
+Instruction text inside a floor directory, which the floor leaves out, is guarded where no declaration covers it.
+
+**Rationale:** the user chose on 2026-10-11 to read the whole path policy in one file.
+Weakening the floor takes one approved edit either way, because the manifest and `guarded_paths.py` are both in the floor.
+The guard's own locations stay in code, so no manifest edit removes the ask on the manifest.
+A dedicated table keeps `EquivalentPoliciesReachEqualVerdicts`: no floor entry is inferred from how a guarded entry is spelled, which is what failed when the floor was derived from declared paths ending in `hooks`.
+An unloadable manifest loses the declared floor, but under `AnUnloadableManifestAsksOnMutatingTools` every mutating call then asks.
+The fallback for uncovered instruction text keeps the ask that the removed guarded entries gave it, without letting a floor entry outrank a broad grant, which `BroadGrantPreservesContentPermission` requires.
+
+The cost: the manifest is the file an operator edits to add grants, so a removed floor line can pass inside a routine edit more easily than a change to Python the operator rarely edits.
+
+**Alternatives considered:**
+
+- Keep the lists in code: the policy reads in two files, and most floor paths are listed twice.
+- Declare each floor entry guarded as well: a floor directory then outranks a broader grant for the instruction text inside it.
+
+### Decision: TheRepositorySkillsSourceIsRunnable
+
+**Chosen:** `<repo>/modules/home/ai/shared/skills/` is declared exec-through.
+
+**Rationale:** `skills.nix` links each skill there into the checkout's own skills directories, so an unprompted edit there changes a skill an agent loads in this repository.
+The user chose on 2026-10-11 to treat it as the installed skills roots are treated: writes ask, and a skill's own scripts run.
+
+**Alternatives considered:**
+
+- Guarded: writes ask, and a skill's scripts ask too, unlike every installed skill.
+- Undeclared: edits to the skills that assess this repository's guardrails proceed with no prompt.
+
+### Decision: TheSingleSourceIsStatedAsAnOutcome
+
+**Chosen:** `SingleDeclarationSource` requires that a change to the manifest change the verdict of every enforcement implementation, with no edit to any implementation.
+The scenario `TwoImplementationsOneSource` is removed; `AddedPathReachesEveryConsumer` is the evidence.
+
+**Rationale:** "Take these declarations from the manifest rather than carrying a copy" names how an implementation obtains its declarations.
+A copy built from the manifest at build time would meet the outcome but break that sentence.
+No operator could tell the two apart.
+The removed scenario checked that two implementations in different languages read the same declarations.
+Only the Python hooks read `guarded-paths.toml`, and Pi runs those same hooks.
+The user chose on 2026-10-11 to state the outcome.
+
+**Alternatives considered:**
+
+- Keep the ban on a copy: the spec then changes whenever implementations change how they load the manifest, even when no verdict changes.
+
+### Decision: AGlobMatchesWithinOneSegment
+
+**Chosen:** `OneGlobForm` states that `*` matches any run of characters within one path segment, including none, and never a `/`.
+
+**Rationale:** the 2026-10-12 verify run found the requirement said `*` matches exactly one whole segment, while the matcher fills `*` with characters inside a segment.
+Floor entries such as `~/.claude/settings*.json` depend on that: one entry covers `settings.json` and `settings.local.json`.
+A whole-segment `*`, as in `<repo>/users/*/home-manager/`, is the case where the run is the entire segment.
+The user chose on 2026-10-12 to state the matcher's behavior.
+
+**Alternatives considered:**
+
+- Match whole segments only: every partial-segment entry would become a list of exact names, and a settings layer added later would be outside the floor until listed.
+
+### Decision: SpecTextStatesOutcomes
+
+**Chosen:** requirement text states the outcome a requirement guarantees, not the internal route that produces it.
+On 2026-10-11 `guarded-path-declarations` dropped a reference to another change's name.
+On 2026-10-12 `shell-lexing`, `path-matching`, `hook-tampering-blocking`, `sensitive-path-blocking`, and `session-tool-checks` were reworded this way, and two requirements were renamed for what they guarantee: `OneLexerForEveryHook` became `OneReadingForEveryHook`, and `LexingIsTotal` became `EveryCommandReachesAVerdict`.
+
+**Rationale:** a sentence that names the lexer, a script, or a storage path has to change for a refactor that changes no verdict, and a requirement named for a module stops describing the guarantee once the module is restructured.
+The user approved each rewording on the day it was made.
+
+**Alternatives considered:**
+
+- Keep the route-naming text and names: each refactor reopens the spec.
 
 ## Architecture
 

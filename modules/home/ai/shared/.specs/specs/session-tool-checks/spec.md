@@ -25,7 +25,7 @@ The system SHALL check that `uv` is available on `PATH` at session start.
 ### Requirement: JqAvailability
 
 The system SHALL check that `jq` is available on `PATH` at session start.
-`jq` is required by bash-based hooks (`block-dangerous-bash.sh`, `bash-command-validator.sh`) for JSON input parsing.
+The security hooks require `jq`.
 
 #### Scenario: JqPresent
 
@@ -42,7 +42,7 @@ The system SHALL check that `jq` is available on `PATH` at session start.
 ### Requirement: PerlAvailability
 
 The system SHALL check that `perl` is available on `PATH` at session start.
-`perl` is required by `block-dangerous-bash.sh` for PCRE pattern matching.
+The security hooks require `perl`.
 
 #### Scenario: PerlPresent
 
@@ -59,7 +59,7 @@ The system SHALL check that `perl` is available on `PATH` at session start.
 ### Requirement: GitleaksAvailability
 
 The system SHALL check that `gitleaks` is available on `PATH` at session start.
-Gitleaks is the primary secret detection engine for `secret-access-blocking`.
+Without gitleaks, `secret-access-blocking` detects fewer secret formats in network sends.
 
 #### Scenario: GitleaksPresent
 
@@ -71,26 +71,10 @@ Gitleaks is the primary secret detection engine for `secret-access-blocking`.
 
 - **GIVEN** a new session starts
 - **WHEN** `gitleaks` is not found on `PATH`
-- **THEN** the hook prints a warning to stderr and exits 0 (session proceeds; secret detection falls back to built-in patterns with reduced coverage)
+- **THEN** the hook prints a warning to stderr and exits 0 (session proceeds)
 
 ### Requirement: ChecksAreIndependent
 
 Each tool check SHALL be evaluated independently.
 A missing optional tool SHALL NOT prevent the session from starting if no hook requires it.
 A missing required tool SHALL block the session with a clear message identifying the tool and install instructions.
-
-### Requirement: ToolRegistrationPattern
-
-The system SHALL define tool checks using `require_tool` and `recommend_tool` registration functions that co-locate each tool's name and install hint as a single declaration.
-
-```bash
-require_tool()   { required_tools+=("$1" "$2"); }    # name, install_hint
-recommend_tool() { recommended_tools+=("$1" "$2"); } # name, install_hint
-```
-
-Required tools SHALL be registered with `require_tool`.
-Recommended tools SHALL be registered with `recommend_tool`.
-
-All registered checks SHALL be evaluated by two loops at the bottom of the script — one for required tools (exits 2 on missing) and one for recommended tools (warns, exits 0).
-
-Repeated `if ! command -v <tool> >/dev/null` blocks are NOT permitted.

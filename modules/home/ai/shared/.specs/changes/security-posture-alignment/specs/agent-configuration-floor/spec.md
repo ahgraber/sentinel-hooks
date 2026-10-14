@@ -14,11 +14,12 @@ A single configuration value can remove that boundary for a whole session, and t
 The forbidden values are configuration identifiers the agents publish, so they are named here rather than described: a Claude `defaultMode` of `bypassPermissions`, a Codex `sandbox_mode` of `danger-full-access`, the Codex `danger-full-access` permission profile, and `features.hooks = false`.
 
 A sandbox also carries values that keep it enabled while letting the agent past it, and those are forbidden on the same grounds: a sandbox the agent can decline is not a boundary.
-In the editor surface these are `chat.agent.sandbox.allowAutoApprove`, which drops the approval prompt for any command the sandbox accepts; `chat.agent.sandbox.allowUnsandboxedCommands`, which lets a command the sandbox refused run outside it; `chat.agent.sandbox.retryWithAllowNetworkRequests`, which retries a refused command with wider network reach; an `enableWeakerNestedSandbox` of `true` in `chat.agent.sandbox.advanced.runtime`; and `chat.experimental.permissionsSandboxToggle.enabled`, which puts a switch in the permissions picker that turns the sandbox off for a session.
+In the editor surface these are `chat.agent.sandbox.allowUnsandboxedCommands`, which lets a command the sandbox refused run outside it; `chat.agent.sandbox.retryWithAllowNetworkRequests`, which retries a refused command with wider network reach; and an `enableWeakerNestedSandbox` of `true` in `chat.agent.sandbox.advanced.runtime`.
 Most default to permissive, so the floor is expressed against the default rather than against a value somebody chose.
 In Pi's sandbox extension the values are an `enabled` of `false`, which turns the sandbox off; an `ignoreViolations` entry, which lets the named violations through; and an `enableWeakerNestedSandbox` of `true`, which weakens the sandbox's isolation.
 
-The editor also carries approval bypasses of its own, apart from the sandbox: `chat.tools.global.autoApprove`, which its documentation says "disables critical security protections"; a `chat.permissions.default` of `autoApprove` or `autopilot`, which starts every new session without approval prompts; `chat.tools.terminal.enableAutoApprove`, which lets the rule table approve terminal commands and defaults to permissive; a `chat.defaultConfiguration` whose `approvals` is `assisted`, which lets a model approve calls in the user's place, or `allowAll`, or whose `mode` is `autopilot`; a `chat.tools.edits.autoApprove` entry this repository declares that approves every path; a `chat.hookFilesLocations` that does not load the hooks directory this repository deploys; and a `chat.useHooks` of `false`, which stops the editor running any hook.
+The editor also carries values, apart from the sandbox, that let a call proceed past the permission layer with no prompt from the user, or stop the deployed hooks from loading or running.
+They are forbidden by the first sentence of this requirement whether or not they are listed; the editor carries these today: `chat.tools.global.autoApprove`, which its documentation says "disables critical security protections"; a `chat.permissions.default` of `autoApprove` or `autopilot`, which starts every new session without approval prompts; `chat.tools.terminal.enableAutoApprove`, which lets the rule table approve terminal commands and defaults to permissive; a `chat.defaultConfiguration` whose `approvals` is `assisted`, which lets a model approve calls in the user's place, or `allowAll`, or whose `mode` is `autopilot`; a `chat.tools.edits.autoApprove` entry this repository declares that approves every path; a `chat.hookFilesLocations` that does not load the hooks directory this repository deploys; and a `chat.useHooks` of `false`, which stops the editor running any hook.
 The editor's own default for `chat.tools.edits.autoApprove` approves every path in the workspace, and that default is not a bypass.
 An edit in the workspace is ordinary recoverable work, and the hooks put a guardrail edit to the user; the `false` entries this repository declares for guardrail paths add a second prompt, not a floor.
 The last two are the editor's `features.hooks = false`: `chat.hookFilesLocations` decides which hook files load, and `chat.useHooks` decides whether what is loaded runs.
@@ -94,8 +95,8 @@ Serves: posture-floor-is-enforced
 
 Every directory that holds a hook an agent's configuration registers SHALL lie inside the enforcement floor that `guarded-path-declarations` defines, both where the agent runs the hook and where a deployed link to it resolves in the repository.
 
-The hooks name the hook directories of their floor in code rather than discover them, because no rule is known that finds hook directories without depending on one repository's layout.
-A directory missing from that list is outside the floor, so a manifest exception that covers it lets an agent edit a hook it runs without a prompt.
+The manifest names the hook directories of the floor rather than the hooks discovering them, because no rule is known that finds hook directories without depending on one repository's layout.
+A directory missing from the floor is outside it, so a grant that covers it lets an agent edit a hook it runs without a prompt.
 The registrations are the one record of which hooks an agent runs, and they are vendor configuration, so the assessment compares them with the floor rather than a hook reading them.
 
 #### Scenario: RegisteredHookInsideTheFloor
@@ -121,6 +122,34 @@ The registrations are the one record of which hooks an agent runs, and they are 
 - **GIVEN** an agent that runs the shared hooks through an adapter or a dispatcher
 - **WHEN** the configuration is assessed
 - **THEN** the adapter or dispatcher and every hook it runs are judged as registered hooks
+
+### Requirement: RegistrationsRouteTheVocabulary
+
+Serves: every-agent-carries-the-policy
+
+Each hook an agent's configuration registers SHALL receive every call whose tool name the tool vocabulary maps onto a tool that hook judges.
+
+A registration selects calls by the agent's own tool names before any hook runs.
+A spelling the vocabulary gains reaches a hook only if the registration routes it there, so a hook can be correct about a tool it never sees.
+The registrations are vendor configuration, so the assessment compares them with the vocabulary rather than a test reading them.
+
+#### Scenario: RegistrationRoutesEveryMappedSpelling
+
+- **GIVEN** a hook that judges a tool, and an agent whose vocabulary maps several spellings onto that tool
+- **WHEN** the configuration is assessed
+- **THEN** the assessment passes only if the agent's registration sends a call under each spelling to that hook
+
+#### Scenario: SpellingTheRegistrationMisses
+
+- **GIVEN** a spelling the vocabulary maps onto a tool a hook judges, which the agent's registration does not route to that hook
+- **WHEN** the configuration is assessed
+- **THEN** the assessment fails, naming the spelling, the hook, and the registration
+
+#### Scenario: RoutingThroughAnAdapter
+
+- **GIVEN** an agent whose adapter or dispatcher decides which hooks a call reaches
+- **WHEN** the configuration is assessed
+- **THEN** the adapter's or dispatcher's routing is judged as the registration
 
 ### Requirement: GuardrailEditsRouteToTheUser
 
@@ -160,7 +189,7 @@ Serves: every-agent-carries-the-policy
 For any user this repository configures for more than one agent, the set of hosts those agents reach without asking SHALL be the same across them.
 
 The allowlists live in different files in different notation, so drift is invisible from either side alone.
-For the editor, the host set is `chat.agent.allowedNetworkDomains`, which its sandbox applies to terminal commands, together with every host `chat.tools.urls.autoApprove` lets the fetch tool reach without asking; an empty list under an enabled sandbox reaches no host at all.
+For the editor, the host set is `chat.agent.sandbox.network.allowedDomains`, which its sandbox applies to terminal commands, together with every host `chat.tools.urls.autoApprove` lets the fetch tool reach without asking; an empty list under an enabled sandbox reaches no host at all.
 Its effect is that the same fetch proceeds under one agent and stops for approval under another, which reads as a broken tool rather than as a policy difference, and the usual repair is to widen whichever list is narrower.
 
 Parity is asserted per user, not across the repository.

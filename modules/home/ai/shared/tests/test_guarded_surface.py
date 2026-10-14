@@ -87,7 +87,8 @@ def surface(tmp_path, monkeypatch):
 
 
 def representative(declaration, home, repo):
-    path = declaration.replace("~/", str(home) + "/", 1).replace("<repo>/", str(repo) + "/", 1)
+    path = declaration.replace("~/", str(home) + "/", 1)
+    path = path.replace("<repo>/", str(repo) + "/", 1).replace("<project>/", str(repo) + "/", 1)
     path = path.replace("*", "example")
     return path + "example.txt" if path.endswith("/") else path
 
@@ -96,7 +97,7 @@ def representative(declaration, home, repo):
     ("class_name", "declaration"),
     [
         (name, path)
-        for name in ("guarded", "block", "exec-through", "write-through")
+        for name in ("guarded", "enforcement-floor", "block", "exec-through", "write-through")
         for path in MANIFEST[name]["paths"]
     ],
 )

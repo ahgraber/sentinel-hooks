@@ -73,8 +73,15 @@ The outcome is the one `guarded-path-declarations` `PrecedenceIsOneRule` assigns
 - **Write-through** — the mutation proceeds, per `WriteThroughLocationsAreWritable`.
 
 This covers direct file writes, patch application, and shell commands.
-A shell command SHALL be judged by the paths it names, because a command is capable of every mutation a file tool is, and the paths it names are the words `shell-lexing` resolves, the paths held inside the words it cannot, and the paths written inside program text a segment's program executes: an interpreter's inline code, an argument of `eval`, executable Git configuration such as `core.pager` or an `alias` beginning with `!`, and text piped from `echo` or `printf` into a shell.
-Program text is a word bash passes whole, so the location check sees one path that leads nowhere; the paths inside it are found by the text check, as `path-matching` `TextMatchingIsForTextThatMayHoldNoPath` permits for a word the caller knows a program will execute.
+A shell command SHALL be judged by the paths it names, because a command can make every change a file tool can.
+The paths a command names are:
+
+- each path its words resolve to when bash expands them
+- each path written inside a word whose expansion cannot be determined
+- each path written inside program text that a segment's program runs: an interpreter's inline code, an argument of `eval`, executable Git configuration such as `core.pager` or an `alias` that begins with `!`, and text piped from `echo` or `printf` into a shell
+
+Bash passes program text as one word, and that word names no real file.
+So the hook searches the program text for paths and judges them by their text, as `path-matching` `TextMatchingIsForTextThatMayHoldNoPath` permits for a word a program will run.
 A command naming paths in more than one class SHALL receive the most restrictive outcome among them.
 
 A shell command recognized as a read, or as a run of a program held in an exec-through location, is the exception, and SHALL be judged by `UnrecognizedCommandsAreGated` instead.
@@ -202,7 +209,7 @@ Serves: reads-are-frictionless, skill-scripts-run
 One path in a block location SHALL refuse the whole command, whatever the rest of it does.
 One path outside every exec-through location SHALL gate a run, whatever the rest of it does.
 
-Recognition SHALL rest on the command text alone, as `shell-lexing` reads it.
+Recognition SHALL rest on the command text alone, read as `shell-lexing` requires every path hook to read it.
 A command whose effect that text does not show SHALL NOT be recognized, because the classifier cannot judge what it cannot see: a redirection, an unresolvable word, an assignment that picks which binary runs, program text handed to an interpreter, or a relative path after a change of directory.
 
 A command with any segment whose program executes text it receives SHALL NOT be recognized, whatever its other segments do: `xargs`, `eval`, an interpreter given inline code, or a shell reading its standard input.

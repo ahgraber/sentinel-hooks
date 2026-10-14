@@ -8,12 +8,15 @@ At session start under Claude, the system SHALL warn where the tool shell is not
 
 Serves: one-lexer
 
-`shell-lexing` reads a command the way bash does, and its evidence is a differential property against a real bash.
-A session whose tool shell is another shell runs commands the lexer never modelled.
+`shell-lexing` requires path hooks to read a command as bash reads it.
+The evidence is a differential test against a real bash.
+If the agent runs commands in a shell other than bash, the hooks can misread them.
 Claude selects its tool shell from the login shell unless `CLAUDE_CODE_SHELL` names another, so the pin is that variable naming a bash, delivered by the settings file every launcher reads.
 
 The check warns rather than blocks.
-The lexer refuses what it cannot resolve, so a divergent shell costs prompts rather than misses, and blocking every session on a settings edit would stop the session in which the operator makes it.
+A path hook treats what it cannot resolve as unresolvable.
+So a different shell causes extra prompts, not missed checks.
+Blocking every session until the operator edits the setting would also block the session in which the operator makes that edit.
 
 No check applies under another agent.
 Codex runs bash by construction, and Copilot's shell follows the editor's terminal profile, which no setting of this module controls; the assumption is recorded as a limit there.

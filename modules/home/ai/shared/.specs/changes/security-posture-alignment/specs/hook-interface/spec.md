@@ -27,8 +27,7 @@ Blocking a read on a hook crash is unnecessarily disruptive.
 A hook registered for both SHALL choose the direction by the tool named in the payload rather than by its registration.
 Where the payload does not name a tool — it did not parse, or naming the tool was itself the step that failed — the read-only direction applies, because a hook covering reads cannot refuse what it cannot identify.
 
-The failure path SHALL NOT repeat a step that has already failed.
-Naming the invoking agent is such a step, so it is recorded as the call is read rather than recomputed once the call has gone wrong.
+If any step fails, including the step that identifies the invoking agent, the hook SHALL still reach the decision this requirement assigns to a failure.
 
 This guarantee is conditional.
 It holds only for errors the hook reaches and handles.
@@ -167,9 +166,7 @@ A block whose message names commands the hook accepts SHALL use the retry form.
 The hook matched no rule against the operation itself; it refused a command the classifier could not check.
 The listed commands are the ones it can check, so forbidding them would contradict the same message, which lists the commands that work and then bars them.
 
-The retry form SHALL state why the call stopped, and SHALL quote the words that introduce the list.
-"Not recognized" repeats the explanation above it and gives the agent no next step.
-A pointer that says only "above" leaves the agent searching a paragraph of prose for the list.
+The retry form SHALL state why the call stopped and point to the list by the words that introduce it.
 
 The retry form is shared by every hook that refuses a command its classifier could not check, so it SHALL state nothing that holds for one hook alone.
 What a write would need differs by hook: the tamper hook puts a write to its user, and the sensitive-path hook refuses one.

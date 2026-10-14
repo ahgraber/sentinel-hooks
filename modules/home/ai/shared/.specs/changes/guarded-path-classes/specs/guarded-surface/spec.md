@@ -41,7 +41,7 @@ Both are enforcement for the agent that runs inside the editor.
 
 ### Requirement: RepositorySourcesAreGuarded
 
-The manifest SHALL declare guarded, by enumeration, each repository location the deployed enforcement resolves to: every user's agent configuration sources, each agent's hook directory, the Codex rules, the Pi security extension, and the editor settings source.
+The manifest SHALL declare guarded or in the enforcement floor, by enumeration, each repository location the deployed enforcement resolves to: every user's agent configuration sources, each agent's hook directory, the Codex rules, the Pi security extension, and the editor settings source.
 
 Serves: posture-and-mechanism-are-separate
 
@@ -100,13 +100,14 @@ The MCP environment file holds the API keys the MCP servers start with, and its 
 
 ### Requirement: SkillsRootsAreRunnable
 
-The manifest SHALL declare exec-through each skills root an agent loads: `~/.claude/skills/`, `~/.codex/skills/`, `~/.pi/agent/skills/`, and `~/.agents/skills/`.
+The manifest SHALL declare exec-through each skills root an agent loads: `~/.claude/skills/`, `~/.codex/skills/`, `~/.pi/agent/skills/`, `~/.agents/skills/`, and this repository's skills source, `<repo>/modules/home/ai/shared/skills/`.
 
 Serves: skill-scripts-run
 
 A skill ships helper scripts and tells the agent to run them by path.
 The skill was installed by the user, writes to it still ask, and the sandbox and permission layers still gate what the script touches, so the run itself carries no risk a prompt would address.
 `~/.agents/skills/` is declared because the per-agent roots hold links into it, and a declaration does not follow the links inside the directory it names.
+The repository's skills source is linked into the checkout's own skills directories, so the agent loads its skills from there.
 
 #### Scenario: SkillScriptRun
 

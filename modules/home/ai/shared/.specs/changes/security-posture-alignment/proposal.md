@@ -140,9 +140,21 @@ Feasibility was measured against a live `pi` before this was written — the gat
 
 ## Resolved Questions
 
+- 2026-10-03: the end-of-turn run checks only the files whose content the turn changed; on 2026-10-10, a missing runner stays a silent skip.
+  Decided with the user.
 - 2026-10-09: a refusal whose classifier stopped only on relative paths in an undetermined directory ends with a third instruction form, the absolute-path form, and `UnrecognizedCommandsAreGated` defers to `GateResponse` for what a reason offers.
   Decided with the user.
 - 2026-10-09: `block-secrets.py` judges content and exfiltration only; its file-path asks move to `block-sensitive-paths.py` as `SuggestiveNamesAsk`, so the manifest's declarations hold for every path rule.
   Decided with the user.
 - 2026-10-09: `block-secrets.py` is renamed `block-leaks.py`, with its two test files.
+  Decided with the user.
+- 2026-10-11: requirements in `hook-tampering-blocking`, `hook-interface`, `sensitive-path-blocking`, `agent-configuration-floor`, and `end-of-turn-precommit` state the general rule in place of sentences that described single bugs.
+  Decided with the user.
+- 2026-10-11: `.env.op` joins the declared dotenv placeholders.
+  Decided with the user.
+- 2026-10-12: requirements in `cross-agent-capability-parity`, `secret-access-blocking`, `sensitive-path-blocking`, `hook-tampering-blocking`, `hook-interface`, and `destructive-ops-blocking` state outcomes where they named internal routes.
+  Decided with the user.
+- 2026-10-12: `ToolVocabularyIsDeclared` governs how an implementation judges the calls that reach it; which calls reach a hook is agent configuration, held to the vocabulary by `RegistrationsRouteTheVocabulary` and checked by the assessment.
+  Decided with the user.
+- 2026-10-12: Copilot asks on `Bash`, so an authorized shell guardrail edit reaches the user in the editor's prompt, after a live check on VS Code 1.141.0.
   Decided with the user.

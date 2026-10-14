@@ -10,6 +10,8 @@ Within a line, `_split_words` already tracks single and double quotes, backslash
 Both hooks fall back when the lexer returns nothing.
 `block-hook-tampering.py` gates the command if its text mentions a guarded location.
 `block-sensitive-paths.py` judges each piece of the text between shell syntax by the strong rules, with no placeholder exemption.
+It judges each piece separately because the rules match only at the end of a name.
+A rule applied to multi-line text as a whole matches only on the last line.
 
 This change depends on `guarded-path-classes` and `security-posture-alignment`, which own the current `shell-lexing` text, `UnrecognizedCommandsAreGated`, and both fallbacks, and must sync first.
 

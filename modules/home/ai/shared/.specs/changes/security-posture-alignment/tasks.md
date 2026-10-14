@@ -641,10 +641,34 @@ The verify run on 2026-10-09 covered this change and `guarded-path-classes` toge
 - [x] Rename `block-secrets.py` to `block-leaks.py`, with its tests and every registration.
   Its name met the sensitive-path name heuristic, so no agent could read or edit the hook or its tests.
 - [x] Remove the `sensitive-path-nix-hook-wrapper` exception surface, which excused only the old hook name.
-- [ ] Record the user's approval for each spec edit made after the proposal commits of this change and `guarded-path-classes`.
-- [ ] Run `assess-agent-configuration` and cite the dated record for `agent-configuration-floor` and `ConfigurationSurfacesCoverTheDeclarations`.
-- [ ] Decide whether the editor's `.github/hooks` location, the unix-socket allowances, the skills source tree, and the hard-coded profile layers need declarations.
+- [x] Record the user's approval for each spec edit made after the proposal commits of this change and `guarded-path-classes`.
+- [x] Run `assess-agent-configuration` and cite the dated record for `agent-configuration-floor` and `ConfigurationSurfacesCoverTheDeclarations`.
+  `shared/.specs/assessments/2026-10-11.md`: `ConfigurationSurfacesCoverTheDeclarations` passes on every agent; seven findings fail other `agent-configuration-floor` and `cross-agent-capability-parity` scenarios.
+- [x] List the tools the 2026-10-11 assessment found unlisted: refuse Claude Code's `PublishPlugin`, pass `OfferChromeSetup`; pass Codex's bare `spawn_agent` and the goal tools; pass Pi's `bg_wait`, `subagents_enable`, and MCP resource tools, and drop `subagent_wait`; update each `source`.
+- [x] Pin `pi-subagents` 0.75.0 and `pi-intercom` 0.16.0 in both Pi settings files.
+- [x] Declare `write_stdin_approval = true` in all three Codex configs.
+- [x] Confirm live whether a foreground Pi subagent runs the hooks and the sandbox, and refuse `subagent` if it does not.
+  2026-10-11: a foreground `worker` child ran `python3 -c 'print(42)'` and found `~/.config/mcp-secrets.env` readable, so neither the hooks nor the sandbox loaded; `subagent`, `subagent_command`, and `watchdog_diff` are refused.
+- [x] Decide whether the editor's hook locations, the unix-socket allowances, the skills source tree, and the hard-coded profile layers need declarations.
+  2026-10-11: the editor's hook locations are guarded; see `guarded-path-classes` `EveryEditorHookSourceIsEnforcement`.
+  2026-10-11: sandboxed commands reach only tmux on macOS; see `SandboxedCommandsReachTmuxAlone`.
+  2026-10-11: the repository's skills source is exec-through; see `guarded-path-classes` `TheRepositorySkillsSourceIsRunnable`.
+  2026-10-11: the enforcement floor, profile layers included, is declared in the manifest; see `guarded-path-classes` `TheFloorIsDeclaredInTheManifest`.
 
-## Merge and activate
+## Close the 2026-10-12 verify findings
 
-- [ ] Merge to `main`, then run `just nix switch home` from `~/.nixconfig`, so the deployed links point at the main checkout again before the worktree is removed.
+The verify run on 2026-10-12 covered this change and `guarded-path-classes` together.
+
+- [x] Leave `~+`, `~-`, and `~N`, and the same forms after `:` in an assignment, unresolved, so a write through the directory stack asks; expand a home tilde after `:` in an assignment as bash does.
+- [x] Narrow `ToolVocabularyIsDeclared` to the calls that reach an implementation, add `agent-configuration-floor` `RegistrationsRouteTheVocabulary`, and add its check to the assessment skill.
+- [x] Record the approvals for the 2026-10-11 and 2026-10-12 spec rewording, `.env.op`, and the direct baseline edits.
+- [x] Make `bash-command-validator.sh` refuse on any failure, not proceed.
+- [x] Keep every field of a Copilot terminal or patch call, so `block-leaks.py` scans the whole call.
+- [x] Word the unrecognized-command refusal as what the gate refused.
+- [x] Add `<project>/*.code-workspace`, `<project>/.pi/settings.json`, and `<project>/.pi/sandbox.json` to the enforcement floor.
+- [x] Record the MCP disagreement under `NetworkReachIsUniformPerUser` as a verification override, and add its repair to the `pi-subagent-enforcement` scope.
+- [ ] Remediate the MCP override: one set of MCP tools runs without asking in every agent, delivered by `pi-subagent-enforcement`.
+- [x] Pin the editor's harness settings to the local harness in both settings files, and remove the settings VS Code 1.141.0 no longer declares.
+- [x] Let Copilot ask on `Bash`, after a live check on VS Code 1.141.0 that the editor shows the hook's reason in its confirmation, and move Copilot's shell cases from the refusal tests to the ask tests.
+- [x] State in `guarded-path-classes` `OneGlobForm` that `*` matches any run of characters within one segment, and test a whole-segment, a partial, and an empty match.
+- [x] Add tests: both path hooks on arbitrary text, an option-position word that names an existing file, a secret only gitleaks recognizes, and the suggestive-name ask, pattern-file faults, and single end-of-turn block through the Copilot adapter, the Pi dispatcher, and Codex.

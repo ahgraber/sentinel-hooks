@@ -18,7 +18,7 @@ Each rule SHALL contain at minimum:
 
 The `description` and `reason` fields are used together to construct the `ExplanationContract` message shown to the user (see `hook-interface`).
 Rules SHOULD be grouped by category (e.g., git, filesystem, cloud, database).
-The pattern file format is TOML, chosen because `tomllib` is available in the Python standard library from Python 3.11+, requiring no external dependencies.
+The pattern file format is TOML.
 
 The system SHALL use the pattern file only when every rule in it is valid.
 A rule is invalid when it lacks one of the four fields, names a mode other than `block` or `ask`, or holds a pattern that does not compile.

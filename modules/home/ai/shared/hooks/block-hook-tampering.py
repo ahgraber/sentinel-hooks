@@ -44,16 +44,16 @@ def _ask_reason(target: str, tool_name: str) -> str:
 
 def _unrecognized_reason(target: str, tool_name: str, syntax: str) -> str:
     return (
-        f"This {tool_name} call targets '{target}' but is not recognized as an "
-        "authorized action. It may write there. Approve only if you intend to "
+        f"This {tool_name} call may write to '{target}', and the gate could not "
+        "determine what it does there. Approve only if you intend to "
         f"run it as written. Recognition stopped at {syntax}."
     ) + _hint(syntax)
 
 
 def _unrecognized_refusal(target: str, tool_name: str, syntax: str) -> str:
     return (
-        f"Blocked: {tool_name} on '{target}' is not recognized as an authorized "
-        "action. It may write, and this agent cannot ask for the required "
+        f"Blocked: {tool_name} may write to '{target}', and the gate could not "
+        "determine what it does there; this agent cannot ask for the required "
         f"approval. Recognition stopped at {syntax}."
     ) + _hint(syntax)
 

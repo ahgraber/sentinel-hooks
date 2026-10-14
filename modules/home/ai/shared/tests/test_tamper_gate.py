@@ -136,9 +136,8 @@ class TestGatedClassesByAgent:
         reason = ask_reason(edit(target, CLAUDE))
         assert "settings.json" in reason
 
-    def test_gated_write_refuses_under_copilot_shell(self) -> None:
-        """Copilot's shell tool proceeds past the prompt JSON, so Bash refuses."""
-        assert_refused(bash(f"echo x >> {REPO_SOURCE}", COPILOT))
+    def test_gated_write_asks_under_copilot_shell(self) -> None:
+        assert ask_reason(bash(f"echo x >> {REPO_SOURCE}", COPILOT))
 
     def test_gated_write_asks_under_copilot_file_tools(self) -> None:
         assert ask_reason(write("~/.claude/settings.json", COPILOT))
@@ -306,13 +305,14 @@ class TestGuardedLocationReads:
         assert result.stderr == ""
 
     @pytest.mark.parametrize("command", NOT_READS, ids=lambda c: c[:40])
-    def test_anything_else_asks_under_claude(self, command: str) -> None:
-        assert ask_reason(bash(command, CLAUDE))
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_anything_else_asks_where_a_prompt_is_honored(self, command: str, agent: str) -> None:
+        assert ask_reason(bash(command, agent))
 
     @pytest.mark.parametrize("command", NOT_READS, ids=lambda c: c[:40])
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_anything_else_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
-        assert_refused(bash(command, agent), "not recognized as an authorized action")
+        assert_refused(bash(command, agent), "may write to")
 
     @pytest.mark.parametrize("command", REDIRECTED_READS, ids=lambda c: c[:40])
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
@@ -320,19 +320,20 @@ class TestGuardedLocationReads:
         assert_allowed(bash(command, agent))
 
     @pytest.mark.parametrize("command", REDIRECTED_WRITES, ids=lambda c: c[:40])
-    def test_a_redirection_into_a_guarded_file_asks_as_a_write(self, command: str) -> None:
-        reason = ask_reason(bash(command, CLAUDE))
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_a_redirection_into_a_guarded_file_asks_as_a_write(self, command: str, agent: str) -> None:
+        reason = ask_reason(bash(command, agent))
         assert "would modify agent enforcement" in reason
-        assert "not recognized" not in reason
+        assert "could not determine" not in reason
 
     @pytest.mark.parametrize("command", REDIRECTED_WRITES, ids=lambda c: c[:40])
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_a_redirection_into_a_guarded_file_refuses_as_a_write(self, command: str, agent: str) -> None:
         assert_refused(bash(command, agent), "targets agent enforcement")
 
     def test_a_redirected_write_beside_an_unrecognized_segment_keeps_the_recognition_reason(self) -> None:
         reason = ask_reason(bash(f"cat /tmp/x > {SKILL_FILE}; rm {SKILL_DIR}/other.md", CLAUDE))
-        assert "not recognized" in reason
+        assert "could not determine" in reason
 
     def test_reading_skills_and_guarded_settings_proceeds(
         self,
@@ -484,7 +485,7 @@ _REPORT = "how the user can help — describe exactly what command or steps"
 class TestTheInstructionFormFollowsWhatTheRefusalOffers:
     """A refusal naming accepted commands says to use one; every other says stop."""
 
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_a_refusal_naming_accepted_commands_says_to_use_one(self, agent: str) -> None:
         stderr = bash(f"sed -n '1,5p' {SKILL_FILE}", agent).stderr.lower()
         assert "recognized reads use:" in stderr
@@ -550,7 +551,7 @@ class TestTheInstructionFormFollowsWhatTheRefusalOffers:
         assert _STOP in stderr
         assert _RETRY not in stderr
 
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_an_ancestor_refusal_names_none_and_says_to_stop(self, agent: str) -> None:
         # An ancestor matches no declaration, so this reaches the ancestor gate.
         stderr = bash(f"rm -rf {REPO_ROOT}/modules/home/ai/pi", agent).stderr.lower()
@@ -587,13 +588,14 @@ class TestInstallingDeferredCodeTakesNoReadCarveOut:
     """A command that installs code for the shell to run later is judged whole."""
 
     @pytest.mark.parametrize("command", INSTALLS_DEFERRED_CODE, ids=lambda c: c[:44])
-    def test_it_asks_under_claude(self, command: str) -> None:
-        assert ask_reason(bash(command, CLAUDE))
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_it_asks_where_a_prompt_is_honored(self, command: str, agent: str) -> None:
+        assert ask_reason(bash(command, agent))
 
     @pytest.mark.parametrize("command", INSTALLS_DEFERRED_CODE, ids=lambda c: c[:44])
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_it_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
-        assert_refused(bash(command, agent), "not recognized as an authorized action")
+        assert_refused(bash(command, agent), "may write to")
 
     def test_a_trap_body_naming_a_credential_refuses_everywhere(self) -> None:
         assert_refused(
@@ -692,12 +694,13 @@ class TestDestructiveOperationsOnAnAncestor:
     """A declaration protects what it holds; the path to it has to be judged too."""
 
     @pytest.mark.parametrize("command", DESTROYS_AN_ANCESTOR, ids=lambda c: c[:44])
-    def test_taking_the_ancestor_away_asks_under_claude(self, command: str) -> None:
-        reason = ask_reason(bash(command, CLAUDE))
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_taking_the_ancestor_away_asks_where_a_prompt_is_honored(self, command: str, agent: str) -> None:
+        reason = ask_reason(bash(command, agent))
         assert "remove, rename, replace, or change the permissions of" in reason
 
     @pytest.mark.parametrize("command", DESTROYS_AN_ANCESTOR, ids=lambda c: c[:44])
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_taking_the_ancestor_away_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
         assert_refused(bash(command, agent), "holds agent enforcement")
 
@@ -865,11 +868,12 @@ class TestAgentModuleTreeReadsProceed:
         assert result.stderr == ""
 
     @pytest.mark.parametrize("command", MODULE_TREE_WRITES, ids=lambda c: c[:40])
-    def test_a_write_route_still_asks_under_claude(self, command: str) -> None:
-        assert ask_reason(bash(command, CLAUDE))
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_a_write_route_still_asks_where_a_prompt_is_honored(self, command: str, agent: str) -> None:
+        assert ask_reason(bash(command, agent))
 
     @pytest.mark.parametrize("command", MODULE_TREE_WRITES, ids=lambda c: c[:40])
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_a_write_route_still_refuses_where_no_prompt_is_honored(self, command: str, agent: str) -> None:
         assert_refused(bash(command, agent))
 
@@ -941,9 +945,13 @@ class TestPatchIsJudgedByItsTargets:
         body = f"*** Begin Patch\n{header}: {HOOK_SOURCE}\n+x\n*** End Patch"
         assert ask_reason(patch(body, CLAUDE))
 
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_a_guarded_target_refuses_where_no_prompt_is_honored(self, agent: str) -> None:
         assert_refused(patch(add_file(HOOK_SOURCE, "# x"), agent))
+
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_a_guarded_target_asks_where_a_prompt_is_honored(self, agent: str) -> None:
+        assert ask_reason(patch(add_file(HOOK_SOURCE, "# x"), agent))
 
     def test_one_guarded_target_among_several_gates_the_patch(self) -> None:
         body = (
@@ -1026,15 +1034,16 @@ class TestExecThroughCarveOut:
         assert result.stderr == ""
 
     @pytest.mark.parametrize("command", NOT_RUNS, ids=lambda c: c[:40])
-    def test_anything_else_asks_under_claude(self, command: str, skills_home: str) -> None:
-        assert ask_reason(bash(command, CLAUDE, skills_home))
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_anything_else_asks_where_a_prompt_is_honored(self, command: str, agent: str, skills_home: str) -> None:
+        assert ask_reason(bash(command, agent, skills_home))
 
     @pytest.mark.parametrize("command", NOT_RUNS, ids=lambda c: c[:40])
-    @pytest.mark.parametrize("agent", [CODEX, COPILOT, UNKNOWN])
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_anything_else_refuses_where_no_prompt_is_honored(
         self, command: str, agent: str, skills_home: str
     ) -> None:
-        assert_refused(bash(command, agent, skills_home), "not recognized as an authorized action")
+        assert_refused(bash(command, agent, skills_home), "may write to")
 
     def test_an_argument_outside_the_carve_out_gates_the_whole_run(self, skills_home: str) -> None:
         # `~/.pi/agent/` carries a declaration that no carve-out covers; the
@@ -1042,7 +1051,7 @@ class TestExecThroughCarveOut:
         # of a guarded location proceeds.
         command = f"bash {SCRIPTS}/run.sh --settings ~/.pi/agent/settings.json"
         reason = ask_reason(bash(command, CLAUDE, skills_home))
-        assert "not recognized" in reason
+        assert "could not determine" in reason
 
     def test_a_write_to_the_script_still_gates_on_the_file_tools(self, skills_home: str) -> None:
         assert ask_reason(write(f"{SCRIPTS}/run.sh", CLAUDE, skills_home))
@@ -1060,6 +1069,7 @@ reason = "test"
 [[guarded.paths]]
 path = "~/.example/runnable/"
 reason = "test"
+[enforcement-floor]
 [block]
 [exec-through]
 [[exec-through.paths]]
@@ -1131,7 +1141,7 @@ class TestReaderHint:
 
     def test_the_prompt_names_the_accepted_readers(self) -> None:
         reason = ask_reason(bash(f"sed -n '1,5p' {SKILL_FILE}", CLAUDE))
-        assert "not recognized as an authorized action" in reason
+        assert "may write to" in reason
         for utility in ("cat", "grep", "head", "cut"):
             assert utility in reason
 
@@ -1157,7 +1167,7 @@ class TestReaderHint:
         assert_allowed(bash("cat ~/.claude/settings.json", CLAUDE))
 
     def test_the_guidance_reaches_an_agent_that_cannot_prompt(self) -> None:
-        assert_refused(bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "not recognized as an authorized action")
+        assert_refused(bash(f"sed -n '1,5p' {SKILL_FILE}", CODEX), "may write to")
 
 
 class TestAskReasonContract:

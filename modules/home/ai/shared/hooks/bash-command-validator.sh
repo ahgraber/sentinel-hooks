@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # PreToolUse hook: catch zsh expansion hazards, invalid ripgrep flags, and
 # commands that bypass repository tooling.
 
+# Exit 1 lets the call proceed on Claude and Pi, so every failure exits 2.
+trap 'echo "Error: bash-command-validator.sh failed at line ${LINENO}" >&2; exit 2' ERR
+
 if ! command -v jq > /dev/null 2>&1; then
   echo "Error: bash-command-validator.sh requires jq" >&2
-  exit 1
+  exit 2
 fi
 
 if ! command -v perl > /dev/null 2>&1; then
   echo "Error: bash-command-validator.sh requires perl" >&2
-  exit 1
+  exit 2
 fi
 
 matches_pattern() {
@@ -30,7 +33,7 @@ input_json="$(cat)"
 
 if ! jq -e . > /dev/null 2>&1 <<< "${input_json}"; then
   echo "Error: invalid JSON input" >&2
-  exit 1
+  exit 2
 fi
 
 command_text="$(jq -r '.tool_input.command // ""' <<< "${input_json}")"

@@ -157,7 +157,8 @@ def normalize_payload(raw_data: dict) -> dict:
         command = tool_input.get("command")
         if not isinstance(command, str):
             command = tool_input.get("text")
-        normalized_input = {"command": command or ""}
+        # The other fields stay, so a hook that scans the whole call still sees them.
+        normalized_input = {**tool_input, "command": command or ""}
 
     elif mapped_name in TOOL_VOCABULARY.group("file"):
         paths = _extract_all_paths(tool_input)
@@ -171,7 +172,7 @@ def normalize_payload(raw_data: dict) -> dict:
         command = tool_input.get("command")
         if not isinstance(command, str):
             command = tool_input.get("input")
-        normalized_input = {"command": command or ""}
+        normalized_input = {**tool_input, "command": command or ""}
 
     data["tool_name"] = mapped_name
     data["tool_input"] = normalized_input

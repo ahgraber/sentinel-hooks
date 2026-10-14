@@ -2,8 +2,10 @@
 
 import io
 import json
+from pathlib import Path
 
-from guarded_paths import PathPolicy
+import guarded_paths
+from guarded_paths import ManifestError, PathPolicy
 from hermetic import build_world, install_policy, load_hook, policy
 import pytest
 
@@ -28,6 +30,8 @@ def policy_world(tmp_path, monkeypatch):
         "~/.pi/agent/hooks.json",
         "~/.pi/agent/shared-hooks/hook-dispatch.py",
         "~/.pi/agent/extensions/hooks/extension.ts",
+        "~/.agents/hooks/session.json",
+        "~/.vscode/agent-plugins/example/hooks/hooks.json",
         "~/.config/Code/User/settings.json",
         "~/Library/Application Support/Code/User/settings.json",
     ],
@@ -63,7 +67,7 @@ def test_block_still_outranks_floor(policy_world):
 
 @pytest.mark.parametrize(
     "relative",
-    [".claude/settings.local.json", ".codex/config.toml", ".vscode/settings.json"],
+    [".claude/settings.local.json", ".codex/config.toml", ".vscode/settings.json", ".github/hooks/policy.json"],
 )
 def test_project_permission_settings_are_floor_without_git(policy_world, relative):
     home, _, _ = policy_world
@@ -71,6 +75,57 @@ def test_project_permission_settings_are_floor_without_git(policy_world, relativ
     rules = policy(policy_world, write=[str(project) + "/"])
     assert rules.verdict(str(project / relative), "write", cwd=str(project)) == "guarded"
     assert rules.verdict(str(project / "notes"), "write") == "write-through"
+
+
+def test_a_floor_declaration_holds_against_a_grant(policy_world):
+    home, _, _ = policy_world
+    target = str(home / "custom/hooks/guard.py")
+    declared = policy(policy_world, write=["~/custom/"], floor=["~/custom/hooks/"])
+    undeclared = policy(policy_world, write=["~/custom/"], floor=[])
+    assert declared.verdict(target, "write") == "guarded"
+    assert declared.verdict(target, "run") == "guarded"
+    assert undeclared.verdict(target, "write") == "write-through"
+
+
+def test_instruction_text_in_a_floor_directory_is_guarded(policy_world):
+    target = "~/custom/hooks/instructions/style.md"
+    assert policy(policy_world, floor=["~/custom/hooks/"]).verdict(target, "write") == "guarded"
+    granted = policy(policy_world, write=["~/custom/"], floor=["~/custom/hooks/"])
+    assert granted.verdict(target, "write") == "write-through"
+
+
+def test_a_floor_directory_is_followed_to_its_sources(policy_world):
+    home, repo, _ = policy_world
+    hooks = home / "custom/hooks"
+    hooks.mkdir(parents=True)
+    source = repo / "custom-source.py"
+    source.touch()
+    (hooks / "guard.py").symlink_to(source)
+    rules = policy(policy_world, write=[str(repo) + "/"], floor=["~/custom/hooks/"])
+    assert rules.verdict(str(source), "write") == "guarded"
+
+
+def test_project_anchor_covers_the_working_directory_and_above(policy_world):
+    home, _, _ = policy_world
+    project = home / "project"
+    nested = project / "src/module"
+    rules = policy(policy_world, write=[str(project) + "/"], floor=["<project>/.tool/settings.json"])
+    for root in (project, nested):
+        assert rules.verdict(str(root / ".tool/settings.json"), "write", cwd=str(nested)) == "guarded"
+    assert rules.verdict(str(project / "notes"), "write", cwd=str(nested)) == "write-through"
+
+
+@pytest.mark.parametrize("class_name", ["guarded", "block", "run", "write"])
+def test_project_anchor_outside_the_floor_does_not_load(policy_world, class_name):
+    with pytest.raises(ManifestError, match="<project>/"):
+        policy(policy_world, **{class_name: ["<project>/.tool/settings.json"]})
+
+
+def test_an_empty_floor_keeps_the_manifest_and_the_running_hooks(policy_world):
+    _, repo, manifest = policy_world
+    rules = policy(policy_world, write=[str(repo) + "/"], floor=[])
+    assert rules.verdict(str(manifest), "write") == "guarded"
+    assert rules.verdict(str(Path(guarded_paths.__file__).resolve()), "write") == "guarded"
 
 
 def test_unrelated_hooks_directory_is_not_enforcement(policy_world):
@@ -99,7 +154,7 @@ def test_launch_directory_supplies_enforcement(policy_world):
     launch = home / "custom-agent/hooks/guard.py"
     launch.parent.mkdir(parents=True)
     launch.touch()
-    data = {name: {"paths": []} for name in ("guarded", "block", "exec-through", "write-through")}
+    data = {name: {"paths": []} for name in ("guarded", "enforcement-floor", "block", "exec-through", "write-through")}
     data["write-through"]["paths"] = [str(launch.parent) + "/"]
     data["exceptions"] = []
     rules = PathPolicy(

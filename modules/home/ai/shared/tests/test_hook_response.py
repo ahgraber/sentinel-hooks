@@ -168,15 +168,15 @@ class TestAsk:
         assert raised.value.code == 2
         assert capsys.readouterr().out == ""
 
-    @pytest.mark.parametrize("tool_name", ["Write", "Edit"])
-    def test_ask_prompts_under_copilot_on_file_mutation_tools(self, capsys, tool_name) -> None:
+    @pytest.mark.parametrize("tool_name", ["Bash", "Write", "Edit", "apply_patch"])
+    def test_ask_prompts_under_copilot_on_mutation_tools(self, capsys, tool_name) -> None:
         """The VS Code surface holds these calls on the wrapped JSON shape."""
         assert exit_code(Decision.ASK, COPILOT, "enforcement file", tool_name) == 0
         payload = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
         assert payload["permissionDecision"] == "ask"
         assert payload["permissionDecisionReason"] == "enforcement file"
 
-    @pytest.mark.parametrize("tool_name", [None, "Bash", "apply_patch"])
+    @pytest.mark.parametrize("tool_name", [None, "Read"])
     def test_ask_refuses_under_copilot_elsewhere(self, capsys, tool_name) -> None:
         """The shell tool proceeds past the same JSON, so emitting it is fail-open."""
         assert exit_code(Decision.ASK, COPILOT, "why", tool_name) == 2

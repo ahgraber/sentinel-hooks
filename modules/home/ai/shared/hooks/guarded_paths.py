@@ -1,6 +1,7 @@
 """Match paths and text against manifest-declared guarded locations.
 
-Declarations support `~/`, `<repo>/`, and single-component `*` patterns. Path
+Declarations support `~/`, `<repo>/`, and single-component `*` patterns; an
+enforcement-floor declaration may also use `<project>/`. Path
 checks use written, expanded, and resolved spellings with filesystem case rules.
 Text checks use declaration fragments.
 
@@ -34,6 +35,7 @@ REPO_ROOT = str(Path(__file__).resolve().parents[5])
 
 _HOME_PREFIX = "~/"
 _REPO_PREFIX = "<repo>/"
+_PROJECT_PREFIX = "<project>/"
 
 # Keep the manifest beside the module so deployed copies carry it. Callers can
 # override it for tests.
@@ -199,10 +201,13 @@ def _require_record(entry: object, keys: set[str], where: str) -> dict:
     return entry
 
 
+_TABLES = ("guarded", "enforcement-floor", "block", "exec-through", "write-through")
+
+
 def _from_records(raw: dict) -> dict:
     """Reduce each class's `[[<class>.paths]]` records to its paths, checking every record states a reason."""
     manifest = dict(raw)
-    for name in ("guarded", "block", "exec-through", "write-through"):
+    for name in _TABLES:
         table = raw.get(name)
         if not isinstance(table, dict):
             continue
@@ -551,48 +556,6 @@ class GuardedLocations:
         return [Match(declaration, distance) for declaration, distance in found.items()]
 
 
-HOOK_DIRECTORIES = (
-    "~/.claude/hooks/",
-    "~/.codex/hooks/",
-    "~/.copilot/hooks/",
-    "~/.pi/agent/extensions/hooks/",
-    "~/.pi/agent/shared-hooks/",
-    "<repo>/modules/home/ai/shared/hooks/",
-    "<repo>/modules/home/ai/claude/hooks/",
-    "<repo>/modules/home/ai/codex/hooks/",
-    "<repo>/modules/home/ai/copilot/hooks/",
-    "<repo>/modules/home/ai/pi/security/",
-    "<repo>/modules/home/ai/pi/extensions/hooks/",
-)
-PERMISSION_FILES = (
-    "~/.claude/settings.json",
-    "~/.claude/settings.local.json",
-    "~/.claude/settings*.json",
-    "~/.codex/config.toml",
-    "~/.codex/*.config.toml",
-    "~/.codex/hooks.json",
-    "~/.codex/rules/",
-    "~/.pi/agent/settings.json",
-    "~/.pi/agent/hooks.json",
-    "~/Library/Application Support/Code/User/settings.json",
-    "~/.config/Code/User/settings.json",
-    "<repo>/users/*/home-manager/claude/settings*.json",
-    "<repo>/users/*/home-manager/codex/config*.toml",
-    "<repo>/users/*/home-manager/codex/*.config.toml",
-    "<repo>/users/*/home-manager/codex/hooks.json",
-    "<repo>/modules/home/ai/codex/rules/",
-    "<repo>/users/*/home-manager/pi/settings.json",
-    "<repo>/modules/home/apps/vscode/settings.json",
-    "<repo>/users/*/home-manager/vscode/settings.json",
-    "<repo>/.claude/settings*.json",
-    "<repo>/.codex/config.toml",
-    "<repo>/.codex/*.config.toml",
-    "<repo>/.codex/hooks.json",
-    "<repo>/.codex/rules/",
-    "<repo>/.vscode/settings.json",
-)
-
-
 class EnforcementFloor(GuardedLocations):
     """Enforcement locations whose writes and runs no grant can permit."""
 
@@ -694,17 +657,6 @@ def _validate_manifest_shape(manifest: dict, names: tuple[str, ...]) -> dict[str
 GRANT_CLASSES = MappingProxyType({"write": "write-through", "run": "exec-through"})
 _PRIORITY = MappingProxyType({"undeclared": 0, "exec-through": 1, "write-through": 1, "guarded": 2, "block": 3})
 
-# Permission files a project carries, relative to the working directory or any
-# directory above it.
-PROJECT_PERMISSION_FILES = (
-    ".claude/settings*.json",
-    ".codex/config.toml",
-    ".codex/*.config.toml",
-    ".codex/hooks.json",
-    ".codex/rules/",
-    ".vscode/settings.json",
-)
-
 
 @dataclass(frozen=True)
 class Restriction:
@@ -731,11 +683,19 @@ class PathPolicy:
         invocation_path: str | None = None,
         error: str | None = None,
     ) -> None:
-        names = ("guarded", "block", "exec-through", "write-through")
         try:
-            entries = _validate_manifest_shape(manifest, names)
+            entries = _validate_manifest_shape(manifest, _TABLES)
         except (KeyError, TypeError) as exc:
             raise ManifestError(str(exc)) from exc
+        floor = entries.pop("enforcement-floor")
+        if misplaced := [p for paths in entries.values() for p in paths if p.startswith(_PROJECT_PREFIX)]:
+            raise ManifestError(f"only the enforcement floor may use {_PROJECT_PREFIX}: " + ", ".join(misplaced))
+        self._project_declarations = tuple(
+            p.removeprefix(_PROJECT_PREFIX) for p in floor if p.startswith(_PROJECT_PREFIX)
+        )
+        self._floor_declarations = tuple(p for p in floor if not p.startswith(_PROJECT_PREFIX))
+        self._floor_trees = tuple(p for p in self._floor_declarations if p.endswith("/"))
+        self._floor_files = tuple(p for p in self._floor_declarations if not p.endswith("/"))
         self.home = home
         self.repo_root = repo_root
         self.error = error
@@ -748,6 +708,7 @@ class PathPolicy:
         self._resolve_chain = functools.cache(spellings)
         entries["guarded"] += entries["exec-through"] + entries["write-through"]
         self.classes = {name: self._locations(paths) for name, paths in entries.items()}
+        self._floor_locations = self._locations(self._floor_declarations)
 
     def _locations(self, declarations: Iterable[str]) -> GuardedLocations:
         return GuardedLocations(
@@ -758,12 +719,12 @@ class PathPolicy:
         )
 
     @functools.cached_property
-    def _hook_directories(self) -> tuple[Path, ...]:
-        """Directories holding hook sources: the manifest's, this module's, the launcher's, and each declared tree."""
+    def _floor_directories(self) -> tuple[Path, ...]:
+        """Directories whose files are enforcement: the manifest's, this module's, the launcher's, and each floor tree."""
         directories = {self._manifest_path.parent, Path(__file__).resolve().parent}
         if self._invocation_path:
             directories.add(Path(os.path.abspath(self._invocation_path)).parent)
-        for chain in self._locations(HOOK_DIRECTORIES).chains.values():
+        for chain in self._locations(self._floor_trees).chains.values():
             directories.update(Path(path) for path in glob.glob(chain[0]) if os.path.isdir(path))
         return tuple(sorted(directories))
 
@@ -776,14 +737,18 @@ class PathPolicy:
         enforcement = dict.fromkeys(
             [
                 str(self._manifest_path),
-                *(path for directory in self._hook_directories for path in _enforcement_files(directory)),
-                *(path for chain in self._locations(PERMISSION_FILES).chains.values() for path in glob.glob(chain[0])),
+                *(path for directory in self._floor_directories for path in _enforcement_files(directory)),
+                *(
+                    path
+                    for chain in self._locations(self._floor_files).chains.values()
+                    for path in glob.glob(chain[0])
+                ),
             ]
         )
-        trees = tuple(str(directory) + "/" for directory in self._hook_directories)
+        trees = tuple(str(directory) + "/" for directory in self._floor_directories)
         return EnforcementFloor(
-            (*HOOK_DIRECTORIES, *PERMISSION_FILES, *enforcement, *trees),
-            hook_directories=(*HOOK_DIRECTORIES, *trees),
+            (*self._floor_declarations, *enforcement, *trees),
+            hook_directories=(*self._floor_trees, *trees),
             home=self.home,
             repo_root=self.repo_root,
             resolve_chain=self._resolve_chain,
@@ -809,14 +774,14 @@ class PathPolicy:
         ]
 
     def _project_floor(self, cwd: str | None) -> EnforcementFloor:
-        """Return the permission files of the project at `cwd`, globbed once per directory."""
+        """Return the project-anchored floor at `cwd` and each directory above it, globbed once per directory."""
         if cwd in self._project_floors:
             return self._project_floors[cwd]
         declarations = []
         if cwd:
             project = Path(cwd).absolute()
             for root in (project, *project.parents):
-                for suffix in PROJECT_PERMISSION_FILES:
+                for suffix in self._project_declarations:
                     pattern = str(root / suffix) + ("/" if suffix.endswith("/") else "")
                     declarations.extend((pattern, *glob.glob(pattern)))
         floor = EnforcementFloor(
@@ -843,7 +808,10 @@ class PathPolicy:
             for name in ("guarded", grant_class)
             for match in self.classes[name].matches_hop(path)
         ]
-        return min(candidates)[2] if candidates else "undeclared"
+        if candidates:
+            return min(candidates)[2]
+        # The instruction text the floor leaves out still asks when no declaration covers it.
+        return "guarded" if self._floor_locations.matches_hop(path) else "undeclared"
 
     def verdict(self, path: str, operation: str, *, cwd: str | None = None) -> str:
         """Return the strictest class reached by any hop of a supplied path."""
@@ -905,6 +873,7 @@ class PathPolicy:
 
 _EMPTY_MANIFEST = {
     "guarded": {"paths": []},
+    "enforcement-floor": {"paths": []},
     "block": {"paths": []},
     "exec-through": {"paths": []},
     "write-through": {"paths": []},

@@ -137,10 +137,10 @@ class TestBashCommandProtection:
         # unprompted on the agent whose gate is a refusal rather than a prompt.
         assert_allowed(bash(f"cat {repo_path('claude', 'hooks', 'block-leaks.py')}"))
 
-    def test_bash_touching_repo_hook_blocks(self):
+    def test_bash_touching_repo_hook_asks(self):
         # Outside a recognized read the Bash branch matches on mention, not
         # intent: a command's effect is not readable from its text.
-        assert_block_contract(
+        assert_ask(
             bash(f"sed -i 's/a/b/' {repo_path('claude', 'hooks', 'block-leaks.py')}"),
             "hooks",
         )
@@ -176,22 +176,25 @@ class TestBashCommandProtection:
 
 
 class TestApplyPatchProtection:
-    """Only the probed file-mutation tools ask; a gated patch refuses."""
+    """A gated patch asks, as the editor shows a hook's ask on `apply_patch`."""
 
-    def test_apply_patch_repo_hook_blocks(self):
-        assert_block_contract(
+    def test_apply_patch_repo_hook_asks(self):
+        assert_ask(
             apply_patch(repo_path("copilot", "hooks", "security-policy.json")),
             "security-policy.json",
         )
 
-    def test_apply_patch_user_config_blocks(self):
-        assert_block_contract(
+    def test_apply_patch_user_config_asks(self):
+        assert_ask(
             apply_patch(user_path("codex", "config.linux.toml")),
             "config.linux.toml",
         )
 
-    def test_apply_patch_instruction_markdown_allowed(self):
-        assert_block_contract(apply_patch(repo_path("copilot", "instructions", "shell.instructions.md")))
+    def test_apply_patch_instruction_markdown_asks(self):
+        assert_ask(
+            apply_patch(repo_path("copilot", "instructions", "shell.instructions.md")),
+            "shell.instructions.md",
+        )
 
     def test_unrelated_apply_patch_allowed(self):
         assert_allowed(apply_patch("/tmp/notes.txt"))

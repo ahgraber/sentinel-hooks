@@ -21,6 +21,7 @@ import tomllib
 MANIFEST = HOOKS_DIR / "guarded-paths.toml"
 
 _ACCEPTED_PREFIXES = ("~/", "<repo>/")
+_FLOOR_PREFIXES = (*_ACCEPTED_PREFIXES, "<project>/")
 
 
 def _all_path_entries(manifest: dict) -> list[str]:
@@ -39,6 +40,7 @@ class TestManifestShape:
             manifest = tomllib.load(handle)
         assert set(manifest) == {
             "guarded",
+            "enforcement-floor",
             "block",
             "exec-through",
             "write-through",
@@ -50,6 +52,8 @@ class TestManifestShape:
             assert entry.startswith(_ACCEPTED_PREFIXES) or "*" in entry, (
                 f"'{entry}' uses neither ~/, <repo>/, nor glob notation"
             )
+        for entry in load_manifest(MANIFEST)["enforcement-floor"]["paths"]:
+            assert entry.startswith(_FLOOR_PREFIXES), f"'{entry}' uses none of ~/, <repo>/, <project>/"
 
     def test_a_path_with_no_reason_does_not_load(self, tmp_path: Path) -> None:
         manifest = tmp_path / "guarded-paths.toml"
@@ -169,7 +173,7 @@ class TestManifestLoadFailure:
         shutil.copytree(HOOKS_DIR, copy)
         return copy
 
-    @pytest.mark.parametrize("defect", ["absent", "unparsable", "missing-table"])
+    @pytest.mark.parametrize("defect", ["absent", "unparsable", "missing-table", "missing-floor"])
     @pytest.mark.parametrize("agent", ["claude", "codex", "copilot"])
     @pytest.mark.parametrize("tool", ["Read", "Write", "Bash"])
     def test_failure_matches_tool_and_agent(self, hooks_copy, defect, agent, tool):
@@ -180,7 +184,7 @@ class TestManifestLoadFailure:
             manifest.write_text("invalid [ toml")
         else:
             data = load_manifest(manifest)
-            del data["block"]
+            del data["block" if defect == "missing-table" else "enforcement-floor"]
             manifest.write_text(dump_manifest(data))
         result = subprocess.run(
             [sys.executable, str(hooks_copy / "block-hook-tampering.py")],
@@ -203,7 +207,7 @@ class TestManifestLoadFailure:
         assert "guarded-paths.toml" in result.stdout + result.stderr
         if tool == "Read":
             assert result.returncode in (0, 1)
-        elif agent == "claude" or (agent == "copilot" and tool == "Write"):
+        elif agent == "claude" or (agent == "copilot" and tool in {"Write", "Bash"}):
             assert result.returncode == 0
             assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "ask"
         else:

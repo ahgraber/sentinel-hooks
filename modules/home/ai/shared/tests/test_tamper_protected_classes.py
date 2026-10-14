@@ -53,5 +53,12 @@ def test_every_other_declared_path_reports_the_gated_class(declaration: str) -> 
     assert HOOK.protected_class(path) == HOOK.GATED
 
 
+@pytest.mark.parametrize("declaration", sorted(load_manifest()["enforcement-floor"]["paths"]))
+def test_every_floor_declaration_reports_the_gated_class(declaration: str, tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    path = _declared_path(declaration).replace("<project>/", f"{project}/")
+    assert HOOK.protected_class(path, cwd=str(project)) == HOOK.GATED
+
+
 def test_an_unprotected_path_reports_no_class(tmp_path: Path) -> None:
     assert HOOK.protected_class(str(tmp_path / "notes.txt")) is None

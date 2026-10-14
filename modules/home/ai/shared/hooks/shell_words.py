@@ -69,6 +69,8 @@ class _Token:
 
 
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# `~+`, `~-`, and `~N` name entries of the shell's directory stack, which the hook does not track.
+_STACK_TILDE = re.compile(r"~(?:[+-]\d*|\d+)(?:/|$)")
 _REDIRECTION = re.compile(r"&>>|&>|(?:[0-9]+)?(?:>>|<<|<>|>&|<&|>\||>|<)")
 # A path inside an unresolvable word starts where a word or an operator ends, as in
 # `${X:-/etc/file}`; a `/` after a name character or a `.` continues a relative path.
@@ -345,12 +347,22 @@ def _resolve(token: _Token, roots: list[str | None], *, home_known: bool = True)
         return None
     if "{" in active and ("," in active or ".." in token.value):
         return None
+    if token.tilde and _STACK_TILDE.match(token.value):
+        return None
     value = os.path.expanduser(token.value) if token.tilde else token.value
-    if _ASSIGNMENT.match(token.raw) and token.raw.partition("=")[2].startswith("~"):
-        if not home_known:
-            return None
+    if _ASSIGNMENT.match(token.raw):
         name, _, operand = value.partition("=")
-        value = name + "=" + os.path.expanduser(operand)
+        pieces, raw_pieces = operand.split(":"), token.raw.partition("=")[2].split(":")
+        if any(piece.startswith("~") for piece in raw_pieces):
+            # Bash expands a tilde after `=` and after each `:` in an assignment.
+            if not home_known or len(pieces) != len(raw_pieces):
+                return None
+            if any(_STACK_TILDE.match(piece) for piece in raw_pieces):
+                return None
+            pieces = [
+                os.path.expanduser(p) if r.startswith("~") else p for p, r in zip(pieces, raw_pieces, strict=True)
+            ]
+            value = name + "=" + ":".join(pieces)
     if not active & set("*?["):
         return [value]
     # Python's glob reads `[^...]` and POSIX bracket classes differently from bash.

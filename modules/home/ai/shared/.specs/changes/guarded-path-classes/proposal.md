@@ -151,5 +151,22 @@ The work happens in the `ai-guardrails` worktree, and the activation runs once a
 
 ## Resolved Questions
 
+- 2026-10-05: the lexer resolves a leading `$HOME` as it resolves `~`, and expands a glob whose quotes cover only literal text.
+  Decided with the user.
 - 2026-10-10: the `sensitive-path-nix-hook-wrapper` exception surface is removed, because renaming the hook it excused left it excusing nothing.
+  Decided with the user.
+- 2026-10-11: the editor's other hook sources join the enforcement floor: a project's `.github/hooks/` beside its permission settings, and `~/.agents/hooks/` and `~/.vscode/agent-plugins/` beside the deployed hook directories.
+  Decided with the user.
+- 2026-10-11: the repository's skills source, `<repo>/modules/home/ai/shared/skills/`, is declared exec-through like the installed skills roots.
+  Decided with the user.
+- 2026-10-11: the manifest declares the enforcement floor in an `[enforcement-floor]` table instead of lists held in code; the guard's own locations stay in code.
+  Decided with the user.
+- 2026-10-11: `SingleDeclarationSource` states its outcome, in place of a ban on a copy: a change to the manifest changes the verdict of every implementation, with no edit to the implementation.
+  The scenario that checked that two implementations read the same declarations is removed.
+  Decided with the user.
+- 2026-10-11: `guarded-path-declarations` drops a reference to another change's name.
+  Decided with the user.
+- 2026-10-12: requirements in `shell-lexing`, `path-matching`, `hook-tampering-blocking`, `sensitive-path-blocking`, and `session-tool-checks` state outcomes where they named internal routes; `OneLexerForEveryHook` is renamed `OneReadingForEveryHook`, and `LexingIsTotal` is renamed `EveryCommandReachesAVerdict`.
+  Decided with the user.
+- 2026-10-12: in `OneGlobForm`, `*` matches any run of characters within one path segment, including none, and never a `/`.
   Decided with the user.

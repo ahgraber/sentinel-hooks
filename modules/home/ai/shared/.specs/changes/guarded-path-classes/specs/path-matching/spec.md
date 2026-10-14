@@ -10,17 +10,17 @@ The system SHALL judge a resolved word by where it leads, and SHALL judge an unr
 
 Serves: one-list-then-deltas, reads-are-frictionless
 
-There are two checks.
-The location check resolves a path and asks whether it lies inside a declared location.
-The text check searches a string for the written form of a declaration, such as `.claude/settings.json`.
+The written form of a declaration is the path as a command would write it, such as `.claude/settings.json`.
 
-A word `shell-lexing` resolves is a path.
-It gets the location check and not the text check.
-Applying the text check to a resolved path is what makes a backup directory, an archived copy, or an unrelated file of the same name read as guarded, and it is why a declaration for an agent home could not be matched as text: its written form, `.claude`, appears in ordinary commands that touch nothing guarded.
+A resolved word is a path.
+The hook judges it by the file or folder it leads to, never by its text.
+If a resolved path were judged by its text, a backup directory, an archived copy, or an unrelated file with the same name would look guarded.
+For the same reason, a declaration for an agent home cannot be matched as text: its written form, `.claude`, appears in ordinary commands that touch nothing guarded.
 
-A word `shell-lexing` cannot resolve, such as one carrying a substitution, has no path to check.
-It gets the text check, because a guarded location written inside it must still be found.
-A caller MAY apply the text check to a resolved word it knows a program will execute as code, such as an interpreter's inline program, for the same reason: the word is one path to the shell and many to the program.
+An unresolvable word, such as one with a substitution, leads to no location the system can find.
+It is judged by its text, because a guarded location written inside it must still be found.
+A hook MAY also judge a resolved word by its text if a program will run that word as code, such as an interpreter's inline program.
+The reason is the same: the shell passes the word as one path, but the program can find many paths in it.
 
 A relative path SHALL be resolved against the working directory the tool call supplies.
 Where the tool call supplies none, the path is unresolvable, and refusing it on shape is the conservative reading of an ambiguous path.
@@ -144,5 +144,6 @@ This capability is defense in depth: it catches the accidental and the casual, a
 
 ### Requirement: LocationsWithNoUsableWrittenForm
 
-Removed because: the text question is now asked only of words the lexer cannot resolve, so a declaration whose written form is a bare directory name no longer over-refuses and no longer needs to opt out of text matching.
+Removed because: the text question applies only to words that do not resolve.
+So a declaration whose written form is a bare directory name does not cause extra refusals, and it does not need to opt out of text matching.
 A broad directory is declared like any other location, and `TextMatchingIsForTextThatMayHoldNoPath` covers what `BroadDirectoryReachedByResolution` and `SameNameElsewhere` sampled.

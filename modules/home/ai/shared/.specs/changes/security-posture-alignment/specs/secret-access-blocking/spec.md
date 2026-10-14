@@ -11,7 +11,8 @@ Serves: placeholder-files-are-readable
 The system SHALL evaluate ALL tool calls, regardless of tool name.
 
 Secrets can appear in any tool argument — a command string, file content, a URL, a grep pattern, a file path.
-Rather than enumerating specific tools and fields, the hook SHALL scan the serialized `tool_input` object for every invocation.
+The hook SHALL check every field of `tool_input` on every call, so it detects a secret in any argument.
+It does not list specific tools or fields.
 
 Tool-specific handling is layered on top of the universal scan:
 
@@ -52,62 +53,45 @@ This covers legitimate debugging: checking which credentials are stored, verifyi
 
 Serves: placeholder-files-are-readable
 
-The system SHALL use a two-tier detection model that balances coverage against latency.
+The system SHALL detect the formats in `SecretFormats` in every tool call.
+If a Bash command sends data to a non-local destination and `gitleaks` is on `PATH`, the system SHALL also detect every format the default `gitleaks` rules detect.
+If `gitleaks` is not on `PATH`, detection in that case covers `SecretFormats` only, and the `SessionStart` hook warns the user (see `session-tool-checks`).
 
-**Tier 1 — Built-in patterns (all tool calls):**
+A secret missed in a network send can leak a credential to a remote host.
+A secret missed elsewhere costs only a missed confirmation prompt.
+So the wider coverage is required only where a leak is possible.
 
-A set of high-precision regex patterns covering the most common secret formats (API keys, PEM headers, bearer tokens, cloud provider credentials).
-These run on every tool call as part of the universal scan.
-Latency is negligible (~microseconds).
+Coverage by context:
 
-Built-in patterns are the primary detection mechanism for non-exfiltration contexts (local Bash commands, Read, Write, Edit, and all other tools).
-They are sufficient for the ask-mode use case, where the cost of a false negative is a missed confirmation prompt rather than a leaked secret.
-
-**Tier 2 — Gitleaks deep scan (Bash + network context only):**
-
-When a Bash command contains a network-sending context (and the target is not localhost), gitleaks is invoked for comprehensive scanning (~400+ rules).
-This is the exfiltration detection path, where a missed secret could result in credential leakage to a remote host.
-
-Gitleaks is NOT invoked on every tool call because:
-
-- Its startup cost (~100ms+) would compound across every tool invocation
-- The risk profile of non-network contexts (ask-mode prompts) does not justify the latency
-- Built-in patterns cover the high-confidence formats that appear in tool arguments
-
-When gitleaks is not available on `PATH`, the deep scan falls back to built-in patterns.
-Coverage is reduced for the exfiltration path, but the `SessionStart` hook warns the user (see `session-tool-checks`).
-
-Scan surfaces by tier:
-
-| Context                    | Tier 1 (built-in) | Tier 2 (gitleaks) |
-| -------------------------- | ----------------- | ----------------- |
-| Bash + network (non-local) | yes               | yes               |
-| Bash (local or no network) | yes               | no                |
-| Read / Write / Edit        | yes               | no                |
-| All other tools            | yes               | no                |
+| Context                    | `SecretFormats` | `gitleaks` rules, where installed |
+| -------------------------- | --------------- | --------------------------------- |
+| Bash + network (non-local) | yes             | yes                               |
+| Bash (local or no network) | yes             | not required                      |
+| Read / Write / Edit        | yes             | not required                      |
+| All other tools            | yes             | not required                      |
 
 #### Scenario: GitleaksAvailableWithNetwork
 
 - **GIVEN** a Bash tool call with a non-local network destination is intercepted
-- **WHEN** `gitleaks` is found on `PATH`
-- **THEN** the hook invokes gitleaks for deep scanning in addition to built-in patterns
+- **WHEN** `gitleaks` is found on `PATH`, and the command carries a secret in a format only the `gitleaks` rules detect
+- **THEN** the hook detects the secret
 
 #### Scenario: GitleaksAvailableWithoutNetwork
 
 - **GIVEN** a non-network tool call is intercepted
-- **WHEN** `gitleaks` is found on `PATH`
-- **THEN** the hook uses only built-in patterns (gitleaks is not invoked)
+- **WHEN** `gitleaks` is found on `PATH`, and the call carries a secret in a `SecretFormats` format
+- **THEN** the hook detects the secret
 
 #### Scenario: GitleaksMissing
 
-- **GIVEN** a tool call is intercepted
-- **WHEN** `gitleaks` is not found on `PATH`
-- **THEN** the hook uses built-in patterns for all contexts (deep scan is unavailable)
+- **GIVEN** a tool call is intercepted, a network send included
+- **WHEN** `gitleaks` is not found on `PATH`, and the call carries a secret in a `SecretFormats` format
+- **THEN** the hook detects the secret
 
 #### Scenario: GitleaksFindsSecret
 
-- **GIVEN** gitleaks is invoked on a Bash command with network context
-- **WHEN** gitleaks reports a finding
+- **GIVEN** a Bash command that sends to a non-local destination, with `gitleaks` on `PATH`
+- **WHEN** the command carries a secret the `gitleaks` rules detect
 - **THEN** the hook exits 2 (block — exfiltration vector confirmed)
 
 ## REMOVED Requirements

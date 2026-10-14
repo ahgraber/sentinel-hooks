@@ -31,10 +31,10 @@ Zero-access paths include:
 - Shell history files: `.bash_history`, `.zsh_history`, `.sh_history`, `.node_repl_history`, `.python_history`
 - Files whose name contains `credentials` or `secret` (case-insensitive), unless the path falls within a package or dependency directory (see `PackageDirExemption`)
 
-A supplied path SHALL be judged in every form `path-matching` produces for it — as written, with home notation and traversal applied, and as resolved — so that home notation, traversal, and a symbolic link do not defeat the set.
+A zero-access path SHALL be recognized whether it is supplied as written, with a home reference such as `~` or `$HOME`, with `..` components, or through a symbolic link.
 The stated limits of `path-matching` apply here unchanged.
 
-Membership itself SHALL NOT be decided by `path-matching`, and letter case SHALL NOT follow the volume here.
+Letter case SHALL NOT follow the volume here.
 
 This requirement asks a different question from a guarded location.
 A guarded location asks whether a path _is_ a declared file, so two spellings are one file only where the volume says so, and `secret-access-blocking` `AskOnCredentialStoreRead` is decided that way.
@@ -68,7 +68,8 @@ The exemption SHALL cover the directories holding this repository's own hook sou
 Those directories hold files whose names describe what they guard against, not what they contain.
 Reaching one of them requires the name-based patterns not to apply, and an agent that cannot read or write its own guardrail source cannot maintain it.
 
-The exemption SHALL be declared once for the whole family, not per agent.
+The exemption SHALL cover the hook-source directory of every agent in this repository.
+This includes a directory added or moved later, with no edit to the exemption.
 Naming the agents one at a time leaves a directory uncovered whenever these modules move, making a guardrail source unreachable to the people responsible for it.
 
 #### Scenario: GuardrailSourceNamedForWhatItBlocks
