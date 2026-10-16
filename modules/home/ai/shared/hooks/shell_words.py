@@ -402,7 +402,7 @@ def _expands(value: str) -> bool:
     return any(char in value for char in "$`{*?[")
 
 
-def _command_position(words: list[Word]) -> list[Word] | None:
+def command_position(words: list[Word]) -> list[Word] | None:
     """Return the words from the command word on; `None` where `command -v` only looks one up."""
     index = 0
     while index < len(words) and (words[index].kind == "assignment" or _reserved(words[index])):
@@ -427,7 +427,7 @@ def _directory_effect(words: list[Word]) -> tuple[str, list[Word]] | object | No
     """Return the `cd`, `pushd`, or `popd` a segment runs with its operands, `_UNKNOWN`, or `None`."""
     if any(_DIRECTORY_VARIABLES.match(word.value) for word in words):
         return _UNKNOWN
-    rest = _command_position(words)
+    rest = command_position(words)
     if not rest:
         return None
     if (rest[0].kind == "unresolvable" and _expands(rest[0].value)) or rest[0].value in _OPAQUE:

@@ -41,6 +41,20 @@
 - [x] Add `bash -lc` with a guarded target to the tamper gate's inline-code cases.
 - [x] Correct the Risks section and the ReasonText decision in `design.md`.
 
+## Second verification fixes
+
+- [x] Add the `PiSandboxFloor` Decision entry to `design.md`.
+- [x] Judge launcher commands through the lexer path: `xargs` after its options, `find` actions up to `;` or `+`, and `watch`'s joined `sh -c` text; drop `parallel`.
+- [x] Fall back on backticks only when an unresolved word holds one.
+- [x] Add Claude tests for the five false positives (quoted search terms under `xargs` and `find`, `find -name`, and backticks inside single quotes) and for `find -exec sh -c`, `watch -n`, `xargs -n`, and a backtick inside double quotes.
+
+## Overlap cleanup
+
+- [x] Reuse `bash_commands.reads_stdin_program` (made public) for the stdin-script check, which covers `bash -`; share `FIND_EXEC_ACTIONS`; drop the unreachable process-substitution branch and the duplicate depth guard; rename the subcommand reader to avoid the clash with `bash_commands._operands`.
+- [x] Move launcher reading into `bash_commands` as `launched_arguments` and `watch_script`, with tests in `shared/tests/test_invoked_program.py`.
+- [x] Detect `command -v` through the exported `shell_words.command_position` instead of a copy; add the `builtin command -v` case.
+- [x] Fold the reason-names-the-command test into one assertion of name and hand-off, drop duplicate rows, and add tests for `bash -` and for an option inside a text-fallback form.
+
 ## Tests (other agents)
 
 - [x] Add a Codex test in `codex/tests/test_codex_block_leaks.py` that `op read` blocks with the user-only reason.

@@ -75,7 +75,8 @@ OPAQUE_KINDS = frozenset({"unresolvable", "assignment"})
 _PRIVILEGE_WRAPPERS = {"sudo": {"-u", "-g", "-U", "-h", "-p", "-C", "-D", "-r", "-t"}, "doas": {"-u", "-C"}}
 _GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
 _ACL_FLAG = re.compile(r"^[-+=]a\S*$")
-_FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})
+FIND_EXEC_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
+_FIND_ACTIONS = FIND_EXEC_ACTIONS | {"-delete"}
 _FIND_LEADING_OPTIONS = frozenset({"-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"})
 _UNZIP_INSPECTS = frozenset({"-l", "-t", "-v", "-Z", "-z", "-Z1"})
 
@@ -279,7 +280,7 @@ def defines_function(segment: Segment) -> bool:
     return words[0].value == "function"
 
 
-def _reads_stdin_program(segment: list[Word]) -> bool:
+def reads_stdin_program(segment: list[Word]) -> bool:
     """Whether a shell segment takes its program text from standard input."""
     words = invocation(segment)
     if not words or os.path.basename(words[0].value) not in SHELLS:
@@ -302,7 +303,7 @@ def _builder(segment: Segment, *, pipe_fed: bool) -> bool:
         return True
     if name in {"xargs", "eval"} or program_text(segment):
         return True
-    return _reads_stdin_program(segment)
+    return reads_stdin_program(segment)
 
 
 def read_only(segment: list[Word]) -> bool:
@@ -474,29 +475,66 @@ def _strip_privilege(words: list[Word]) -> list[Word]:
     return words
 
 
-def _looks_up(words: list[Word]) -> bool:
-    """Whether the words run `command -v` or `command -V`, which name a program without running it."""
-    if not words or os.path.basename(words[0].value) != "command":
-        return False
-    for word in words[1:]:
-        if not word.value.startswith("-") or word.value == "--":
-            return False
-        if set(word.value[1:]) & {"v", "V"}:
-            return True
-    return False
-
-
 def invoked(segment: list[Word]) -> list[Word]:
     """Return the program and its arguments, past privilege and execution wrappers in any order and nesting."""
     words = list(segment)
     while True:
         words = _strip_privilege([word for word in words if word.kind != "assignment"])
-        if _looks_up(words):
+        # `command -v` and `command -V` name a program without running it.
+        if shell_words.command_position(words) is None:
             return []
         unwrapped = invocation(words)
         if unwrapped == words:
             return unwrapped
         words = unwrapped
+
+
+# Options that take a separate value, for the programs that launch a command from their arguments.
+# GNU `-e`, `-i`, and `-l` take only an attached value, so they are absent.
+_XARGS_VALUE_OPTIONS = frozenset(
+    {
+        "-a", "--arg-file", "-d", "--delimiter", "-E", "--eof", "-I", "--replace", "-J", "-L",
+        "--max-lines", "-n", "--max-args", "-P", "--max-procs", "-R", "-S", "-s", "--max-chars",
+        "--process-slot-var",
+    }
+)  # fmt: skip
+_WATCH_VALUE_OPTIONS = frozenset({"-n", "--interval"})
+
+
+def _after_options(words: list[Word], value_options: frozenset[str]) -> list[Word]:
+    """Return the words from the first operand on, skipping options and the values listed options take."""
+    index = 0
+    while index < len(words) and words[index].value.startswith("-") and words[index].value != "-":
+        if words[index].value == "--":
+            return words[index + 1 :]
+        index += 1 + (words[index].value in value_options)
+    return words[index:]
+
+
+def launched_arguments(words: list[Word]) -> list[list[Word]]:
+    """Return the argument lists a launcher (`xargs`, `find` actions) executes directly."""
+    name = os.path.basename(words[0].value) if words else ""
+    if name == "xargs":
+        return [_after_options(words[1:], _XARGS_VALUE_OPTIONS)]
+    if name != "find":
+        return []
+    commands, current = [], None
+    for word in words[1:]:
+        if current is None:
+            current = [] if word.value in FIND_EXEC_ACTIONS else None
+        elif word.value in {";", "+"}:
+            commands.append(current)
+            current = None
+        else:
+            current.append(word)
+    return commands
+
+
+def watch_script(words: list[Word]) -> list[str]:
+    """Return the text `watch` runs: its arguments joined for `sh -c`, which loses their quoting."""
+    if not words or os.path.basename(words[0].value) != "watch":
+        return []
+    return [" ".join(word.value for word in _after_options(words[1:], _WATCH_VALUE_OPTIONS))]
 
 
 def destroyed_operands(segment: list[Word], *, cwd_known: bool = True, directory: str | None = "") -> list[str]:
@@ -596,7 +634,7 @@ def _piped_programs(segments: list[SegmentReading]) -> tuple[str, ...]:
     """Text emitted by echo or printf into a shell's standard input."""
     programs = []
     for index, segment in enumerate(segments):
-        if segment.programs or not _reads_stdin_program(segment.words):
+        if segment.programs or not reads_stdin_program(segment.words):
             continue
         source = index - 1
         while source >= 0 and segments[source].words.separator == "|":

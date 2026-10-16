@@ -116,15 +116,12 @@ _KUBECTL_VALUE_OPTIONS = frozenset(
         "--username", "--password",
     }
 )  # fmt: skip
-# Programs that run another program from their arguments, which `bash_commands.invoked` does not unwrap.
-_LAUNCHERS = frozenset({"xargs", "find", "watch", "parallel"})
-_SUBSTITUTION = re.compile(r"\$\(|[<>]\(")
 _QUOTING = re.compile(r"[\"'\\]")
 _MAX_NESTING = 4
 _UNREAD_FORM = "a 1Password or Kubernetes secret read"
 
 
-def _operands(words: list[shell_words.Word], value_options: frozenset[str]) -> list[str]:
+def _subcommand_words(words: list[shell_words.Word], value_options: frozenset[str]) -> list[str]:
     """Return the non-option arguments, skipping the value each listed option takes."""
     operands = []
     index = 0
@@ -149,13 +146,13 @@ def _invokes_user_only_store(words: list[shell_words.Word]) -> str | None:
         return None
     name = os.path.basename(words[0].value)
     if name == "op":
-        operands = _operands(words[1:], _OP_VALUE_OPTIONS)
+        operands = _subcommand_words(words[1:], _OP_VALUE_OPTIONS)
         if operands[:1] and operands[0] in {"read", "run", "inject"}:
             return f"op {operands[0]}"
         if operands[:2] in (["item", "get"], ["document", "get"]):
             return f"op {operands[0]} get"
     if name == "kubectl":
-        operands = _operands(words[1:], _KUBECTL_VALUE_OPTIONS)
+        operands = _subcommand_words(words[1:], _KUBECTL_VALUE_OPTIONS)
         # `Secret`, `secrets.v1`, and `secret/<name>` all name the secret resource.
         resources = [
             kind.split("/")[0].split(".")[0].lower() for operand in operands[1:] for kind in operand.split(",")
@@ -165,39 +162,45 @@ def _invokes_user_only_store(words: list[shell_words.Word]) -> str | None:
     return None
 
 
+def _invocation_read(words: list[shell_words.Word], depth: int) -> str | None:
+    """Name the secret read an invocation performs directly, through inline code, or through a launcher."""
+    words = bash_commands.invoked(words)
+    if match := _invokes_user_only_store(words):
+        return match
+    if depth > _MAX_NESTING:
+        return _text_match(" ".join(word.value for word in words))
+    for text in bash_commands.program_text(words) + bash_commands.watch_script(words):
+        if match := user_only_store_read(text, depth + 1):
+            return match
+    for arguments in bash_commands.launched_arguments(words):
+        if match := _invocation_read(arguments, depth + 1):
+            return match
+    return None
+
+
 def _reads_stdin_script(words: list[shell_words.Word]) -> bool:
     """Whether a shell runs a script from its standard input, which the lexer never sees."""
-    return (
-        bool(words)
-        and os.path.basename(words[0].value) in bash_commands.SHELLS
-        and not bash_commands.program_text(words)
-        and not _operands(words[1:], frozenset())
-    )
+    return bash_commands.reads_stdin_program(words) and not bash_commands.program_text(words)
 
 
 def user_only_store_read(command: str, depth: int = 0) -> str | None:
     """Name the 1Password or Kubernetes secret read the text runs, or `None` when it runs none."""
     segments = shell_words.lex(command, None)
-    # Backticks split across words, so only the whole text shows what they run.
-    if segments is None or depth > _MAX_NESTING or "`" in command:
-        if match := _text_match(command):
-            return match
-        if segments is None or depth > _MAX_NESTING:
-            return None
+    if segments is None:
+        return _text_match(command)
+    # A backtick substitution splits across words, so only the whole text shows what it runs.
+    # A backtick inside single quotes lexes as part of a resolved word and runs nothing.
+    backticked = any(word.kind == "unresolvable" and "`" in word.value for segment in segments for word in segment)
+    if backticked and (match := _text_match(command)):
+        return match
     for segment in segments:
         for word in segment:
-            if word.kind == "unresolvable" and _SUBSTITUTION.search(word.value) and (match := _text_match(word.value)):
+            # An unquoted `<(` or `>(` leaves the command unlexed, so only `$(` reaches here.
+            if word.kind == "unresolvable" and "$(" in word.value and (match := _text_match(word.value)):
                 return match
-        words = bash_commands.invoked(segment)
-        if match := _invokes_user_only_store(words):
+        if match := _invocation_read(segment, depth):
             return match
-        launches = bool(words) and os.path.basename(words[0].value) in _LAUNCHERS
-        if launches and (match := _text_match(" ".join(word.value for word in words))):
-            return match
-        for text in bash_commands.program_text(words):
-            if match := user_only_store_read(text, depth + 1):
-                return match
-        if _reads_stdin_script(words) and (match := _text_match(command)):
+        if _reads_stdin_script(segment) and (match := _text_match(command)):
             return match
     return None
 

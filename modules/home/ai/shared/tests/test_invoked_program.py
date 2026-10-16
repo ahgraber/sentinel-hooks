@@ -31,7 +31,7 @@ def test_wrappers_are_removed_in_any_order(command):
     assert _invoked(command) == ["ls", "-la"]
 
 
-@pytest.mark.parametrize("command", ["command -v ls", "command -V ls", "sudo command -v ls"])
+@pytest.mark.parametrize("command", ["command -v ls", "command -V ls", "sudo command -v ls", "builtin command -v ls"])
 def test_a_program_lookup_runs_no_program(command):
     assert _invoked(command) == []
 
@@ -55,3 +55,37 @@ def test_shell_option_clusters_with_c_run_the_next_word(command, code):
 
 def test_shell_option_cluster_without_c_runs_no_inline_code():
     assert bash_commands.program_text(_segment("bash -l script.sh")) == []
+
+
+def _launched(command: str) -> list[list[str]]:
+    words = bash_commands.invoked(_segment(command))
+    return [[word.value for word in arguments] for arguments in bash_commands.launched_arguments(words)]
+
+
+@pytest.mark.parametrize(
+    ("command", "launched"),
+    [
+        ("xargs ls -la", [["ls", "-la"]]),
+        ("xargs -n 1 -P 4 ls -la", [["ls", "-la"]]),
+        ("xargs -0 -- ls", [["ls"]]),
+        ("find . -name x -exec ls {} \\;", [["ls", "{}"]]),
+        ("find . -exec ls {} + -execdir cat {} \\;", [["ls", "{}"], ["cat", "{}"]]),
+        ("find . -name x -delete", []),
+        ("ls -la", []),
+    ],
+)
+def test_launchers_name_the_argument_lists_they_run(command, launched):
+    assert _launched(command) == launched
+
+
+@pytest.mark.parametrize(
+    ("command", "script"),
+    [
+        ("watch ls -la", ["ls -la"]),
+        ("watch -n 5 'ls -la'", ["ls -la"]),
+        ("watch -d ls", ["ls"]),
+        ("ls -la", []),
+    ],
+)
+def test_watch_runs_its_joined_arguments(command, script):
+    assert bash_commands.watch_script(bash_commands.invoked(_segment(command))) == script
