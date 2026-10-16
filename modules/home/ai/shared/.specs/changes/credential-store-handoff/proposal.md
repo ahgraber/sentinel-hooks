@@ -23,6 +23,7 @@ As the maintainer, I want each credential store to get the same answer on every 
 
 - `secret-access-blocking`: a refusal for Bash commands that read from the 1Password CLI or Kubernetes secrets, with a reason that directs the agent to the user.
 - `secret-access-blocking`: `AskOnCredentialStoreRead` narrowed to the stores this change does not refuse.
+- Pi's `sandbox.json` denies reads of `~/.config/op` and `~/.kube`, as the other agents' sandboxes do, so a form the hook does not match still fails on Pi.
 
 **Out of scope:**
 
@@ -30,8 +31,6 @@ As the maintainer, I want each credential store to get the same answer on every 
   `security` reaches the keychain over IPC from inside the sandbox (a lookup of a missing item returned exit 44 on 2026-10-15), so an approved read succeeds and the ask is meaningful.
 - `vault` and `aws secretsmanager`.
   The maintainer does not use them, and whether an approved read succeeds was not checked.
-- Adding `~/.config/op` and `~/.kube` to Pi's `sandbox.json`.
-  The hook refusal covers Pi; the sandbox entry is a separate surface decision.
 - 1Password service accounts or any route that gives agents scoped secret access.
 
 ## Approach
@@ -49,6 +48,8 @@ The network-send refusal in `BlockSecretExfiltration` is unchanged and still tak
 - 2026-10-15 Which credential stores move from ask to refuse: 1Password and Kubernetes secrets only; other stores stay ask unless shown to be unreachable.
   Decided with the user.
 - 2026-10-15 Whether the loopback exemption covers a user-only store read: no; the read places the secret in the agent's context, which reaches the model provider, so the read is exfiltration whatever its destination.
+  Decided with the user.
+- 2026-10-16 Whether Pi's sandbox denies `~/.config/op` and `~/.kube`, moved from out of scope after verification found forms the hook misses that Pi then allowed with no prompt: yes, so every agent has the same sandbox floor for these stores.
   Decided with the user.
 - 2026-10-15 How the refusal finds a store read, after a text pattern refused a `grep` that only mentioned the subcommands: judge the program the shared lexer finds in command position.
   Decided with the user.

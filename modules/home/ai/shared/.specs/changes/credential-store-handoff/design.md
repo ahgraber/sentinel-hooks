@@ -61,7 +61,9 @@ Falling back to the text where the lexer cannot read keeps the check fail-closed
 
 ### Decision: SubcommandsThatReadASecret
 
-**Chosen:** The check refuses `op read`, `op run`, `op inject`, `op item get`, and `op document get`, and `kubectl get` with a `secret` or `secrets` resource in any operand (including `secret/<name>` and comma-separated lists).
+**Chosen:** The check refuses `op read`, `op run`, `op inject`, `op item get`, and `op document get`, and `kubectl get` with a `secret` or `secrets` resource in any operand.
+The resource comparison ignores case, a `/<name>` suffix, a `.<version>` suffix, and comma-separated lists, so `Secret`, `secret.v1`, and `pod/x,secret/y` all match.
+Programs that run another program from their arguments (`xargs`, `find`, `watch`, `parallel`) are judged by the text fallback over their arguments.
 Global options such as `op --account <name>` and `kubectl -n <namespace>` may come before the subcommand; the value options of each program are listed so their values are not read as the subcommand.
 
 **Rationale:** These subcommands print a secret value or place one in a child process's environment.
@@ -74,10 +76,10 @@ Options before the subcommand are common in real use; a pattern that requires th
 
 ### Decision: ReasonText
 
-**Chosen:** The reason states that the store holds secrets for the user alone, that no agent may read it, the exposure risk, and that the agent should ask the user to run the command.
+**Chosen:** The reason names the matched command (`op read`, `kubectl get secret`, or "a 1Password or Kubernetes secret read" where only the text fallback matched), states that the secret is for the user alone, states the exposure risk, and tells the agent to ask the user to run the command.
 
-**Rationale:** `hook-interface ExplanationContract` requires every reason to convey exposure, the credential, and the risk.
-The shared instructions already ask for the user-run command, so the reason does not repeat them.
+**Rationale:** `hook-interface ExplanationContract` requires every reason to convey exposure, the credential, and the risk, and to name the specific command where possible.
+The shared refusal instructions tell the agent to report how the user can help; the reason supplies the specific help, which is running this command.
 
 ## Architecture
 
@@ -93,6 +95,7 @@ Bash command
 
 ## Risks
 
-- **A new `op` subcommand prints a secret and is not matched**: the agent sandboxes still deny `~/.config/op` on Claude, Codex, and the editor, so the read fails there; Pi would ask.
-  Add the subcommand to the pattern when found.
+- **A form that reads a secret is not matched** (a new `op` subcommand, an unlisted launcher, an unlisted option that takes a value): the hook allows it with no prompt.
+  Every agent's sandbox denies `~/.config/op` and `~/.kube`, Pi's included, so the read fails there.
+  Add the form to the check when found.
 - **A kubeconfig outside `~/.kube`** (set through `KUBECONFIG` or kept in a project): the refusal blocks these reads too, which matches the user's decision that agents do not read Kubernetes secrets.

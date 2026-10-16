@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import shlex
 import shutil
 import sys
 
@@ -203,9 +204,23 @@ class TestUserOnlyCredentialStores:
             "echo $(op 'read' op://vault/item/field)",
             "kubectl get -o yaml secret my-secret",
             "kubectl get pod/example secret/my-secret -o yaml",
+            "xargs op read < refs.txt",
+            "find . -name refs -exec op read {} \\;",
+            "watch op read op://vault/item/field",
+            "kubectl get Secret my-secret",
+            "kubectl get secret.v1 my-secret",
+            "op --cache read op://vault/item/field",
+            "kubectl -v 6 get secret my-secret",
+            "kubectl --request-timeout 5s get secret my-secret",
         ],
     )
     def test_blocks_with_user_handoff(self, command):
+        assert_block_contract(bash(command), "user to run this command")
+
+    def test_inline_code_nested_past_the_lexer_limit_blocks(self):
+        command = "op read op://vault/item/field"
+        for _ in range(6):
+            command = f"bash -c {shlex.quote(command)}"
         assert_block_contract(bash(command), "user to run this command")
 
     @pytest.mark.parametrize(

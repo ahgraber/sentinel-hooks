@@ -107,10 +107,17 @@ USER_ONLY_STORE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_OP_VALUE_OPTIONS = frozenset({"--account", "--cache", "--config", "--encoding", "--format", "--session"})
+_OP_VALUE_OPTIONS = frozenset({"--account", "--config", "--encoding", "--format", "--session"})
 _KUBECTL_VALUE_OPTIONS = frozenset(
-    {"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "-s", "--server", "--token", "--as"}
-)
+    {
+        "-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "-s", "--server",
+        "--token", "--as", "--as-group", "--as-uid", "-v", "--v", "--request-timeout", "--cache-dir",
+        "--certificate-authority", "--client-certificate", "--client-key", "--tls-server-name",
+        "--username", "--password",
+    }
+)  # fmt: skip
+# Programs that run another program from their arguments, which `bash_commands.invoked` does not unwrap.
+_LAUNCHERS = frozenset({"xargs", "find", "watch", "parallel"})
 _SUBSTITUTION = re.compile(r"\$\(|[<>]\(")
 _QUOTING = re.compile(r"[\"'\\]")
 _MAX_NESTING = 4
@@ -149,7 +156,10 @@ def _invokes_user_only_store(words: list[shell_words.Word]) -> str | None:
             return f"op {operands[0]} get"
     if name == "kubectl":
         operands = _operands(words[1:], _KUBECTL_VALUE_OPTIONS)
-        resources = [kind.split("/")[0] for operand in operands[1:] for kind in operand.split(",")]
+        # `Secret`, `secrets.v1`, and `secret/<name>` all name the secret resource.
+        resources = [
+            kind.split("/")[0].split(".")[0].lower() for operand in operands[1:] for kind in operand.split(",")
+        ]
         if operands[:1] == ["get"] and {"secret", "secrets"} & set(resources):
             return "kubectl get secret"
     return None
@@ -180,6 +190,9 @@ def user_only_store_read(command: str, depth: int = 0) -> str | None:
                 return match
         words = bash_commands.invoked(segment)
         if match := _invokes_user_only_store(words):
+            return match
+        launches = bool(words) and os.path.basename(words[0].value) in _LAUNCHERS
+        if launches and (match := _text_match(" ".join(word.value for word in words))):
             return match
         for text in bash_commands.program_text(words):
             if match := user_only_store_read(text, depth + 1):

@@ -31,6 +31,16 @@
 - [x] Name the matched command in the refusal reason.
 - [x] Add Claude tests for each failing input from the review, both refused and allowed forms.
 
+## Verification fixes
+
+- [x] Add `~/.config/op` and `~/.kube` to `filesystem.denyRead` in each Pi `sandbox.json`.
+- [x] Judge `xargs`, `find`, `watch`, and `parallel` arguments with the text fallback.
+- [x] Compare `kubectl` resources without case or version suffix.
+- [x] Remove `--cache` from the `op` options that take a value; add the `kubectl` global options that take a value.
+- [x] Add Claude tests for each verifier input and for inline code nested past the lexer limit.
+- [x] Add `bash -lc` with a guarded target to the tamper gate's inline-code cases.
+- [x] Correct the Risks section and the ReasonText decision in `design.md`.
+
 ## Tests (other agents)
 
 - [x] Add a Codex test in `codex/tests/test_codex_block_leaks.py` that `op read` blocks with the user-only reason.

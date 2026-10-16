@@ -222,6 +222,7 @@ READS = [
 NOT_READS = [
     f"cat {SKILL_FILE} && cat evals/x.py | awk '{{print}}'",
     "bash -c 'rm ~/.claude/settings.json'",
+    "bash -lc 'rm ~/.claude/settings.json'",
     "echo ~/.claude/settings.json | xargs rm",
     f"cat {SKILL_FILE}\nrm -rf ~/.claude/skills",
     f"cat {SKILL_FILE} |& rm -rf ~/.claude/skills",
