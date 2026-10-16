@@ -11,13 +11,16 @@ are credentials is `block-sensitive-paths.py`'s judgment, made from the manifest
 
 import io
 import json
+import os
 import re
 import subprocess
 import sys
 from typing import NoReturn
 
+import bash_commands
 from guarded_paths import TOOL_VOCABULARY
 from hook_response import UNKNOWN, Decision, invoking_agent, respond, supports_ask
+import shell_words
 
 MUTATING_TOOLS = TOOL_VOCABULARY.group("mutating")
 
@@ -88,11 +91,103 @@ CRED_PATH_IN_CMD_RE = re.compile(
 CREDENTIAL_STORE_RE = re.compile(
     r"\bsecurity\s+find-(?:generic|internet)-password\b"
     r"|\bvault\s+(?:read|kv\s+get)\b"
-    r"|\bop\s+(?:read|item\s+get|run)\b"
-    r"|\baws\s+secretsmanager\b"
-    r"|\bkubectl\s+get\s+secret\b",
+    r"|\baws\s+secretsmanager\b",
     re.IGNORECASE,
 )
+
+# Options such as `--account work` or `-n prod` may sit between the program and its subcommand.
+_LEADING_OPTIONS = r"(?:\s+--?[\w-]+(?:[= ][^\s-]\S*)?)*"
+
+# Stores no agent may read: every agent's sandbox denies their configuration.
+# The pattern judges only text the lexer cannot read: an unlexable command or a
+# command substitution, where refusing on the text is the safe reading.
+USER_ONLY_STORE_RE = re.compile(
+    rf"\bop{_LEADING_OPTIONS}\s+(?:read|run|inject|item\s+get|document\s+get)\b"
+    rf"|\bkubectl{_LEADING_OPTIONS}\s+get\s+secrets?\b",
+    re.IGNORECASE,
+)
+
+_OP_VALUE_OPTIONS = frozenset({"--account", "--cache", "--config", "--encoding", "--format", "--session"})
+_KUBECTL_VALUE_OPTIONS = frozenset(
+    {"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "-s", "--server", "--token", "--as"}
+)
+_SUBSTITUTION = re.compile(r"\$\(|[<>]\(")
+_QUOTING = re.compile(r"[\"'\\]")
+_MAX_NESTING = 4
+_UNREAD_FORM = "a 1Password or Kubernetes secret read"
+
+
+def _operands(words: list[shell_words.Word], value_options: frozenset[str]) -> list[str]:
+    """Return the non-option arguments, skipping the value each listed option takes."""
+    operands = []
+    index = 0
+    while index < len(words):
+        value = words[index].value
+        if value.startswith("-") and value != "-":
+            index += value in value_options
+        else:
+            operands.append(value)
+        index += 1
+    return operands
+
+
+def _text_match(text: str) -> str | None:
+    """Judge text the lexer cannot read, with quoting removed so `op 'read'` still matches."""
+    return _UNREAD_FORM if USER_ONLY_STORE_RE.search(_QUOTING.sub("", text)) else None
+
+
+def _invokes_user_only_store(words: list[shell_words.Word]) -> str | None:
+    """Name the secret read one invocation performs, if it reads a 1Password or Kubernetes secret."""
+    if not words:
+        return None
+    name = os.path.basename(words[0].value)
+    if name == "op":
+        operands = _operands(words[1:], _OP_VALUE_OPTIONS)
+        if operands[:1] and operands[0] in {"read", "run", "inject"}:
+            return f"op {operands[0]}"
+        if operands[:2] in (["item", "get"], ["document", "get"]):
+            return f"op {operands[0]} get"
+    if name == "kubectl":
+        operands = _operands(words[1:], _KUBECTL_VALUE_OPTIONS)
+        resources = [kind.split("/")[0] for operand in operands[1:] for kind in operand.split(",")]
+        if operands[:1] == ["get"] and {"secret", "secrets"} & set(resources):
+            return "kubectl get secret"
+    return None
+
+
+def _reads_stdin_script(words: list[shell_words.Word]) -> bool:
+    """Whether a shell runs a script from its standard input, which the lexer never sees."""
+    return (
+        bool(words)
+        and os.path.basename(words[0].value) in bash_commands.SHELLS
+        and not bash_commands.program_text(words)
+        and not _operands(words[1:], frozenset())
+    )
+
+
+def user_only_store_read(command: str, depth: int = 0) -> str | None:
+    """Name the 1Password or Kubernetes secret read the text runs, or `None` when it runs none."""
+    segments = shell_words.lex(command, None)
+    # Backticks split across words, so only the whole text shows what they run.
+    if segments is None or depth > _MAX_NESTING or "`" in command:
+        if match := _text_match(command):
+            return match
+        if segments is None or depth > _MAX_NESTING:
+            return None
+    for segment in segments:
+        for word in segment:
+            if word.kind == "unresolvable" and _SUBSTITUTION.search(word.value) and (match := _text_match(word.value)):
+                return match
+        words = bash_commands.invoked(segment)
+        if match := _invokes_user_only_store(words):
+            return match
+        for text in bash_commands.program_text(words):
+            if match := user_only_store_read(text, depth + 1):
+                return match
+        if _reads_stdin_script(words) and (match := _text_match(command)):
+            return match
+    return None
+
 
 BUILTIN_SECRET_RES = [
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -233,11 +328,21 @@ def main() -> None:
                 f"API keys, and tokens, to a remote host. {_EXPOSURE_RISK}"
             )
 
-        if CREDENTIAL_STORE_RE.search(command) and has_network and not is_local:
+        user_only_read = user_only_store_read(command)
+        reads_store = bool(user_only_read) or bool(CREDENTIAL_STORE_RE.search(command))
+
+        if reads_store and has_network and not is_local:
             block(
                 "Blocked: credential store read piped to a remote network destination.\n"
                 "This command sends a secret from a keychain, vault, or secrets manager "
                 f"to a remote host. {_EXPOSURE_RISK}"
+            )
+
+        if user_only_read:
+            block(
+                f"Blocked: this command runs {user_only_read}, which reads a secret that is for the user alone.\n"
+                "Reading it would expose the secret to the agent's context and the model provider. "
+                f"{_EXPOSURE_RISK} Ask the user to run this command in their own terminal."
             )
 
         if CREDENTIAL_STORE_RE.search(command):

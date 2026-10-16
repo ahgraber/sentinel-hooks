@@ -19,6 +19,9 @@ class TestCodexSpecificBlocking:
         # not the words it uses.
         assert_block_contract(bash("security find-generic-password -w -s myservice"))
 
+    def test_user_only_store_read_blocks_with_user_handoff(self):
+        assert_block_contract(bash("op read 'op://vault/item/field'"), "user to run this command")
+
 
 class TestCodexExfil:
     """Exfil variants block."""

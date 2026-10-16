@@ -48,3 +48,7 @@ The network-send refusal in `BlockSecretExfiltration` is unchanged and still tak
   Decided with the user.
 - 2026-10-15 Which credential stores move from ask to refuse: 1Password and Kubernetes secrets only; other stores stay ask unless shown to be unreachable.
   Decided with the user.
+- 2026-10-15 Whether the loopback exemption covers a user-only store read: no; the read places the secret in the agent's context, which reaches the model provider, so the read is exfiltration whatever its destination.
+  Decided with the user.
+- 2026-10-15 How the refusal finds a store read, after a text pattern refused a `grep` that only mentioned the subcommands: judge the program the shared lexer finds in command position.
+  Decided with the user.

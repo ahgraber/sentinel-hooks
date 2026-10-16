@@ -60,6 +60,7 @@ INTERPRETERS = frozenset(
 # These options pass program text to an interpreter.
 INLINE_CODE_OPTIONS = frozenset({"-c", "--command", "-e", "--eval", "--exec"})
 SHELLS = frozenset({"bash", "sh", "zsh"})
+_SHELL_CODE_CLUSTER = re.compile(r"-[A-Za-z]*c[A-Za-z]*")
 READ_WRAPPERS = frozenset({"time", "timeout", "stdbuf", "setsid"})
 
 # Accept executable files and known script suffixes.
@@ -244,16 +245,26 @@ def program_text(segment: list[Word]) -> list[str]:
         return programs
     if name not in INTERPRETERS:
         return []
+    return _inline_code(name, words)
+
+
+def _inline_code(name: str, words: list[Word]) -> list[str]:
+    """Extract the code an interpreter's options pass it inline."""
     programs = []
     for index, word in enumerate(words[1:], 1):
+        following = words[index + 1].value if index + 1 < len(words) else None
         option, separator, value = word.value.partition("=")
         if option in INLINE_CODE_OPTIONS:
-            if separator:
-                programs.append(value)
-            elif index + 1 < len(words):
-                programs.append(words[index + 1].value)
+            code = value if separator else following
+        elif name in SHELLS and _SHELL_CODE_CLUSTER.fullmatch(word.value):
+            # `bash -lc '<code>'`: the code is the next word, not the rest of the cluster.
+            code = following
         elif not word.value.startswith("--") and word.value[:2] in {"-c", "-e"}:
-            programs.append(word.value[2:])
+            code = word.value[2:]
+        else:
+            code = None
+        if code is not None:
+            programs.append(code)
     return programs
 
 
@@ -461,6 +472,31 @@ def _strip_privilege(words: list[Word]) -> list[Word]:
             if words.pop(0).value in value_options and words:
                 words.pop(0)
     return words
+
+
+def _looks_up(words: list[Word]) -> bool:
+    """Whether the words run `command -v` or `command -V`, which name a program without running it."""
+    if not words or os.path.basename(words[0].value) != "command":
+        return False
+    for word in words[1:]:
+        if not word.value.startswith("-") or word.value == "--":
+            return False
+        if set(word.value[1:]) & {"v", "V"}:
+            return True
+    return False
+
+
+def invoked(segment: list[Word]) -> list[Word]:
+    """Return the program and its arguments, past privilege and execution wrappers in any order and nesting."""
+    words = list(segment)
+    while True:
+        words = _strip_privilege([word for word in words if word.kind != "assignment"])
+        if _looks_up(words):
+            return []
+        unwrapped = invocation(words)
+        if unwrapped == words:
+            return unwrapped
+        words = unwrapped
 
 
 def destroyed_operands(segment: list[Word], *, cwd_known: bool = True, directory: str | None = "") -> list[str]:

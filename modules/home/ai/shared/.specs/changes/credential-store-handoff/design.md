@@ -30,11 +30,39 @@ The exfiltration check keeps matching all stores, including the user-only ones, 
 - A rule table entry in `block-destructive-ops-patterns.toml`: that table covers destructive operations, not credential access, and `secret-access-blocking` owns this requirement.
 - A per-store mode field on one pattern list: more structure than two stores need.
 
+### Decision: ContextIsExfiltration
+
+**Chosen:** Treat a user-only store read as an exfiltration vector, so it is a `block` under the existing definition in `RuleModes`, and exclude it from the loopback exemption in `BlockSecretExfiltration`.
+
+**Rationale:** The agents run on models served over an API, so a secret read into an agent's context leaves the machine before any later command sends it anywhere.
+A local destination therefore does not make the read safe.
+
+**Alternatives considered:**
+
+- Widen the definition of `block` beyond exfiltration: unnecessary, because the read already is one.
+- Leave the loopback scenario unchanged: the synced baseline would allow and refuse the same command.
+
+### Decision: JudgeTheInvokedProgram
+
+**Chosen:** Judge the words the shared lexer (`shell_words.lex`) produces, not the command text.
+For each segment, `bash_commands.invoked` returns the program past `sudo`, `env`, and the other execution wrappers, and the check reads that program's subcommand.
+Inline code (`bash -c`, `eval`) is judged recursively through `bash_commands.program_text`.
+`USER_ONLY_STORE_RE` judges the raw text only where the lexer cannot: a command it does not lex, such as a multi-line command, and a segment with a command substitution (`$(…)`, backticks, process substitution).
+
+**Rationale:** A pattern over the whole text refused a `grep` for these subcommands, a commit message that quotes them, and an `echo` argument.
+The old ask had the same false positive, but an ask can be approved; a block cannot.
+The lexer's quoting rules place a quoted argument outside command position.
+Falling back to the text where the lexer cannot read keeps the check fail-closed.
+
+**Alternatives considered:**
+
+- Anchor the pattern to the start of the command or a separator: misses `sudo` and `env` wrappers and still matches inside `bash -c` strings.
+- Keep the text pattern: refuses commands that only mention the subcommands.
+
 ### Decision: SubcommandsThatReadASecret
 
-**Chosen:** `USER_ONLY_STORE_RE` matches `op read`, `op run`, `op inject`, `op item get`, and `op document get`, and `kubectl get secret` or `kubectl get secrets`.
-The `op` match allows global options such as `--account <name>` between `op` and the subcommand.
-The `kubectl` match allows options such as `-n <namespace>` between `kubectl` and `get`.
+**Chosen:** The check refuses `op read`, `op run`, `op inject`, `op item get`, and `op document get`, and `kubectl get` with a `secret` or `secrets` resource in any operand (including `secret/<name>` and comma-separated lists).
+Global options such as `op --account <name>` and `kubectl -n <namespace>` may come before the subcommand; the value options of each program are listed so their values are not read as the subcommand.
 
 **Rationale:** These subcommands print a secret value or place one in a child process's environment.
 `op whoami`, `op account list`, `op vault list`, and `op item list` read no secret value, so they stay outside the pattern, as the spec requires.
@@ -46,12 +74,9 @@ Options before the subcommand are common in real use; a pattern that requires th
 
 ### Decision: ReasonText
 
-**Chosen:** The reason states that the store holds secrets for the user alone and that no agent reads it, and names the command so the shared instructions can relay it.
-Example: "Blocked: 1Password and Kubernetes secrets are for the user alone.
-No agent may read them.
-Ask the user to run this command in their own terminal."
+**Chosen:** The reason states that the store holds secrets for the user alone, that no agent may read it, the exposure risk, and that the agent should ask the user to run the command.
 
-**Rationale:** `hook-interface ExplanationContract` requires the reason to state what was blocked and why.
+**Rationale:** `hook-interface ExplanationContract` requires every reason to convey exposure, the credential, and the risk.
 The shared instructions already ask for the user-run command, so the reason does not repeat them.
 
 ## Architecture
@@ -61,7 +86,7 @@ Bash command
   │
   ├─ DNS exfil, credential-file pipe, egress, env dump ──► block (unchanged)
   ├─ CREDENTIAL_STORE_RE + non-local network ──────────► block (unchanged, exfiltration reason)
-  ├─ USER_ONLY_STORE_RE ───────────────────────────────► block (new, user-only reason)
+  ├─ lexed program reads 1Password or a Kubernetes secret ► block (new, user-only reason)
   ├─ CREDENTIAL_STORE_RE ──────────────────────────────► ask (keychain, vault, aws)
   └─ universal secret scan ────────────────────────────► unchanged
 ```
