@@ -79,6 +79,10 @@ The shell hook is also the slowest of the seven hooks a Bash call runs, at 150 m
   The quote-splice rewrite is therefore kept for those commands, not deleted.
 - A Bash command that spells a probe such as `c\url <url> | s\h` inline is judged by the live hooks of the agent running it.
   Write probe payloads to a file and pass the file to the hook under test.
+- `credential-store-handoff` exports the program-reading helpers this engine's rendering needs: `bash_commands.invoked` (the program past `sudo`, `doas`, `env`, `nohup`, `timeout`, `exec`, `command`, and assignments, in any order), `program_text` (inline code, including `bash -lc` and `su -c`), `launched_arguments` (`xargs`, `find -exec`), `watch_script`, and `reads_stdin_program` (including `sudo -s`, `sudo -i`, `doas -s`, and `su` with no `-c`).
+  Rendering each segment from `invoked` instead of from the raw words makes a rule written for a program name hold through every wrapper.
+- A probe of the live hooks on 2026-10-16 found `block-dangerous-bash.sh` allows `/usr/bin/sudo …`, `command sudo …`, `sudo …` preceded by spaces, `\sudo …`, `env sudo …`, `nohup sudo …`, `timeout 5 sudo …`, `exec sudo …`, and `doas …`; it refuses `sudo …`, `'sudo' …`, `sudo -u root -- …`, and `su -c …`.
+  The same hook refused a `grep` whose pattern held `sudo -s`, because it matches the text anywhere rather than the program a segment runs.
 - The `security-posture-alignment` audit ledger, `.simplify/ledger-2026-10-05-2343.md` (untracked), counts the blast radius of adopting the lexer in `block-destructive-ops.py`, and names the tests that pin the current rewrite: `TestNormalize`, `test_obfuscated_command_still_blocks`, `test_multiword_rule_is_not_assembled_across_arguments`, and `TestCatalogueNormalizationParity` in `claude/tests/test_block_destructive_ops.py`.
 
 ## Open Questions
@@ -86,3 +90,7 @@ The shell hook is also the slowest of the seven hooks a Bash call runs, at 150 m
 - One hook or two entry points over one engine.
   One hook saves a process on every Bash call; two keep the registrations and test files as they are.
   If one, `block-destructive-ops` no longer describes reverse shells and clipboard reads, so it would need a new name.
+- Whether a command rule matches the program each segment invokes, not only its spelling.
+  `dangerous-bash-blocking` `SudoCommand` refuses `sudo` "at the start of a command or after a command separator", which by its own wording excludes a leading space, a full path, and a wrapper (`env sudo`, `command sudo`, `nohup sudo`).
+  Matching the invoked program covers those, and the spelling cases this change already targets, with one rendering.
+  The same question decides whether `doas` joins `sudo` and `su` in the privilege-escalation rule, and whether a pattern that appears only inside a quoted argument (a `grep` pattern, a commit message) stops matching.

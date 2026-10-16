@@ -63,6 +63,10 @@ Each multi-line form is tested against the verdict the same command on one line 
 - Order against `single-command-rule-engine`.
   If this change lands first, the rule engine can read every command through the lexer and drop its quote-splice rewrite; if the rule engine lands first, it keeps the rewrite for newline commands and this change retires it afterward.
 - Whether to count, before building, how many multi-line commands name a guarded location, since that is the friction the tamper hook adds today.
+- Whether to add `block-leaks.py`'s 1Password and Kubernetes check to the verdict cases.
+  `credential-store-handoff` judges a command the lexer cannot read by a text pattern, so today a multi-line command that only mentions `op read`, such as a here-document commit message, is refused.
+  Once this change lexes newlines, that check reads such a command by its segments, and the here-document body is data where a named sink reads it.
+  `sudo sh` in the allowlist rationale above is now read as a shell reading its standard input (`bash_commands.reads_stdin_program`), as are `sudo -s`, `sudo -i`, `doas -s`, and `su` with no `-c`.
 
 ## Resolved Questions
 

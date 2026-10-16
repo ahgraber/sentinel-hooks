@@ -39,6 +39,7 @@ This change closes the part of the gap the hooks can see: a known recursive read
 
 - One table maps each recursive reader to the condition that makes it recursive and to the roots it reads: `grep -r`, `rg`, `ag`, `find` with `-exec` running a known reader, `tar -c`, `cp -r`, `scp -r`, `rsync -r`, `zip -r`, and `ditto`.
   A reader with no root operand reads the current directory.
+- The reader is identified with the shared helpers `credential-store-handoff` added, so a wrapper does not hide it: `bash_commands.invoked` for the program past `sudo`, `env`, `command`, and the rest, and `bash_commands.launched_arguments` for the command `find -exec` or `xargs` runs.
 - Roots resolve against every directory the reader may run in, using the `cd` tracking `security-posture-alignment` moves into `shell_words`.
 - A root is refused when a block-class declaration lies at or beneath it, whether or not the file exists yet, comparing every spelling of both paths.
 - `rg` and `ag` are judged like `grep -r`, so `rg foo ~` is refused: a glob or an ignore-file whitelist makes them open hidden entries, and the hook cannot see every ignore file.
@@ -50,3 +51,11 @@ This change closes the part of the gap the hooks can see: a known recursive read
 
 - `security-posture-alignment` adds the recursive-read limit to `BashReadBestEffort` and moves `cd` tracking into `shell_words`; this change narrows that limit and uses that tracking.
   Apply it after that change is synced.
+- `credential-store-handoff` adds `bash_commands.invoked` and `launched_arguments`; apply this change after it.
+
+## Open Questions
+
+- Whether to declare `~/.config/op/` and `~/.kube/` in the manifest's `[block]` class.
+  Every agent's sandbox denies both, but the manifest names neither, so this change would not refuse `grep -r x ~` for them, and the configuration assessment does not hold the surfaces to them.
+  `credential-store-handoff` left the declaration for a separate decision because it changes what `block-sensitive-paths` refuses and requires entries on every surface.
+  This change is where the declaration first pays off.
