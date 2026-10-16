@@ -53,6 +53,37 @@ def test_shell_option_clusters_with_c_run_the_next_word(command, code):
     assert bash_commands.program_text(_segment(command)) == [code]
 
 
+@pytest.mark.parametrize(
+    ("command", "code"),
+    [
+        ("sudo bash -c 'ls -la'", ["ls -la"]),
+        ("su -c 'ls -la'", ["ls -la"]),
+        ("su root --command 'ls -la'", ["ls -la"]),
+        ("su --command='ls -la'", ["ls -la"]),
+        ("su root", []),
+    ],
+)
+def test_inline_code_is_read_through_privilege_wrappers(command, code):
+    assert bash_commands.program_text(_segment(command)) == code
+
+
+@pytest.mark.parametrize(
+    ("command", "reads"),
+    [
+        ("sudo -s", True),
+        ("sudo -u root -i", True),
+        ("doas -s", True),
+        ("su root", True),
+        ("sudo bash", True),
+        ("su -c 'ls'", False),
+        ("sudo ls", False),
+        ("command -v sudo", False),
+    ],
+)
+def test_a_privileged_shell_with_no_command_reads_standard_input(command, reads):
+    assert bash_commands.reads_stdin_program(_segment(command)) is reads
+
+
 def test_shell_option_cluster_without_c_runs_no_inline_code():
     assert bash_commands.program_text(_segment("bash -l script.sh")) == []
 

@@ -216,10 +216,12 @@ def invocation(segment: list[Word], *, read_only: bool = False) -> list[Word]:
 
 def program_text(segment: list[Word]) -> list[str]:
     """Extract text the segment runs now, or installs for the shell to run later."""
-    words = invocation(segment)
+    words = invoked(segment)
     if not words:
         return []
     name = os.path.basename(words[0].value)
+    if name == "su":
+        return _su_code(words)
     if name == "trap":
         arguments = words[1:]
         # `--` ends the options, so the body follows it.
@@ -280,10 +282,31 @@ def defines_function(segment: Segment) -> bool:
     return words[0].value == "function"
 
 
+def _su_code(words: list[Word]) -> list[str]:
+    """Return the text `su -c` or `su --command` passes to the target user's shell."""
+    for index, word in enumerate(words[1:], 1):
+        if word.value.startswith("--command="):
+            return [word.value.partition("=")[2]]
+        if word.value in {"-c", "--command"} and index + 1 < len(words):
+            return [words[index + 1].value]
+    return []
+
+
+def _privileged_shell(segment: list[Word]) -> bool:
+    """Whether `sudo -s`, `sudo -i`, or `doas -s` starts a shell with no command, which reads its standard input."""
+    values = {word.value for word in segment}
+    wrapped = any(os.path.basename(value) in _PRIVILEGE_WRAPPERS for value in values)
+    return wrapped and bool(values & {"-s", "--shell", "-i", "--login"})
+
+
 def reads_stdin_program(segment: list[Word]) -> bool:
     """Whether a shell segment takes its program text from standard input."""
-    words = invocation(segment)
-    if not words or os.path.basename(words[0].value) not in SHELLS:
+    words = invoked(segment)
+    if not words:
+        return _privileged_shell(segment)
+    if os.path.basename(words[0].value) == "su":
+        return not _su_code(words)
+    if os.path.basename(words[0].value) not in SHELLS:
         return False
     args = words[1:]
     return any(word.value in {"-s", "--stdin", "-"} for word in args) or not any(
@@ -295,7 +318,7 @@ def _builder(segment: Segment, *, pipe_fed: bool) -> bool:
     """Whether the segment builds or runs text this reading cannot see."""
     if defines_function(segment):
         return True
-    words = invocation(segment)
+    words = invoked(segment)
     if not words:
         return pipe_fed
     name = os.path.basename(words[0].value)
@@ -638,7 +661,7 @@ def _piped_programs(segments: list[SegmentReading]) -> tuple[str, ...]:
             continue
         source = index - 1
         while source >= 0 and segments[source].words.separator == "|":
-            producer = invocation(segments[source].words)
+            producer = invoked(segments[source].words)
             if producer and os.path.basename(producer[0].value) in {"echo", "printf"}:
                 programs.append(" ".join(word.value for word in producer[1:]))
             source -= 1

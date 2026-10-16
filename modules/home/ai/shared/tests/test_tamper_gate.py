@@ -223,6 +223,12 @@ NOT_READS = [
     f"cat {SKILL_FILE} && cat evals/x.py | awk '{{print}}'",
     "bash -c 'rm ~/.claude/settings.json'",
     "bash -lc 'rm ~/.claude/settings.json'",
+    # A privilege wrapper hides no inline code, however it is spelled or nested.
+    "/usr/bin/sudo bash -c 'rm ~/.claude/settings.json'",
+    "env sudo bash -c 'rm ~/.claude/settings.json'",
+    "doas sh -c 'rm ~/.claude/settings.json'",
+    "su root -c 'rm ~/.claude/settings.json'",
+    "echo 'rm ~/.claude/settings.json' | sudo -s",
     "echo ~/.claude/settings.json | xargs rm",
     f"cat {SKILL_FILE}\nrm -rf ~/.claude/skills",
     f"cat {SKILL_FILE} |& rm -rf ~/.claude/skills",
