@@ -94,3 +94,8 @@ The shell hook is also the slowest of the seven hooks a Bash call runs, at 150 m
   `dangerous-bash-blocking` `SudoCommand` refuses `sudo` "at the start of a command or after a command separator", which by its own wording excludes a leading space, a full path, and a wrapper (`env sudo`, `command sudo`, `nohup sudo`).
   Matching the invoked program covers those, and the spelling cases this change already targets, with one rendering.
   The same question decides whether `doas` joins `sudo` and `su` in the privilege-escalation rule, and whether a pattern that appears only inside a quoted argument (a `grep` pattern, a commit message) stops matching.
+  `program-semantics-table` answers the privilege half (decided with the user on 2026-10-16): it modifies `dangerous-bash-blocking` `BlockPrivilegeEscalation` so that a Python hook refuses every command whose reading invokes a program with a privilege effect, at any nesting depth, by base name (`/usr/bin/sudo`, a nix store `sudo`, `doas`, `pkexec`, `run0`, and the rest of its catalog).
+  `block-dangerous-bash.sh` keeps its text match as a backstop.
+  This change then decides only whether the remaining command rules match the invoked program; it does not need its own catalog-based privilege rule.
+  It does own the text backstop if it retires `block-dangerous-bash.sh`: the text match of `sudo` and `su` at the start of a command or after a command separator moves into its engine unchanged, in either landing order, until a later change removes it on purpose.
+  `program-semantics-table` also replaces `invoked`, `program_text`, `launched_arguments`, `watch_script`, and `reads_stdin_program` with one walker over a program catalog; whichever change lands second renders segments from what the other left in place.
