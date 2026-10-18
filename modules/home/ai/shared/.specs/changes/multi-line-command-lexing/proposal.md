@@ -26,12 +26,8 @@ The measurement did not count multi-line commands that name a guarded location, 
 
 **In scope:**
 
-- `shell-lexing`: reading a multi-line command into segments.
-  An unquoted newline separates commands as `;` does.
-  A backslash before a newline, outside single quotes, joins the lines.
-  A newline inside quotes is part of the word.
-  A newline after `|`, `&&`, `||`, or a reserved word that opens a list (`then`, `do`, `else`) is whitespace.
-  A `#` that begins a word starts a comment that runs to the end of its line, as it already ends a one-line command.
+- `shell-lexing`: reading a multi-line command into the segments bash runs, as bash reads it, with bash as the reference shell.
+  The spec states the reading as bash's and does not restate bash's grammar; the differential property against bash checks it.
   A here-document's body is one word of a new kind, the standard input of its command, and is unresolvable wherever bash would expand part of it.
 - `hook-tampering-blocking`: `UnrecognizedCommandsAreGated` classifies a multi-line command on the segments the lexer reads, and judges a here-document as data only where a recognized read or a named sink reads it, and as program text everywhere else.
 - `sensitive-path-blocking`: the per-piece fallback applies only to a command the lexer still cannot read and to a here-document a program other than a data reader reads, so a placeholder read in a multi-line command proceeds as it does on one line.
@@ -60,8 +56,6 @@ Each multi-line form is tested against the verdict the same command on one line 
 
 ## Open Questions
 
-- Order against `single-command-rule-engine`.
-  If this change lands first, the rule engine can read every command through the lexer and drop its quote-splice rewrite; if the rule engine lands first, it keeps the rewrite for newline commands and this change retires it afterward.
 - Whether to count, before building, how many multi-line commands name a guarded location, since that is the friction the tamper hook adds today.
 - Whether to add `block-leaks.py`'s 1Password and Kubernetes check to the verdict cases.
   `credential-store-handoff` judges a command the lexer cannot read by a text pattern, so today a multi-line command that only mentions `op read`, such as a here-document commit message, is refused.
@@ -76,3 +70,19 @@ Each multi-line form is tested against the verdict the same command on one line 
 - 2026-10-08: the sinks stay generic; a git alias such as `git agent-commit` is not named, because the hook cannot know what an alias runs.
 - 2026-10-08: a count of the 500 here-documents agents sent in the 30 days to 2026-10-08 found 314 read by `cat` writing a file, 176 by `python`, `python3`, or `uv`, 6 by a plain `cat` or `tr`, 2 by `git agent-commit -F -`, and 2 by other programs; none sat inside `$(…)`, and 497 had a quoted delimiter.
   15 of the program bodies named a guarded path, all while editing this repository's hooks, and every one is gated today, so the allowlist adds no refusal.
+- 2026-10-14: this change lands before `single-command-rule-engine`.
+  The rule engine then reads every command through the lexer and drops its quote-splice rewrite, instead of keeping the rewrite for newline commands until this change retires it.
+- 2026-10-15: the forms a review found the first implementation read more permissively than bash are gaps, to be closed in steps without weakening the posture.
+  A review by Codex and two Opus agents, confirmed against bash 5.3.9, found nine such forms.
+  As the first step, the lexer gives them no reading, and reads a here-document only where `cat` or a named sink reads it as the first word of a segment that does not pipe; every form left out reaches the fallbacks, as all multi-line commands did before this change.
+  This is an interim fallback, not the scope of the change.
+  Decided with the user.
+- 2026-10-17: the interim fallback also covers a multi-line command with a `${…}` inside double quotes, other than a leading `${HOME}`, because bash reads quotes inside it that the lexer took for the end of the word; the command-position test over-refuses a reserved word after an assignment or a redirection, as in `X=1 if`.
+  The `PATH=` route the reader conditions close is an assignment in the reader's own segment; an earlier `export PATH=` proceeds as it does on one line.
+  Decided with the user.
+- 2026-10-18: the requirements return to the scope above: a command written across lines is judged as bash reads it.
+  The 2026-10-15 and 2026-10-17 spec edits had written the interim fallback into the requirements; it stays in the implementation, and each form it covers is a gap, with a task to close it and a strict expected-failure test.
+  The here-document reader conditions stay as policy.
+  Decided with the user.
+- 2026-10-18: the `shell-lexing` requirements mandate bash's reading and do not restate bash's rules; specific forms are checked against bash by the differential property and the gap tests.
+  Decided with the user.

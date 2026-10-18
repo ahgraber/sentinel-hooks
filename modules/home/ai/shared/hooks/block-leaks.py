@@ -186,7 +186,8 @@ def _reads_stdin_script(words: list[shell_words.Word]) -> bool:
 def user_only_store_read(command: str, depth: int = 0) -> str | None:
     """Name the 1Password or Kubernetes secret read the text runs, or `None` when it runs none."""
     segments = shell_words.lex(command, None)
-    if segments is None:
+    # A here-document no data reader reads may be run, so only the whole text shows what it runs.
+    if segments is None or bash_commands.unread_here_document(segments):
         return _text_match(command)
     # A backtick substitution splits across words, so only the whole text shows what it runs.
     # A backtick inside single quotes lexes as part of a resolved word and runs nothing.

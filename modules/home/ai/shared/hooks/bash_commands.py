@@ -85,6 +85,10 @@ _UNZIP_INSPECTS = frozenset({"-l", "-t", "-v", "-Z", "-z", "-Z1"})
 UNKNOWN_PROGRAM = "a command or argument outside the recognized read and run forms"
 # A shape stop the agent can resolve: the same command with each path absolute is judged in full.
 RELATIVE_PATH = "a relative path after a directory change or without a known directory"
+UNREAD_HERE_DOCUMENT = (
+    "a here-document read by a program that may act on it: a program other than cat or a record sink, "
+    "or one run with an editor option, a wrapper, an assignment, or a pipe"
+)
 
 
 def read_forms() -> str:
@@ -157,8 +161,12 @@ def only_redirects(segment: list[Word]) -> bool:
 
 
 def word_paths(word: Word, cwd: str | None) -> list[str]:
-    """Paths named by a word, retaining unresolved text for fragment checks."""
-    if descriptor_redirect(word):
+    """Paths named by a word, retaining unresolved text for fragment checks.
+
+    A `here-document` word is input text, so it names no path; a body that
+    expands is `unresolvable` and keeps its written paths.
+    """
+    if descriptor_redirect(word) or word.kind == "here-document":
         return []
     if word.kind == "unresolvable":
         return list(word.paths)
@@ -310,7 +318,7 @@ def reads_stdin_program(segment: list[Word]) -> bool:
         return False
     args = words[1:]
     return any(word.value in {"-s", "--stdin", "-"} for word in args) or not any(
-        word.kind not in {"option", "redirection target"} for word in args
+        word.kind not in {"option", "redirection target", "here-document"} for word in args
     )
 
 
@@ -329,12 +337,81 @@ def _builder(segment: Segment, *, pipe_fed: bool) -> bool:
     return reads_stdin_program(segment)
 
 
+def _git_record_sink(args: list[Word]) -> bool:
+    """Whether `git` with `args` commits or tags with its message read from standard input.
+
+    `-C` is the only option admitted before the subcommand, since `-c` can set
+    an editor or a hook path. After it, `-e`, `--edit`, `-c`, and
+    `--reedit-message` open the message in the configured editor, a program
+    that may act on it. Any short-option cluster holding `e` or `c`, and any
+    long option that abbreviates `--edit` or `--reedit-message`, is refused,
+    because git accepts both forms.
+    """
+    index = 0
+    while index < len(args) and args[index].value.startswith("-"):
+        if args[index].value != "-C":
+            return False
+        index += 2
+    if index >= len(args) or args[index].value not in {"commit", "tag"}:
+        return False
+    rest = args[index + 1 :]
+    for arg in rest:
+        value = arg.value
+        if (
+            value.startswith("--")
+            and value != "--"
+            and any(option.startswith(value.split("=", 1)[0]) for option in ("--edit", "--reedit-message"))
+        ):
+            return False
+        if value.startswith("-") and not value.startswith("--") and set(value[1:]) & {"e", "c"}:
+            return False
+    return _option_value(rest, "-F", "--file") == "-"
+
+
+def _data_reader(segment: Segment) -> bool:
+    """Whether the segment's program keeps its here-document as data.
+
+    The readers are `cat` with nothing but redirections, and the sinks that keep
+    their input as a record: `git commit` or `git tag` with `-F -`, `gh pr` or
+    `gh issue` with `--body-file -`, and `tee`. The reader is the segment's first
+    word, with no assignment or wrapper before it, since either may pick another
+    program; and its output goes to no other program.
+    """
+    if segment.separator == "|" or any(word.kind == "assignment" for word in segment):
+        return False
+    words = [word for word in segment if not word.redirection]
+    if not words or words[0].kind != "command":
+        return False
+    name, args = words[0].value, words[1:]
+    if name == "cat":
+        return not args
+    if name == "tee":
+        return True
+    if name == "git":
+        return _git_record_sink(args)
+    if name == "gh":
+        return bool(args) and args[0].value in {"pr", "issue"} and _option_value(args, "--body-file") == "-"
+    return False
+
+
+def unread_here_document(segments: list[Segment]) -> bool:
+    """Return whether any here-document is read by a program that may act on it.
+
+    Such a command has no reading: a caller judges its whole text, the body
+    included, as text it cannot lex.
+    """
+    return any(
+        any("<<" in (word.redirection or "") for word in segment) and not _data_reader(segment) for segment in segments
+    )
+
+
 def read_only(segment: list[Word]) -> bool:
     """Return whether one pipeline segment runs a utility that only reads its arguments.
 
     Redirections are left to the caller, which judges each target by direction.
+    A here-document body is input, not an argument.
     """
-    words = [word for word in segment if word.kind != "redirection target"]
+    words = [word for word in segment if word.kind not in {"redirection target", "here-document"}]
     # `invocation` only drops leading words, so one check covers what it returns.
     if any(word.kind in OPAQUE_KINDS for word in words):
         return False
@@ -668,13 +745,27 @@ def _piped_programs(segments: list[SegmentReading]) -> tuple[str, ...]:
     return tuple(programs)
 
 
+def _unlexable_syntax(command: str) -> str:
+    """Name what kept the lexer from reading `command`, so a refusal can say what to rewrite."""
+    if "\r" in command:
+        return "a carriage return"
+    if "\n" in command:
+        return (
+            "a multi-line form the lexer does not read: a line continuation, a parenthesis, a compound "
+            "command, a here-document or case pattern inside a substitution, an unclosed quote or "
+            "here-document, or syntax the lexer does not read on one line"
+        )
+    return "unresolvable shell syntax"
+
+
 def read(command: str, cwd: str | None = None) -> Reading:
     """Read what `command` runs, in the one pass that also names why recognition stopped."""
     lexed = shell_words.lex(command, cwd)
     if lexed is None:
-        # Lexing first keeps every hook on one reading; the lexer refuses any newline.
-        newline = "\n" in command or "\r" in command
-        return Reading(command, (), (), "a newline" if newline else "unresolvable shell syntax")
+        # Lexing first keeps every hook on one reading.
+        return Reading(command, (), (), _unlexable_syntax(command))
+    if unread_here_document(lexed):
+        return Reading(command, (), (), UNREAD_HERE_DOCUMENT)
     segments = []
     for index, words in enumerate(lexed):
         directories = (None,) if words.directories is None else words.directories

@@ -136,3 +136,132 @@ def attached_operand_commands(path: str) -> st.SearchStrategy[str]:
             f"printf '%s' {shell_program} | sh",
         ]
     )
+
+
+# How a list operator may be written across lines: bash reads on past a newline
+# after `|`, `&&`, `||`, and `&`, and a newline ends a command as `;` does.
+LINE_JOINS = {
+    ";": [" ; ", "\n", " ;\n", "\n\n"],
+    "&": [" & ", " &\n"],
+    "&&": [" && ", " &&\n"],
+    "||": [" || ", " ||\n"],
+    "|": [" | ", " |\n"],
+}
+
+
+@st.composite
+def line_pairs(draw: st.DrawFn, forms: list = STABLE_FORMS) -> tuple[str, str]:
+    """Plain commands on one line, and the same commands with newlines bash reads as whitespace or `;`.
+
+    The multi-line form may break a line after a list operator and carry
+    comments, some ending in a backslash, which continues nothing.
+    """
+    comments = st.sampled_from(["rm notes.md", "cat " + GUARDED, "trailing \\"])
+    one_line: list[str] = []
+    multi_line: list[str] = []
+    if draw(st.booleans()):
+        multi_line.append(f"# {draw(comments)}\n")
+    for index in range(draw(st.integers(min_value=1, max_value=3))):
+        if index:
+            operator = draw(st.sampled_from(sorted(LINE_JOINS)))
+            one_line.append(f" {operator} ")
+            join = draw(st.sampled_from(LINE_JOINS[operator]))
+            # A comment runs to the newline, so it goes only where a line ends.
+            if join.endswith("\n") and draw(st.booleans()):
+                join = f"{join[:-1]} # {draw(comments)}\n"
+            multi_line.append(join)
+        program = draw(st.sampled_from(PROGRAMS))
+        arguments = draw(st.lists(words(forms), min_size=1, max_size=3))
+        # A reserved word passed as an argument stays a word.
+        if draw(st.booleans()):
+            arguments.append(draw(st.sampled_from(["then", "done", "if", "!", "{"])))
+        segment = " ".join([program, *arguments])
+        one_line.append(segment)
+        multi_line.append(segment)
+    if draw(st.booleans()):
+        multi_line.append(f" # {draw(comments)}")
+    return "".join(one_line), "".join(multi_line)
+
+
+# Forms the lexer does not yet read across lines, each written where it would
+# change the reading if the lexer took it for plain text. `test_known_gaps.py`
+# states what bash reads for each; until a form is read, it must have none.
+NOT_YET_READ = [
+    lambda c: c.replace(" ", " \\\n", 1),
+    lambda c: f"( {c} )",
+    lambda c: f"((x<<2))\n{c}",
+    lambda c: f"if true; then\n{c}\nfi",
+    lambda c: f"while false; do\n{c}\ndone",
+    lambda c: f"{{\n{c}\n}}",
+    lambda c: f"! {c}",
+]
+
+
+@st.composite
+def not_yet_read_commands(draw: st.DrawFn) -> str:
+    """A multi-line command holding one form the lexer does not yet read, applied to its first command."""
+    lead = draw(segments(STABLE_FORMS))
+    _, rest = draw(line_pairs())
+    return draw(st.sampled_from(NOT_YET_READ))(lead) + "\n" + rest
+
+
+# Body lines for here-documents: shell syntax a body holds as text, and the
+# tabs `<<-` strips.
+BODY_LINES = st.text(alphabet="ab ;|#&\t'\"\\$`./", max_size=12)
+
+
+@st.composite
+def here_document_commands(draw: st.DrawFn) -> tuple[str, str | None]:
+    """A command whose first program reads a here-document, with the body bash delivers.
+
+    The body is `None` under an unquoted delimiter, where bash rewrites
+    backslashes and the lexer's reading decides what the program receives.
+    """
+    program = draw(st.sampled_from(PROGRAMS))
+    arguments = draw(st.lists(words(STABLE_FORMS), max_size=2))
+    dash = draw(st.booleans())
+    delimiter = draw(st.sampled_from(["EOF", "'EOF'", '"EOF"', "E\\OF"]))
+    after = draw(st.sampled_from(["", " | head", "; head notes.md", " # comment"]))
+    lines = draw(st.lists(BODY_LINES.filter(lambda line: line.lstrip("\t") != "EOF"), max_size=4))
+    closing = ("\t" if dash and draw(st.booleans()) else "") + "EOF"
+    following = draw(st.sampled_from(["", "\nhead notes.md", "\n# done"]))
+    operator = "<<-" if dash else "<<"
+    command = (
+        " ".join([program, *arguments, operator + delimiter])
+        + after
+        + "\n"
+        + "".join(line + "\n" for line in lines)
+        + closing
+        + following
+    )
+    body = "".join((line.lstrip("\t") if dash else line) + "\n" for line in lines)
+    return command, body if delimiter != "EOF" else None
+
+
+# Substitutions written so that a scan which misses their grammar ends them early
+# or late: quotes, comments, and closing characters inside, and nesting.
+SUBSTITUTIONS = [
+    "$({inner})",
+    "`{inner}`",
+    '"$({inner})"',
+    '"`{inner}`"',
+    "${{X:-$({inner})}}",
+    '"${{X:-$({inner})}}"',
+    '"${{X:-\'"\'}}"',
+    "$(# ' \" ) }}\n{inner})",
+    "$( ({inner}) )",
+    "$((1 << 2))",
+]
+# Inner text holding the characters a scan could take for the substitution's end.
+INNER_TEXT = st.text(alphabet="ab ;#)}'\"", max_size=6)
+
+
+@st.composite
+def substitution_commands(draw: st.DrawFn) -> str:
+    """Plain commands, on one line or several, with a substitution among the first command's words."""
+    one_line, multi_line = draw(line_pairs())
+    command = draw(st.sampled_from([one_line, multi_line]))
+    inner = f"{draw(st.sampled_from(PROGRAMS))} {shlex.quote(draw(INNER_TEXT))}"
+    substitution = draw(st.sampled_from(SUBSTITUTIONS)).format(inner=inner)
+    head, _, rest = command.partition(" ")
+    return f"{head} {substitution} {rest}"

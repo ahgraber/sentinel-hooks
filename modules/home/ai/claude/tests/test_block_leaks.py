@@ -216,6 +216,11 @@ class TestUserOnlyCredentialStores:
             "op --cache read op://vault/item/field",
             "kubectl -v 6 get secret my-secret",
             "kubectl --request-timeout 5s get secret my-secret",
+            # A here-document a shell or another program may run.
+            "bash <<'EOF'\nop read op://vault/item/field\nEOF",
+            "sh -s <<EOF\nop read op://vault/item/field\nEOF",
+            "xargs -n 1 sh -c <<'EOF'\n'op read op://vault/item/field'\nEOF",
+            "cat <<'EOF' | bash\nop read op://vault/item/field\nEOF",
         ],
     )
     def test_blocks_with_user_handoff(self, command):
@@ -268,6 +273,9 @@ class TestUserOnlyCredentialStores:
             "find . -name 'op read'",
             "git commit -m 'refuse `op read` for agents'",
             "echo 'see `kubectl get secret` in the docs'",
+            # A here-document `cat` or a record sink keeps as data.
+            "cat <<'EOF' > notes.md\nrun op read op://vault/item/field\nEOF",
+            "git commit -F - <<'EOF'\nrefuse op read for agents\nEOF",
         ],
     )
     def test_commands_that_read_no_secret_are_allowed(self, command):

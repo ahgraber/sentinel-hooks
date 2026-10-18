@@ -406,7 +406,8 @@ def _may_name_a_file(word, segment, reads: bool) -> bool:
 def _read_words(segment):
     reads = any(os.path.basename(word.value) in READ_CMDS for word in segment)
     for word in segment:
-        if reads or _input_redirect(word) or word.kind == "unresolvable":
+        # A here-document body a data reader takes is input, not a name.
+        if word.kind != "here-document" and (reads or _input_redirect(word) or word.kind == "unresolvable"):
             yield word
 
 
@@ -414,7 +415,7 @@ def _write_words(segment):
     for word in segment:
         if bash_commands.redirect_writes(word) or word.value.startswith("of="):
             yield word
-    words = [word for word in segment if word.kind not in {"option", "redirection target"}]
+    words = [word for word in segment if word.kind not in {"option", "redirection target", "here-document"}]
     if not words:
         return
     name = os.path.basename(words[0].value)
@@ -444,12 +445,13 @@ def _bash_refusal(command: str, cwd: str | None) -> tuple[str, bool] | None:
     whatever order the words come in, so its stop instruction is the one given.
     """
     segments = shell_words.lex(command, cwd)
-    if segments is None:
-        # No shell reading exists for this command, which holds a newline or
-        # syntax the lexer refuses. Judge every piece of the text by the strong
-        # rules: they anchor at the end of a name, so judging the whole text
-        # would see only its last line. Whether a piece is read, written, or
-        # only mentioned is unknown, so a placeholder gets the write verdict.
+    if segments is None or bash_commands.unread_here_document(segments):
+        # No shell reading exists for this command, which holds syntax the
+        # lexer refuses or a here-document a program may act on. Judge every
+        # piece of the text, the body included, by the strong rules: they
+        # anchor at the end of a name, so judging the whole text would see
+        # only its last line. Whether a piece is read, written, or only
+        # mentioned is unknown, so a placeholder gets the write verdict.
         # The tamper hook gates unresolved guarded text.
         for piece in _TEXT_PIECES.split(command):
             if piece and is_zero_access(piece):

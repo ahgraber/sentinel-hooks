@@ -43,7 +43,7 @@ So no exemption applies.
 
 #### Scenario: ANameInsideAProgramBodyIsRefused
 
-- **GIVEN** a here-document read by `bash`, `xargs`, `sed -f -`, or any program not named as a data reader
+- **GIVEN** a here-document read by `bash`, `xargs`, `sed -f -`, `cat` piped into a shell, or any program not named as a data reader
 - **WHEN** its body names a zero-access path
 - **THEN** the command is refused
 

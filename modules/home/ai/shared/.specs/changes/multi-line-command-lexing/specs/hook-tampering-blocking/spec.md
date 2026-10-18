@@ -6,7 +6,7 @@
 
 > Previously: a command written across lines was never recognized, because the hook treated it as unresolvable as a whole.
 
-Where a Bash command names guarded locations, the system SHALL classify the command before gating it: a command recognized as a read SHALL proceed, a command recognized as a run of a program held in an exec-through location SHALL proceed, and any other command SHALL be gated with a reason that names the syntax that stopped recognition, the forms that would have proceeded, and the instruction to name paths absolutely.
+Where a Bash command names guarded locations, the system SHALL classify the command before gating it: a command recognized as a read SHALL proceed, a command recognized as a run of a program held in an exec-through location SHALL proceed, and any other command SHALL be gated with a reason that names the syntax that stopped recognition and, per `GateResponse`, the rewrite that would proceed where one exists: the admitted commands for a stop on the program, and absolute paths for a stop on relative paths.
 
 Serves: a-multi-line-command-is-read-line-by-line
 
@@ -21,27 +21,42 @@ An input target is judged as a read, and an output or read-write target as a wri
 A redirection that duplicates or closes a descriptor names no file and is not judged.
 A segment that does nothing but redirect, such as `> file`, `: > file`, or `exec 3> file`, is judged by its targets alone, so it meets the write gate as the write it is.
 The command text names every target, so a redirection hides nothing the classifier needs.
-Refusing recognition for one refused a guarded read for writing its errors to `/dev/null`, a form agents write by habit, while a write the target class permits gained nothing from the refusal.
 
 A command with any segment whose program executes text it receives SHALL NOT be recognized, whatever its other segments do: `xargs`, `eval`, an interpreter given inline code, or a shell reading its standard input.
-The classifier SHALL identify the program through `time`, `timeout`, `stdbuf`, and `setsid`.
+The classifier SHALL identify the program through a wrapper known to run its operands unchanged, such as `time` or `timeout`; a command under any other wrapper is not recognized.
 A pipe-fed program outside the recognized read utilities SHALL be treated as a builder, including an interpreter or an unknown wrapper.
-Supported wrappers around recognized reads SHALL preserve read recognition unless their options permit writing output.
+A known wrapper around a recognized read SHALL preserve read recognition unless its options permit writing output.
 A read segment that names a guarded path and pipes into such a program hands that path to a command the classifier never sees, so the read is not the whole of what the command does.
 
 A command written across lines SHALL be classified the same way as the same command written on one line.
 
-A here-document SHALL be data only where the command that reads it is a recognized read, or a sink that keeps its input as a record rather than acting on it: `git commit` and `git tag` given `-F -` or `--file=-`, `gh` given `--body-file -`, and `tee`, whose targets are judged as the writes they are.
+A here-document SHALL be data only where its reader is a data reader, one of these:
+
+- a recognized read;
+- `git commit` or `git tag` given `-F -`, `--file -`, or `--file=-`, with no option before the subcommand except `-C`, and with neither `-e` nor `--edit`;
+- `gh pr` or `gh issue` given `--body-file -` or `--body-file=-`;
+- `tee`, whose operands are judged as the writes they are.
+
+The reader SHALL be the first word of its segment, with no assignment and no wrapper before it, and SHALL NOT pipe its output to another program.
 A path inside a data body is text, names no file, and is not judged; the command's own words and redirections are judged as they are on one line.
 A here-document read by any other program SHALL be judged as program text handed to it, as text `echo` pipes into a shell is: the command is not recognized, and a guarded or block path inside the body is found.
 
-The default is program text because the hazard is not limited to shells and interpreters.
+Data is the exception because the hazard is not limited to shells and interpreters.
 `xargs`, `sudo sh`, `source /dev/stdin`, `awk -f -`, `sed -f -`, `sqlite3`, `git apply`, `patch`, `crontab -`, and a remote shell each act on input whose effects are named only inside the body, and a list of such programs would refuse only the ones it remembered.
 This is the rule `ReadClassifierAdmitsOnlySelfDescribingUtilities` applies to a utility: a command is admitted when its command line states what it does.
+The conditions on the reader close the routes by which a named reader still runs its input, each confirmed on 2026-10-15:
+
+- A pipe hands the body to the next program, as `cat <<EOF | sh` does.
+- `env -S'sh -s' tee` runs a shell that reads the body.
+- `GIT_EDITOR=sh`, `git -c core.editor=sh`, and `git commit -e` open the message in a program that may run it.
+- An assignment such as `PATH=` in the reader's own segment picks which binary runs.
+  An `export PATH=` in an earlier segment is not read here; the same command on one line proceeds too, so the multi-line form adds no route.
+- A gh alias or extension may run a shell; gh does not let an alias replace `pr` or `issue`.
+
 If bash would expand any part of a body, the body is an unresolvable word, like any other.
 
 The reason is what tells an agent what to rewrite.
-A refusal that names neither the syntax that stopped recognition nor the forms that proceed leaves an agent whose gate is a refusal with nothing to do but try another route, which is the behavior every refusal in this module instructs against.
+A refusal that names neither the syntax that stopped recognition nor a rewrite that proceeds, where one exists, leaves an agent whose gate is a refusal with nothing to do but try another route, which is the behavior every refusal in this module instructs against.
 A command whose every segment is recognized, stopped only by a write to a guarded location, is gated as that write, and its reason names the write rather than a syntax.
 A command with any unrecognized segment keeps the recognition reason, because it may do more than that write.
 
@@ -108,7 +123,7 @@ A command with any unrecognized segment keeps the recognition reason, because it
 #### Scenario: ReasonNamesTheAcceptedForms
 
 - **GIVEN** a Bash tool call names guarded locations alone
-- **WHEN** the command is neither a recognized read nor a recognized run
+- **WHEN** the command is neither a recognized read nor a recognized run, because of the program it runs
 - **THEN** the decision is `Ask`, and the reason names the read utilities and the interpreters that would have proceeded
 
 #### Scenario: ReasonNamesTheSyntaxThatStoppedRecognition
@@ -137,13 +152,13 @@ A command with any unrecognized segment keeps the recognition reason, because it
 
 #### Scenario: AMultiLineCommandReachesItsOneLineVerdict
 
-- **GIVEN** a Bash tool call written across lines, by newlines between commands, a backslash continuation, or a newline after an operator or an opening reserved word
+- **GIVEN** a Bash tool call written across lines
 - **WHEN** the command is judged
 - **THEN** the decision and its reason are the ones the same command on one line reaches
 
 #### Scenario: AHereDocumentReadAsDataIsNotJudged
 
-- **GIVEN** a command whose here-document is read by a recognized read such as `cat`, or by `git commit -F -`, `git tag -F -`, `gh --body-file -`, or `tee`
+- **GIVEN** a command whose here-document is read by a recognized read such as `cat`, or by `git commit -F -`, `git tag -F -`, `gh pr` or `gh issue` with `--body-file -`, or `tee`, as the first word of a segment that does not pipe
 - **WHEN** the body names a guarded path as text
 - **THEN** the body is not judged, and the command reaches the verdict its own words and redirections reach
 
@@ -152,3 +167,9 @@ A command with any unrecognized segment keeps the recognition reason, because it
 - **GIVEN** a here-document read by a shell, an interpreter, `xargs`, `sudo sh`, `source /dev/stdin`, `sed -f -`, `git apply`, or any program not named as a data reader
 - **WHEN** the body names a guarded path
 - **THEN** the gate applies, as it does for `bash -c` with the same text, and a block path in the body refuses the command
+
+#### Scenario: ANamedReaderThatMayRunItsInputFallsBack
+
+- **GIVEN** a data reader that pipes into another program, follows a wrapper such as `env -S`, follows an assignment such as `GIT_EDITOR=sh`, or is `git` with `-c` or `-e`
+- **WHEN** its here-document names a guarded path
+- **THEN** the gate applies, and a block path in the body refuses the command

@@ -41,6 +41,7 @@ A prompt that cannot be shown becomes a refusal.
 - `hooks/instructions/` — prompt text injected at session start.
   An edit asks, as for any other file under `hooks/`: prompt text shapes what the agent does with every other guardrail.
 - `tests/` — the suites, plus `guarded-path-cases.json` and `sensitive-path-cases.json`, the verdict tables every surface that reaches a verdict is judged against.
+  `tests/corpus/` holds shell inputs taken from mvdan/sh's parser tests under its BSD-3-Clause license, which bash, not mvdan/sh, judges the lexer against; `extract_mvdan_sh.py` rebuilds it.
   No test reads an agent's configuration file.
 - `skills/` — skills agents working in this repository use, linked into its `.claude/skills/` and `.agents/skills/` at activation by `skills.nix`.
   `skills/assess-agent-configuration/` is the recipe that judges every agent's configuration against the configuration-floor specs, run on request; each run writes a dated record to `.specs/assessments/`.
@@ -115,7 +116,10 @@ A recorder comparison on 2026-09-16 found these Bash/zsh differences:
   The differential property reproduced this mismatch.
 
 Quoted globs, matching `*.md`, brace expansion, ANSI-C octal escapes, home expansion, and backslash line continuation produced the same words in that sample.
-The lexer refuses every newline, including backslash continuation, before either hook classifies the command.
+The lexer reads a plain multi-line command into the segments bash runs: commands joined by newlines and list operators, with comments and quoted newlines.
+It reads a here-document only where `cat` or a record sink, such as `git commit -F -`, takes it as the first word of a segment that does not pipe.
+A substitution, `$(…)`, `${…}`, or a backquote, is one unresolvable word that ends where bash ends it.
+Any other multi-line command has no reading, so both hooks judge its text as they judge any command the lexer cannot read: a line continuation, a parenthesis, a reserved word in command position, a here-document or `case` pattern inside a substitution, or another program's here-document.
 The recorder reset `PATH` after shell startup because this host's zsh startup changes it.
 
 - `just apps test shared` — this module.

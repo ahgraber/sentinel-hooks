@@ -59,6 +59,36 @@ def test_bash_word_cases(case, tmp_path, monkeypatch):
     assert bool(hook.bash_blocked_target(case["command"], str(tmp_path))) is case["blocked"]
 
 
+PLACEHOLDER_READS_ACROSS_LINES = [
+    ("echo start\ncat .env.example \\\n  notes.txt", "echo start; cat .env.example notes.txt"),
+    ("if true; then\ncat .env.example\nfi", "if true; then cat .env.example; fi"),
+    ("echo $(date)\ncat .env.example", "echo $(date); cat .env.example"),
+]
+
+
+@pytest.mark.parametrize(("multi_line", "one_line"), PLACEHOLDER_READS_ACROSS_LINES)
+def test_a_placeholder_read_proceeds_on_one_line(multi_line, one_line, tmp_path):
+    assert not load_hook("block-sensitive-paths").bash_blocked_target(one_line, str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("multi_line", "one_line"),
+    [
+        pytest.param(
+            *PLACEHOLDER_READS_ACROSS_LINES[0],
+            marks=pytest.mark.xfail(strict=True, reason="known gap LineContinuation"),
+        ),
+        pytest.param(
+            *PLACEHOLDER_READS_ACROSS_LINES[1],
+            marks=pytest.mark.xfail(strict=True, reason="known gap CompoundCommandAcrossLines"),
+        ),
+        PLACEHOLDER_READS_ACROSS_LINES[2],
+    ],
+)
+def test_a_placeholder_read_across_lines_reaches_its_one_line_verdict(multi_line, one_line, tmp_path):
+    assert not load_hook("block-sensitive-paths").bash_blocked_target(multi_line, str(tmp_path))
+
+
 @pytest.mark.parametrize(
     ("command", "with_cwd"),
     [

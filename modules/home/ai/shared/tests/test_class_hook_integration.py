@@ -148,6 +148,184 @@ def test_class_outcomes(world, monkeypatch, capsys, tool, target, expected):
             assert json.loads(captured.out)["hookSpecificOutput"]["permissionDecision"] == "ask"
 
 
+def _bash_decision(world, monkeypatch, capsys, command):
+    """Return the tamper hook's decision on a Bash command, and its reason with the command text replaced."""
+    _, repo, hook = world
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "cwd": str(repo),
+        "transcript_path": "/tmp/transcript.jsonl",
+    }
+    monkeypatch.delenv("AI_HOOK_AGENT", raising=False)
+    monkeypatch.setattr(hook.sys, "stdin", io.StringIO(json.dumps(payload)))
+    with pytest.raises(SystemExit) as stopped:
+        hook.main()
+    captured = capsys.readouterr()
+    if stopped.value.code == 2:
+        decision, reason = "block", captured.err
+    elif captured.out:
+        decision, reason = "ask", json.loads(captured.out)["hookSpecificOutput"]["permissionDecisionReason"]
+    else:
+        decision, reason = "allow", ""
+    return decision, reason.replace(command, "<command>")
+
+
+def test_a_multi_line_read_is_recognized(world, monkeypatch, capsys):
+    multi_line = _bash_decision(world, monkeypatch, capsys, "cat ~/base/file\nhead ~/base/file")
+    one_line = _bash_decision(world, monkeypatch, capsys, "cat ~/base/file; head ~/base/file")
+
+    assert multi_line == one_line == ("allow", "")
+
+
+@pytest.mark.parametrize(
+    ("multi_line", "one_line", "expected"),
+    [
+        ("cat ~/base/file\necho done\n", "cat ~/base/file; echo done", "allow"),
+        ("cat ~/base/file\nrm ~/base/file", "cat ~/base/file; rm ~/base/file", "ask"),
+        ("cat ~/base/file\ncat ~/base/private", "cat ~/base/file; cat ~/base/private", "block"),
+        ("cat ~/base/file |\nxargs rm", "cat ~/base/file | xargs rm", "ask"),
+        ("echo x\necho y > ~/base/file", "echo x; echo y > ~/base/file", "ask"),
+        ("cd ~/base &&\ncat ./file", "cd ~/base && cat ./file", "ask"),
+        ("# rm ~/base/file\ncat ~/base/file", "cat ~/base/file", "allow"),
+        ("echo if then\nrm ~/base/file", "echo if then; rm ~/base/file", "ask"),
+    ],
+)
+def test_a_multi_line_command_reaches_its_one_line_verdict(world, monkeypatch, capsys, multi_line, one_line, expected):
+    decision = _bash_decision(world, monkeypatch, capsys, multi_line)
+
+    assert decision == _bash_decision(world, monkeypatch, capsys, one_line)
+    assert decision[0] == expected
+
+
+@pytest.mark.xfail(strict=True, reason="known gap HereDocumentReadByARecognizedRead")
+@pytest.mark.parametrize("reader", ["head -n 1", "tr a b", "cat -n", "wc -l"])
+def test_a_here_document_a_recognized_read_takes_is_data(world, monkeypatch, capsys, reader):
+    command = f"{reader} <<'EOF'\nrm ~/base/file\nEOF"
+
+    assert _bash_decision(world, monkeypatch, capsys, command) == ("allow", "")
+
+
+@pytest.mark.parametrize("character", ["\v", "\f", "\xa0"])
+@pytest.mark.parametrize(("command", "expected"), [("rm ~/base/file", "ask"), ("cat ~/base/private", "block")])
+def test_a_hash_after_a_character_bash_does_not_split_on_hides_nothing(
+    world, monkeypatch, capsys, character, command, expected
+):
+    assert _bash_decision(world, monkeypatch, capsys, f"echo a{character}#; {command}")[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cat ~/base/file \\\n  ~/base/private", "block"),
+        ("echo x \\\n> ~/base/file", "ask"),
+        ("cd ~/base &\\\n& cat private", "ask"),
+        ("if true; then\nbash -c 'rm ~/base/file'\nfi", "ask"),
+        ("while false; do\ncat ~/base/private\ndone", "block"),
+        ("echo $(#'\n); rm ~/base/file; #')", "ask"),
+        ('cat "`echo"`"; rm ~/base/file; " #\n" #"', "ask"),
+        ("((cat<<2))\ncat ~/base/private\n2", "block"),
+    ],
+)
+def test_a_multi_line_form_the_lexer_does_not_yet_read_falls_back(world, monkeypatch, capsys, command, expected):
+    assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cat <<'EOF' > /tmp/out\nrm ~/base/file\nEOF", "allow"),
+        ("cat <<'EOF'\ncat ~/base/private\nEOF", "allow"),
+        ("git commit -F - <<'EOF'\nfix ~/base/private\nEOF", "allow"),
+        ("gh pr create --body-file - <<'EOF'\nfix ~/base/file\nEOF", "allow"),
+        ("tee /tmp/out <<'EOF'\nrm ~/base/file\nEOF", "allow"),
+        ("git commit -F - <<'EOF'\nPATH=~/base/file fix\nEOF", "allow"),
+        ("git commit --file - <<'EOF'\nfix ~/base/private\nEOF", "allow"),
+        ("git commit --file=- <<'EOF'\nfix ~/base/private\nEOF", "allow"),
+        ("git -C /tmp commit -F - <<'EOF'\nfix ~/base/private\nEOF", "allow"),
+        ("git tag -a v1 -F - <<'EOF'\nfix ~/base/private\nEOF", "allow"),
+        ("gh issue comment 1 --body-file=- <<'EOF'\nfix ~/base/file\nEOF", "allow"),
+        # A body bash expands is unresolvable, so the paths written in it are judged.
+        ("cat <<EOF\n$X ~/base/file\nEOF", "ask"),
+        ("cat <<EOF\n$X ~/base/private\nEOF", "block"),
+        # `|&` pipes the reader's output on, as `|` does.
+        ("cat <<'EOF' |& sh\nrm ~/base/file\nEOF", "ask"),
+        # The reader's own words and redirections are judged as on one line.
+        ("cat <<'EOF' > ~/base/file\nx\nEOF", "ask"),
+        ("tee ~/base/file <<'EOF'\nx\nEOF", "ask"),
+        ("cat ~/base/private <<'EOF'\nx\nEOF", "block"),
+    ],
+)
+def test_a_here_document_read_as_data_is_not_judged(world, monkeypatch, capsys, command, expected):
+    assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("reader", "body", "expected"),
+    [
+        ("bash", "rm ~/base/file", "ask"),
+        ("python3 -", "open('~/base/file', 'w')", "ask"),
+        ("xargs rm", "~/base/file", "ask"),
+        ("sudo sh", "rm ~/base/file", "ask"),
+        ("source /dev/stdin", "rm ~/base/file", "ask"),
+        ("sed -f - /tmp/x", "w ~/base/file", "ask"),
+        ("git apply", "+++ ~/base/file", "ask"),
+        ("git agent-commit -F -", "~/base/file", "ask"),
+        ("unknown-program", "~/base/file", "ask"),
+        ("bash", "cat ~/base/private", "block"),
+        ("xargs cat", "~/base/private", "block"),
+        # A record reader that may still run its input.
+        ("env -S'sh -s' tee", "rm ~/base/file", "ask"),
+        ("git -c core.editor=sh commit -e -F -", "cat ~/base/private", "block"),
+        ("GIT_EDITOR=sh git commit -e -F -", "cat ~/base/private", "block"),
+        ("PATH=/tmp/evil tee /tmp/o", "cat ~/base/private", "block"),
+        ("gh myalias --body-file -", "rm ~/base/file", "ask"),
+    ],
+)
+def test_a_here_document_read_by_any_other_program_is_program_text(world, monkeypatch, capsys, reader, body, expected):
+    decision = _bash_decision(world, monkeypatch, capsys, f"{reader} <<'EOF'\n{body}\nEOF")
+    inline = _bash_decision(world, monkeypatch, capsys, f"bash -c '{body}'")
+
+    assert decision[0] == inline[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("multi_line", "one_line"),
+    [
+        ("echo a\ncat .env.local", "echo a; cat .env.local"),
+        ("cat .env.example\necho done", "cat .env.example; echo done"),
+        ("echo a |\ncat > .env.example", "echo a | cat > .env.example"),
+        ("cd /tmp &&\ncat secret", "cd /tmp && cat secret"),
+        ("echo done\ncat id_rsa", "echo done; cat id_rsa"),
+    ],
+)
+def test_a_multi_line_command_reaches_its_one_line_sensitive_verdict(tmp_path, multi_line, one_line):
+    hook = load_hook("block-sensitive-paths")
+
+    assert hook.bash_blocked_target(multi_line, str(tmp_path)) == hook.bash_blocked_target(one_line, str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cat <<'EOF' | sh\nrm ~/base/file\nEOF", "ask"),
+        ("cat <<'EOF' | bash\ncat ~/base/private\nEOF", "block"),
+        ("cat <<'EOF' | xargs rm\n~/base/file\nEOF", "ask"),
+        ("cat <<'EOF' | tr a a | sh\nrm ~/base/file\nEOF", "ask"),
+        ("tee /dev/stdout <<'EOF' | sh\nrm ~/base/file\nEOF", "ask"),
+    ],
+)
+def test_a_here_document_piped_on_is_program_text(world, monkeypatch, capsys, command, expected):
+    assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
+
+
+@pytest.mark.parametrize(
+    "command", ["cat <<'EOF'\nrm ~/base/file", "cat <<'EOF'\nrm ~/base/file\nEOF ", "cat ~/base/file\r\nhead x"]
+)
+def test_a_command_the_lexer_cannot_read_still_reaches_the_fallback(world, monkeypatch, capsys, command):
+    assert _bash_decision(world, monkeypatch, capsys, command)[0] == "ask"
+
+
 @pytest.mark.parametrize(
     ("command", "blocked"),
     [
@@ -254,7 +432,10 @@ def test_two_hooks_one_reading(world, monkeypatch, command):
     [
         ("bash -c 'rm ~/base/file'", "program text"),
         ("echo ~/base/file | xargs rm", "command builder"),
-        ("cat ~/base/file\necho done", "newline"),
+        ("cat <<'EOF'\n~/base/file", "multi-line form"),
+        ("cat ~/base/file \\\n  /tmp/x", "line continuation"),
+        ("cat ~/base/file\r\necho done", "carriage return"),
+        ("bash <<'EOF'\nrm ~/base/file\nEOF", "here-document"),
         ("cat ${FILE:-~/base/file}", "substitution"),
         ("cat ~/base/{file,other}", "brace"),
         ("cd ~/base; cat ./$NAME", "substitution"),
