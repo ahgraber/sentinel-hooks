@@ -238,6 +238,36 @@
       "command": "cat .env.example\r\necho done",
       "blocked": true,
       "exists": []
+    },
+    {
+      "command": "for f in id_rsa; do cat \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for f in notes.md .env; do wc -l \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "select f in id_rsa; do echo \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for f in notes.md; do cat \"$f\"; done",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "sort --files0-from=- <<'EOF'\nid_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "head -n 1 <<'EOF'\nid_rsa\nEOF",
+      "blocked": false,
+      "exists": []
     }
   ],
   "cases": [

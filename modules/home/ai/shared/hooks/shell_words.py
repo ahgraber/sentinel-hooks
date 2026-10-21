@@ -1,18 +1,23 @@
 """Read Bash command text for path-judging hooks without running it.
 
-Across lines only plain commands are read. An unquoted newline ends a command
-as `;` does, except after `;`, `&`, `|`, `|&`, `&&`, or `||`, where bash reads
-on; a quoted newline is part of its word. A here-document body is one word,
-read on the command's standard input; a here-document whose body never ends,
-or whose delimiter holds an expansion, refuses the whole command. A multi-line
-command holding a line continuation, a parenthesis, or a reserved word in
-command position refuses the whole command, as do a carriage return and a null
-byte.
-A substitution, `$(…)`, `${…}`, or a backquote, ends where bash ends it, quotes
-and nesting included; one holding a here-document or a `case` pattern refuses
-the whole command. Substitutions, `((…))`, and brace expansions retain their
-written paths but are unresolvable, except a leading `$HOME`, which expands as
-a leading `~` does.
+An unquoted newline ends a command as `;` does, except after `;`, `&`, `|`,
+`|&`, `&&`, or `||`, where bash reads on; after a reserved word such as `then`
+it ends an empty command, which adds no segment. A quoted newline is part of
+its word. A here-document body is one word, read on the descriptor its
+operator names, standard input by default; a here-document whose body never
+ends refuses the whole command. A
+line continuation joins its lines, as bash joins them outside single quotes
+and comments. A carriage return or a null byte refuses the whole command.
+A substitution, `$(…)`, `${…}`, or a backquote, ends where bash ends it, quotes,
+nesting, and `case` patterns included, and a here-document body inside one is
+input. `((…))` and `[[ … ]]` in command position are each one word that runs
+no program, and an array subscript or value, as in `a[ i ]=1` or `a=(1 2)`, is
+part of its word. The header of a `for` or `select` loop is a segment of its
+own that runs no program; so is a `case` subject or pattern where it expands,
+and a `function` keyword with its name. `((…))`, `[[ … ]]`, array subscripts
+and values, expanding `case` words, substitutions, and brace expansions keep
+their written paths but are unresolvable, except a leading `$HOME`, which
+expands as a leading `~` does.
 Each segment carries the directories it may run in; a relative path after a
 directory change is unresolvable and carries its spelling in each of them.
 """
@@ -56,12 +61,25 @@ class Segment(list[Word]):
     `directories` holds every directory the command may run in, spelled
     relative to where the whole command starts (`""` is that directory), or is
     `None` after a directory change the words do not resolve.
+
+    A `loop_header` segment runs no program: it is the header of a `for` or
+    `select` loop, its first word the reserved word and the rest the values
+    the loop variable takes, which reach the body through that variable, or
+    the one unresolvable word of a `for ((…))` header.
     """
 
-    def __init__(self, words: list[Word], separator: str, directories: tuple[str, ...] | None = ("",)) -> None:
+    def __init__(
+        self,
+        words: list[Word],
+        separator: str,
+        directories: tuple[str, ...] | None = ("",),
+        *,
+        loop_header: bool = False,
+    ) -> None:
         super().__init__(words)
         self.separator = separator
         self.directories = directories
+        self.loop_header = loop_header
 
 
 @dataclass(frozen=True)
@@ -80,7 +98,7 @@ class _Token:
     here_document: bool = False
 
 
-_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # `~+`, `~-`, and `~N` name entries of the shell's directory stack, which the hook does not track.
 _STACK_TILDE = re.compile(r"~(?:[+-]\d*|\d+)(?:/|$)")
 # A descriptor before a redirection: a number, or `{name}`, in which bash stores the one it opens.
@@ -90,6 +108,8 @@ _REDIRECTION = re.compile(rf"&>>|&>|(?:{_DESCRIPTOR_NAME.pattern})?(?:>>|<<-|<<|
 # `${X:-/etc/file}`; a `/` after a name character or a `.` continues a relative path.
 _PATH = re.compile(r"(?<![\w.])[~/][^{}$(),`\"'\s]*")
 _BREAKS = {";", "|", "||", "&", "&&", "(", ")"}
+# Operators of more than one character; each longer one extends one listed, as `&>>` extends `&>`.
+_LONG_OPERATORS = {"&&", "||", "&>", "&>>", ">>", "<<", "<>", ">&", "<&", ">|", "|&", ";;", ";&", ";;&"}
 # Operators after which bash reads on past a newline for the rest of the list.
 _CONTINUED = {";", "&", "|", "|&", "||", "&&"}
 # `$HOME` and `${HOME}` at the start of a word; `$HOMEDIR` names another variable.
@@ -158,8 +178,23 @@ def _ansi_c(body: str) -> str:
     return bytes(result).split(b"\0", 1)[0].decode("utf-8", "surrogateescape")
 
 
+# A line that ends in a line continuation: an odd number of backslashes before its end.
+_CONTINUED_LINE = re.compile(r"(?<!\\)(?:\\\\)*\\$")
+# A `$` or a backquote no backslash escapes, which bash expands in an unquoted here-document body.
+_UNESCAPED_EXPANSION = re.compile(r"(?<!\\)(?:\\\\)*[$`]")
 # Deeper nesting than this leaves the command with no reading rather than recursing further.
 _MAX_NESTING = 32
+# How many `)` one command may try as the close of a substitution holding a `case`.
+# Each try reads the text before it again, nested substitutions included, so the work
+# grows with the square of the text and with each level of nesting; past this many the
+# command has no reading.
+_CASE_CLOSE_TRIES = 128
+
+
+class _Budget:
+    """The `)` tries left to the command `lex` is reading."""
+
+    case_closes = _CASE_CLOSE_TRIES
 
 
 def _opens_substitution(command: str, index: int) -> bool:
@@ -189,62 +224,123 @@ def _double_quote_end(command: str, start: int, depth: int) -> int | None:
     return None
 
 
-def _expansion_end(command: str, start: int, depth: int = 0) -> int | None:  # noqa: C901
+def _expansion_end(command: str, start: int, depth: int = 0) -> int | None:
     """Return the index after the `$(…)`, `$((…))`, `${…}`, or backquote that opens at `start`.
 
     The contents are not read, only their boundary, which follows bash: quotes
     and nested expansions inside are matched, a comment inside `$(…)` runs to
-    its newline, and a backquote ends at the first unescaped backquote.
-    `None` where the text ends first, nesting runs deeper than `_MAX_NESTING`,
-    or the boundary depends on grammar the scan does not follow: a
-    here-document or a `case` pattern inside `$(…)`, a quote inside `$((…))`,
-    or `$((` that closes as two nested subshells.
+    its newline, a here-document body inside it is skipped, and a backquote
+    ends at the first unescaped backquote. `None` where the text ends first,
+    nesting runs deeper than `_MAX_NESTING`, a here-document body inside
+    never ends, or the boundary depends on grammar the scan does not follow:
+    a quote inside `$((…))`, or `$((` that closes as two nested subshells.
     """
     if depth > _MAX_NESTING:
         return None
     if command[start] == "`":
-        index = start + 1
-        while index < len(command):
-            if command[index] == "\\":
-                index += 2
-            elif command[index] == "`":
-                return index + 1
-            else:
-                index += 1
-        return None
-    arithmetic = command.startswith("$((", start)
-    braced = command.startswith("${", start)
-    opening, closing = ("{", "}") if braced else ("(", ")")
-    index = start + (3 if arithmetic else 2)
+        return _escaped_end(command, start + 1, "`")
+    if command.startswith("$((", start):
+        return _group_end(command, start + 3, "(", ")", depth, arithmetic=True)
+    if command.startswith("${", start):
+        return _group_end(command, start + 2, "{", "}", depth)
+    return _group_end(command, start + 2, "(", ")", depth, commands=True)
+
+
+def _case_commands_end(command: str, start: int) -> int | None:
+    """Return the index after the `)` that closes the commands from `start`, which hold a `case`.
+
+    Bash closes them at the first `)` before which they read as complete
+    commands: a `)` that ends a `case` pattern leaves the `case` open, and one
+    inside a quote leaves the quote open. A `)` inside a comment is not one,
+    since a word after it is part of the comment. `None` where no `)` closes
+    them, or where the command has used its `_CASE_CLOSE_TRIES`.
+    """
+    index = start
+    while _Budget.case_closes > 0:
+        _Budget.case_closes -= 1
+        index = command.find(")", index)
+        if index < 0:
+            return None
+        commands = command[start:index]
+        reading = _lex(commands, None)
+        probe = _lex(commands + " :", None)
+        if reading is not None and probe is not None and sum(map(len, probe)) > sum(map(len, reading)):
+            return index + 1
+        index += 1
+    return None
+
+
+def _escaped_end(command: str, index: int, close: str) -> int | None:
+    """Return the index after the first `close` from `index` that no backslash escapes, or `None`."""
+    while index < len(command):
+        if command[index] == "\\":
+            index += 2
+        elif command[index] == close:
+            return index + 1
+        else:
+            index += 1
+    return None
+
+
+def _unit_end(command: str, index: int, depth: int) -> int | None:
+    """Return the index after the escape, quote, or expansion that opens at `index`.
+
+    `index` itself where none opens there, and `None` where one never closes.
+    """
+    char = command[index]
+    if char == "\\":
+        return index + 2
+    if command.startswith("$'", index):
+        # An ANSI-C quote ends at the first `'` no backslash escapes, so `$'\''` is one quote.
+        return _escaped_end(command, index + 2, "'")
+    if char == "'":
+        end = command.find("'", index + 1)
+        return None if end < 0 else end + 1
+    if char == '"':
+        return _double_quote_end(command, index, depth)
+    if _opens_substitution(command, index):
+        return _expansion_end(command, index, depth + 1)
+    return index
+
+
+def _group_end(  # noqa: C901
+    command: str,
+    index: int,
+    opening: str,
+    closing: str,
+    depth: int = 0,
+    *,
+    arithmetic: bool = False,
+    commands: bool = False,
+) -> int | None:
+    """Return the index after the `closing` that matches an `opening` just before `index`.
+
+    Quotes and nested expansions inside are matched. With `commands`, the text
+    is shell commands, where a comment runs to its newline and a here-document
+    body is skipped; commands holding a `case` end where `_case_commands_end` finds.
+    With `arithmetic`, the group closes with `))`. `None` where the text ends
+    first, nesting runs too deep, a here-document operator has no delimiter
+    word, a here-document body never starts or ends, or the boundary depends
+    on grammar the scan does not follow: a quote in `arithmetic`, or a `)`
+    that closes an `arithmetic` group alone.
+    """
+    start = index
     level = 0
     word_start = True
+    # Each here-document on the current line: its delimiter word, and whether `<<-` strips tabs.
+    pending: list[tuple[str, bool]] = []
     while index < len(command):
         char = command[index]
-        if char == "\\":
-            index += 2
-            word_start = False
-            continue
-        if arithmetic and char in "'\"":
+        if arithmetic and (char in "'\"" or command.startswith("$'", index)):
             return None
-        if char == "'":
-            end = command.find("'", index + 1)
-            if end < 0:
-                return None
-            index, word_start = end + 1, False
+        end = _unit_end(command, index, depth)
+        if end is None:
+            return None
+        if end > index:
+            # Bash removes a line continuation before it reads words, so one leaves a word start as it was.
+            index, word_start = end, word_start and command.startswith("\\\n", index)
             continue
-        if char == '"':
-            end = _double_quote_end(command, index, depth)
-            if end is None:
-                return None
-            index, word_start = end, False
-            continue
-        if _opens_substitution(command, index):
-            end = _expansion_end(command, index, depth + 1)
-            if end is None:
-                return None
-            index, word_start = end, False
-            continue
-        if not braced and not arithmetic:
+        if commands:
             if char == "#" and word_start:
                 newline = command.find("\n", index)
                 if newline < 0:
@@ -255,16 +351,33 @@ def _expansion_end(command: str, start: int, depth: int = 0) -> int | None:  # n
                 index, word_start = index + 3, False
                 continue
             if command.startswith("<<", index):
-                return None
+                strip = command.startswith("<<-", index)
+                word = _delimiter_word(command, index + (3 if strip else 2))
+                if word is None:
+                    return None
+                pending.append((command[word[0] : word[1]], strip))
+                index, word_start = word[1], False
+                continue
+            # The bodies of the line's here-documents follow its newline, and are input, not commands.
+            if char == "\n" and pending:
+                index += 1
+                for raw, strip in pending:
+                    body = _here_document(command, index, raw, strip)
+                    if body is None:
+                        return None
+                    index = body[1]
+                pending.clear()
+                word_start = True
+                continue
             if word_start and re.match(r"case\b", command[index:]):
-                return None
+                return _case_commands_end(command, start)
         if char == opening:
             level += 1
         elif char == closing:
             if level:
                 level -= 1
             elif not arithmetic:
-                return index + 1
+                return None if pending else index + 1
             elif command.startswith("))", index):
                 return index + 2
             else:
@@ -315,57 +428,220 @@ def _arithmetic_end(command: str, index: int) -> int | None:
     return None
 
 
-def _reserved_in_command_position(words: list[_Token]) -> bool:
-    """Return whether an unquoted reserved word stands in command position.
+def _at_command_position(words: list[_Token]) -> bool:
+    """Return whether a word after `words` stands in command position, where bash reads a reserved word.
 
-    Command position is the first word, or the first after a control operator.
-    An assignment or a redirection before a word takes the position, so in
-    `X=1 if` and `echo done` the reserved word is a name or an argument.
+    That is the first word, or the first after a control operator or after a
+    reserved word that leads a command, such as `!`, `if`, `do`, or `coproc`,
+    or after the name a `coproc` gives the compound command that follows it.
     """
     position = True
+    after_coproc = False
     for word in words:
         if word.operator:
-            position = not _REDIRECTION.fullmatch(word.value)
+            position, after_coproc = not _REDIRECTION.fullmatch(word.value), False
             continue
-        if position and not word.quoted and word.value in _MULTI_LINE_RESERVED:
-            return True
-        position = False
-    return False
+        named = after_coproc and not word.quoted and _NAME.fullmatch(word.value) is not None
+        after_coproc = position and _reserved(word, {"coproc"})
+        position = (position and _reserved(word, _COMMAND_LEADERS)) or named
+    return position
 
 
-def _here_document(command: str, index: int, delimiter: _Token, strip: bool) -> tuple[_Token, int] | None:
-    """Read one here-document body from `index`; return its token and the index after the delimiter line.
+def _conditional_end(command: str, index: int) -> int | None:
+    """Return the index after the `]]` that closes the conditional expression `[[` at `index`.
 
-    `None` where the body never ends, the delimiter holds an expansion, or a
-    line under an unquoted delimiter ends in a line continuation.
+    `]]` closes it only as a word of its own; quotes, escapes, expansions, and
+    comments inside are skipped. `None` where the text ends first, an
+    expansion inside never closes, or at an unquoted `;`, which bash refuses
+    inside it.
     """
-    if set(delimiter.active) & {"$", "`"} or delimiter.home:
+    position = index + 2
+    word_start = True
+    while position < len(command):
+        char = command[position]
+        if (
+            word_start
+            and command.startswith("]]", position)
+            and command[position + 2 : position + 3] in _AFTER_CONDITIONAL
+        ):
+            return position + 2
+        if char == ";":
+            return None
+        if char == "#" and word_start:
+            newline = command.find("\n", position)
+            if newline < 0:
+                return None
+            position = newline
+            continue
+        if command.startswith("\\\n", position):
+            position += 2
+            continue
+        end = _unit_end(command, position, 0)
+        if end is None:
+            return None
+        word_start = end == position and char in " \t\n()"
+        position = max(end, position + 1)
+    return None
+
+
+def _assignment_end(text: str) -> int | None:
+    """Return the index after the `=` of the assignment `text` starts with: `NAME=`, `NAME+=`, or `NAME[…]=`.
+
+    `None` where `text` starts with no assignment. A subscript ends at the
+    `]` that matches its `[`, as bash reads it.
+    """
+    name = _NAME.match(text)
+    if name is None:
         return None
-    quoted = delimiter.quoted
+    index = name.end()
+    if text.startswith("[", index):
+        end = _group_end(text, index + 1, "[", "]")
+        if end is None:
+            return None
+        index = end
+    for operator in ("=", "+="):
+        if text.startswith(operator, index):
+            return index + len(operator)
+    return None
+
+
+class _AssignmentPlace:
+    """Where the next word stands for bash's array syntax, read once per word as words are added.
+
+    `"command"` before the command word, after leading reserved words and
+    assignments, where bash reads `NAME[…]` to its closing `]` and
+    `NAME=(…)` as one word. `"operand"` after an assignment builtin such as
+    `declare`, where bash reads `NAME=(…)` alone. `None` anywhere else. A
+    redirection and its target leave the place as it was.
+    """
+
+    def __init__(self) -> None:
+        self.place: Literal["command", "operand"] | None = "command"
+        self.target = False
+        self.read = 0
+
+    def after(self, words: list[_Token]) -> Literal["command", "operand"] | None:
+        """Return the place of a word after `words`, which extend the words read before."""
+        for word in words[self.read :]:
+            if word.operator:
+                self.target = bool(_REDIRECTION.fullmatch(word.value))
+                if not self.target:
+                    self.place = "command"
+            elif self.target:
+                self.target = False
+            elif self.place == "command" and (
+                _reserved(word, _COMMAND_LEADERS) or _assignment_end(word.raw) is not None
+            ):
+                continue
+            elif self.place == "command" and _reserved(word, _ASSIGNMENT_BUILTINS):
+                self.place = "operand"
+            elif self.place != "operand":
+                self.place = None
+        self.read = len(words)
+        return self.place
+
+
+def _delimiter(raw: str) -> tuple[str, bool] | None:
+    """Return the here-document delimiter bash takes from the word `raw`, and whether any of it is quoted.
+
+    Bash removes quotes and expands nothing, so `<<$X` ends at a line reading
+    `$X`, and an expansion keeps its text as written, quotes inside included.
+    `None` where a quote or an expansion in it never closes, for an expansion
+    inside double quotes, or for a locale string, `$"…"`.
+    """
+    text: list[str] = []
+    quoted = False
+    index = 0
+    while index < len(raw):
+        char = raw[index]
+        end = _unit_end(raw, index, 0)
+        if end is None or raw.startswith('$"', index):
+            return None
+        if char == "\\":
+            text.append(raw[index + 1 : end])
+        elif raw.startswith("$'", index):
+            text.append(_ansi_c(raw[index + 2 : end - 1]))
+        elif char == "'":
+            text.append(raw[index + 1 : end - 1])
+        elif char == '"':
+            body = raw[index + 1 : end - 1]
+            if any(_opens_substitution(body, position) for position in range(len(body))):
+                return None
+            text.append(re.sub(r'\\([$`"\\])', r"\1", body))
+        else:
+            text.append(raw[index:end] if end > index else char)
+            index = max(end, index + 1)
+            continue
+        quoted = True
+        index = end
+    return "".join(text), quoted
+
+
+def _line_at(command: str, index: int) -> tuple[str, int, bool]:
+    """Return the line that starts at `index`, the index after it, and whether a newline ends it."""
+    end = command.find("\n", index)
+    if end < 0:
+        return command[index:], len(command), False
+    return command[index:end], end + 1, True
+
+
+def _here_document(command: str, index: int, raw: str, strip: bool) -> tuple[_Token, int] | None:
+    """Read the body of the here-document whose delimiter word is `raw` from `index`.
+
+    Return its token and the index after the delimiter line. Under an unquoted
+    delimiter a line continuation joins the lines before the delimiter is
+    matched, so a line `EO` continued by `F` ends a body at `EOF`, and `<<-`
+    strips leading tabs after the join. A quoted body keeps every backslash;
+    an unquoted body that does not expand keeps all but those before `$`, a
+    backquote, or a backslash; one that expands keeps its text as written.
+    `None` where the delimiter has no reading or the text ends first.
+    """
+    delimiter = _delimiter(raw)
+    if delimiter is None:
+        return None
+    text, quoted = delimiter
     lines = []
     while index < len(command):
-        end = command.find("\n", index)
-        line = command[index:] if end < 0 else command[index:end]
-        index = len(command) if end < 0 else end + 1
+        line, index, ended = _line_at(command, index)
+        while not quoted and ended and _CONTINUED_LINE.search(line) and index < len(command):
+            more, index, ended = _line_at(command, index)
+            line = line[:-1] + more
         if strip:
             line = line.lstrip("\t")
-        if line == delimiter.value:
+        if line == text:
             break
-        # Under an unquoted delimiter a trailing backslash joins the next line, delimiter included.
-        if end < 0 or (not quoted and line.endswith("\\")):
+        if not ended:
             return None
         lines.append(line + "\n")
     else:
         return None
     body = "".join(lines)
-    expands = not quoted and any(char in body for char in "$`")
-    if not quoted and not expands:
-        body = body.replace("\\\\", "\\")
-    return _Token(body, "$" if expands else "", quoted, raw=body, here_document=True), index
+    if quoted:
+        return _Token(body, "", True, raw=body, here_document=True), index
+    if _UNESCAPED_EXPANSION.search(body):
+        return _Token(body, "$", raw=body, here_document=True), index
+    return _Token(re.sub(r"\\([$`\\])", r"\1", body), raw=body, here_document=True), index
+
+
+def _delimiter_word(command: str, index: int) -> tuple[int, int] | None:
+    """Return where the delimiter word after a here-document operator ending at `index` starts and ends.
+
+    `None` where no word follows or a quote or an expansion in it never closes.
+    """
+    while command[index : index + 1] in {" ", "\t"}:
+        index += 1
+    start = index
+    while index < len(command) and command[index] not in " \t\n;&|()<>":
+        end = _unit_end(command, index, 0)
+        if end is None:
+            return None
+        index = max(end, index + 1)
+    return (start, index) if index > start else None
 
 
 def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
     words: list[_Token] = []
+    place = _AssignmentPlace()
     value: list[str] = []
     active: set[str] = set()
     quoted = started = tilde = home_reference = literal_glob = False
@@ -375,7 +651,6 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
     # read waits, by its place in `words`, for the body after the line ends.
     awaiting_delimiter: str | None = None
     awaiting_body: list[tuple[int, bool]] = []
-    multi_line = "\n" in command
 
     def literal(text: str) -> None:
         """Append quoted or escaped text, noting a glob character it holds."""
@@ -391,6 +666,19 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
             return False
         value.append(command[index:end])
         active.add("`" if command[index] == "`" else "$")
+        index = end
+        return True
+
+    def whole_word(end: int | None) -> bool:
+        """Append the text from `index` to `end` as one unresolvable word.
+
+        `False` where it has no end, or spans a newline before a here-document body it would hide.
+        """
+        nonlocal index
+        if end is None or (awaiting_body and "\n" in command[index:end]):
+            return False
+        text = command[index:end]
+        words.append(_Token(text, "$", raw=text))
         index = end
         return True
 
@@ -421,9 +709,10 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
 
     while index < len(command):
         char = command[index]
-        # A line continuation joins the lines before bash reads operators or comments.
+        # A line continuation joins the lines before bash reads operators, words, or comments.
         if command.startswith("\\\n", index):
-            return None
+            command = command[:index] + command[index + 2 :]
+            continue
         if char == "\n":
             flush()
             if awaiting_delimiter is not None:
@@ -431,7 +720,7 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
             index += 1
             # The bodies of the line's here-documents start on the next line, in order.
             for position, strip in awaiting_body:
-                body = _here_document(command, index, words[position], strip)
+                body = _here_document(command, index, words[position].raw, strip)
                 if body is None:
                     return None
                 words[position], index = body
@@ -447,14 +736,36 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
             continue
         # `((…))` is an arithmetic command: bash runs no program, and `<<` in it is a shift.
         # It stays one unresolvable word, since it may assign variables later words read.
-        if not started and command.startswith("((", index) and not multi_line and awaiting_delimiter is None:
-            end = _arithmetic_end(command, index)
-            if end is None:
+        if not started and command.startswith("((", index) and awaiting_delimiter is None:
+            if not whole_word(_arithmetic_end(command, index)):
                 return None
-            text = command[index:end]
-            words.append(_Token(text, "$", raw=text))
-            index = end
             continue
+        # `[[ … ]]` is a conditional expression: bash runs no program, and `&&`, `<`, and `(`
+        # inside it are its operators. It stays one unresolvable word, as `((…))` does.
+        if (
+            not started
+            and command.startswith("[[", index)
+            and command[index + 2 : index + 3] in {" ", "\t", "\n"}
+            and _at_command_position(words)
+        ):
+            if not whole_word(_conditional_end(command, index)):
+                return None
+            continue
+        # Bash reads an array subscript to its `]` and an array value to its `)` as part of the
+        # word, so `a[ i ]=1` and `a=(1 2)` are one word each. A subscript is an expression and
+        # a value a list of words, so the word is unresolvable.
+        if char in "([" and started and not quoted:
+            raw = command[word_start:index]
+            subscript = char == "[" and _NAME.fullmatch(raw) and place.after(words) == "command"
+            array = char == "(" and _assignment_end(raw) == len(raw) and place.after(words) is not None
+            if subscript or array:
+                end = _group_end(command, index + 1, char, "]" if subscript else ")", commands=bool(array))
+                if end is None or (awaiting_body and "\n" in command[index:end]):
+                    return None
+                value.append(command[index:end])
+                active.add("$")
+                index = end
+                continue
         if char in "();<>|&":
             descriptor = ""
             if char in "<>" and not quoted and started and _DESCRIPTOR_NAME.fullmatch(command[word_start:index]):
@@ -463,26 +774,14 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
                 started = False
             flush()
             end = index + 1
-            if command[index : index + 3] == "&>>":
-                end += 2
-            elif end < len(command) and command[index : end + 1] in {
-                "&&",
-                "||",
-                "&>",
-                ">>",
-                "<<",
-                "<>",
-                ">&",
-                "<&",
-                ">|",
-                "|&",
-                ";;",
-            }:
+            while True:
+                # A line continuation inside an operator is removed as well, so `&\⏎&` is `&&`.
+                while command.startswith("\\\n", end):
+                    command = command[:end] + command[end + 2 :]
+                if end == len(command) or command[index : end + 1] not in _LONG_OPERATORS:
+                    break
                 end += 1
             operator = descriptor + command[index:end]
-            # A parenthesis opens a subshell or arithmetic, where `<<` may be a shift.
-            if multi_line and operator in {"(", ")"}:
-                return None
             if operator.endswith("<<") and command[end : end + 1] != "<":
                 if command[end : end + 1] == "-":
                     operator += "-"
@@ -517,23 +816,14 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
             if not substitution():
                 return None
             continue
-        ansi = command[index : index + 2] == "$'"
-        if char == "'" or ansi:
-            begin = index + (2 if ansi else 1)
-            end = begin
-            while end < len(command):
-                if ansi and command[end] == "\\":
-                    end += 2
-                elif command[end] == "'":
-                    break
-                else:
-                    end += 1
-            if end >= len(command):
+        if char == "'" or command.startswith("$'", index):
+            end = _unit_end(command, index, 0)
+            if end is None:
                 return None
-            body = command[begin:end]
-            literal(_ansi_c(body) if ansi else body)
+            body = command[index + (2 if char == "$" else 1) : end - 1]
+            literal(_ansi_c(body) if char == "$" else body)
             quoted = True
-            index = end + 1
+            index = end
             continue
         if char == '"':
             index += 1
@@ -546,7 +836,8 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
                 char = command[index]
                 if char == "\\" and index + 1 < len(command) and command[index + 1] in '$`"\\\n':
                     if command[index + 1] == "\n":
-                        return None
+                        command = command[:index] + command[index + 2 :]
+                        continue
                     literal(command[index + 1])
                     index += 2
                     continue
@@ -572,30 +863,30 @@ def _split_words(command: str) -> list[_Token] | None:  # noqa: C901
     flush()
     if awaiting_delimiter is not None or awaiting_body:
         return None
-    if multi_line and _reserved_in_command_position(words):
-        return None
     return words
 
 
 def is_assignment(value: str) -> bool:
-    """Return whether a word has the shape `NAME=`, wherever it stands.
+    """Return whether a word has the shape `NAME=`, `NAME+=`, or `NAME[…]=`, wherever it stands.
 
     The `assignment` kind marks only the leading words the shell assigns; a
     later word of the same shape is an operand such as `dd of=`.
     """
-    return _ASSIGNMENT.match(value) is not None
+    return _assignment_end(value) is not None
 
 
 def unresolved_paths(value: str) -> tuple[str, ...]:
     """Keep possible path spellings from text the lexer cannot resolve."""
-    pieces = [value, *re.split(r"[{},()\s\"']", value), *_PATH.findall(value)]
+    # A line continuation inside the text may split a path that bash reads joined.
+    joined = value.replace("\\\n", "")
+    pieces = [value, joined, *re.split(r"[{},()\s\"']", joined), *_PATH.findall(joined)]
     return tuple(dict.fromkeys(piece for piece in pieces if piece))
 
 
 def _resolve(token: _Token, roots: list[str | None], *, home_known: bool = True) -> list[str] | None:
-    active = set(token.active)
-    if active & {"$", "`"}:
+    if _holds_expansion(token):
         return None
+    active = set(token.active)
     if (token.tilde or token.home) and not home_known:
         return None
     if ("{" in active) != ("}" in active):
@@ -605,7 +896,7 @@ def _resolve(token: _Token, roots: list[str | None], *, home_known: bool = True)
     if token.tilde and _STACK_TILDE.match(token.value):
         return None
     value = os.path.expanduser(token.value) if token.tilde else token.value
-    if _ASSIGNMENT.match(token.raw):
+    if _assignment_end(token.raw) is not None:
         name, _, operand = value.partition("=")
         pieces, raw_pieces = operand.split(":"), token.raw.partition("=")[2].split(":")
         if any(piece.startswith("~") for piece in raw_pieces):
@@ -629,21 +920,30 @@ def _resolve(token: _Token, roots: list[str | None], *, home_known: bool = True)
     return sorted(matches) or [value]
 
 
-# Reserved words and wrappers that leave the word after them in command position.
+# Reserved words bash reads only in command position, and `time`, which leads a command.
 _RESERVED = {"!", "{", "}", "if", "then", "elif", "else", "fi", "while", "until", "do", "done", "time"}
-# Reserved words a multi-line command may not hold in command position: across
-# lines, which newline ends a command depends on compound-command grammar this
-# lexer does not parse.
-_MULTI_LINE_RESERVED = _RESERVED | {"for", "case", "esac", "select", "function", "coproc", "[["}
 # Reserved words that are not the program they precede. `time` stays a word,
 # because readers treat it as a wrapper that takes options.
 _KEYWORDS = _RESERVED - {"time"}
-# Builtins that run text or change the shell in ways these words do not show.
-_OPAQUE = {"eval", "source", ".", "trap", "shopt"}
+# Reserved words after which the next word stands in command position.
+_COMMAND_LEADERS = (_RESERVED - {"}", "fi", "done"}) | {"coproc"}
+# Builtins whose operands bash reads as assignments, so `declare a=(1 2)` assigns an array.
+_ASSIGNMENT_BUILTINS = {"alias", "declare", "eval", "export", "let", "local", "readonly", "typeset"}
+# What may follow the `]]` that closes a conditional expression.
+_AFTER_CONDITIONAL = {"", " ", "\t", "\n", ";", "&", "|", ")", "<", ">"}
+# Builtins that run text or change the shell in ways these words do not show, and
+# `function`, whose body any later call may run.
+_OPAQUE = {"eval", "source", ".", "trap", "shopt", "function"}
 # Assignments that change where `cd` goes or what `~` and `$HOME` mean.
-_DIRECTORY_VARIABLES = re.compile(r"^(?:HOME|CDPATH)(?:=|$)")
+_DIRECTORY_VARIABLES = re.compile(r"^(?:HOME|CDPATH)(?:[+=[]|$)")
 # Reserved words that open a loop, whose body may run any number of times.
 _LOOPS = {"while", "until", "for", "select"}
+# Operators that end a `case` body.
+_CASE_ENDS = {";;", ";&", ";;&"}
+# What follows `coproc NAME` when NAME names the coprocess: a compound command.
+_COMPOUND_OPENERS = _LOOPS | {"{", "(", "if", "case"}
+# Reserved words that open a loop header: a variable, then `in` and its values.
+_LIST_LOOPS = {"for", "select"}
 # What a segment does to the directory, where it names no path: distinct objects,
 # so no directory name can be mistaken for one.
 _UNKNOWN = object()
@@ -651,7 +951,12 @@ _STAYS = object()
 _FAILS = object()
 
 
-def _reserved(word: Word, names: set[str] = _RESERVED) -> bool:
+def _holds_expansion(token: _Token) -> bool:
+    """Return whether `token` holds a parameter expansion or a substitution."""
+    return bool(set(token.active) & {"$", "`"})
+
+
+def _reserved(word: Word | _Token, names: set[str] = _RESERVED) -> bool:
     """Return whether `word` is one of the reserved `names`; quoting makes it an ordinary word."""
     return not word.quoted and word.value in names
 
@@ -659,6 +964,14 @@ def _reserved(word: Word, names: set[str] = _RESERVED) -> bool:
 def _expands(value: str) -> bool:
     """Return whether an unresolvable word's text holds an expansion, not only a relative path."""
     return any(char in value for char in "$`{*?[")
+
+
+def _is_conditional_or_arithmetic(word: Word | _Token) -> bool:
+    """Return whether `word` is a whole `((…))` or `[[ … ]]` command, which runs no program.
+
+    No other unquoted word starts with `((`, or with `[[` and a blank.
+    """
+    return not word.quoted and (word.value.startswith("((") or word.value[:3] in {"[[ ", "[[\t", "[[\n"})
 
 
 def command_position(words: list[Word]) -> list[Word] | None:
@@ -687,7 +1000,7 @@ def _directory_effect(words: list[Word]) -> tuple[str, list[Word]] | object | No
     if any(_DIRECTORY_VARIABLES.match(word.value) for word in words):
         return _UNKNOWN
     rest = command_position(words)
-    if not rest:
+    if not rest or _is_conditional_or_arithmetic(rest[0]):
         return None
     if (rest[0].kind == "unresolvable" and _expands(rest[0].value)) or rest[0].value in _OPAQUE:
         return _UNKNOWN
@@ -897,21 +1210,149 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
     keywords: list[Word] = []
     redirect: str | None = None
     has_command = False
+    # Where a `for` or `select` header stands: before its variable, after it, or in the
+    # values after `in`; `None` outside a header.
+    header: Literal["variable", "after", "values"] | None = None
     directories = _Directories(cwd)
-    for token in [*tokens, _Token(";", operator=True)]:
-        if token.operator:
-            if redirect:
+
+    def unresolvable(token: _Token) -> Word:
+        """Return `token` as an unresolvable word that keeps the paths written in it."""
+        return Word(token.value, "unresolvable", directories.evidence(token.value), redirect, token.quoted)
+
+    def open_segment(word: Word) -> None:
+        """Start a segment with `word`, after which no word is its command."""
+        nonlocal has_command
+        segment.append(word)
+        has_command = True
+
+    def end_segment(separator: str) -> None:
+        nonlocal segment, keywords, has_command, header
+        if segment:
+            segments.append(Segment(segment, separator, directories.spelled(), loop_header=header is not None))
+        directories.follow(keywords + segment, separator)
+        segment, keywords = [], []
+        has_command = False
+        header = None
+
+    # Each `case` open around the word being read, innermost last: before its subject,
+    # before `in`, in a pattern list, or in a body.
+    cases: list[Literal["subject", "in", "patterns", "body"]] = []
+    # A `function` keyword waits for its name, which ends its segment.
+    function_name = False
+    stream = [*tokens, _Token(";", operator=True)]
+    skip = -1
+    for at, token in enumerate(stream):
+        if at == skip:
+            continue
+        if token.operator and cases and cases[-1] != "body":
+            # Bash reads newlines around a `case` subject, `in`, and its patterns.
+            if token.value == ";" or (cases[-1] == "patterns" and token.value in {"(", "|"}):
+                continue
+            if cases[-1] != "patterns" or token.value != ")":
                 return None
+            if segment:
+                end_segment(";")
+            cases[-1] = "body"
+            continue
+        if token.operator:
+            if redirect or function_name or (header is not None and token.value != ";"):
+                return None
+            # Bash reads newlines between a loop variable and `in` or `do`; `;` is one of them.
+            if header == "after":
+                continue
             if _REDIRECTION.fullmatch(token.value):
                 redirect = token.value
                 continue
+            if cases and token.value in _CASE_ENDS:
+                end_segment(";")
+                cases[-1] = "patterns"
+                continue
             if token.value not in _BREAKS:
                 return None
-            if segment:
-                segments.append(Segment(segment, token.value, directories.spelled()))
-            directories.follow(keywords + segment, token.value)
-            segment, keywords = [], []
-            has_command = False
+            end_segment(token.value)
+            continue
+        if cases and cases[-1] == "subject":
+            cases[-1] = "in"
+            if _holds_expansion(token):
+                segment.append(unresolvable(token))
+            continue
+        if cases and cases[-1] == "in":
+            if token.quoted or token.value != "in":
+                return None
+            # A subject that does not expand runs nothing, so it leaves no segment.
+            if len(segment) > 1:
+                end_segment(";")
+            else:
+                segment, has_command = [], False
+            cases[-1] = "patterns"
+            continue
+        if (
+            cases
+            and cases[-1] in {"patterns", "body"}
+            and not segment
+            and redirect is None
+            and _reserved(token, {"esac"})
+        ):
+            cases.pop()
+            keywords.append(Word("esac", "plain word"))
+            continue
+        if cases and cases[-1] == "patterns":
+            # A pattern is matched against the subject and names no file; one that expands may run a substitution.
+            if _holds_expansion(token):
+                if not segment:
+                    open_segment(Word("case", "plain word"))
+                segment.append(unresolvable(token))
+            continue
+        if function_name:
+            segment.append(Word(token.value, "plain word", (), None, token.quoted))
+            function_name = False
+            end_segment(";")
+            continue
+        if not segment and redirect is None and not token.quoted:
+            if token.value == "case":
+                open_segment(Word("case", "plain word"))
+                cases.append("subject")
+                continue
+            if token.value == "function":
+                open_segment(Word("function", "command"))
+                function_name = True
+                continue
+            if token.value == "coproc":
+                keywords.append(Word("coproc", "plain word"))
+                # `coproc NAME` names the coprocess only before a compound command.
+                name, following = stream[at + 1], stream[at + 2] if at + 2 < len(stream) else None
+                if (
+                    following is not None
+                    and not name.operator
+                    and _NAME.fullmatch(name.value)
+                    and not name.quoted
+                    and (
+                        (following.value in _COMPOUND_OPENERS and (following.operator or not following.quoted))
+                        or _is_conditional_or_arithmetic(following)
+                    )
+                ):
+                    skip = at + 1
+                continue
+        # A loop header's variable runs nothing, and `in` or `do` after it ends that part.
+        if header == "variable":
+            header = "after"
+            if token.value.startswith("((") and not token.quoted:
+                segment.append(unresolvable(token))
+            continue
+        if header == "after":
+            if token.quoted or token.value not in {"in", "do"}:
+                return None
+            if token.value == "in":
+                header = "values"
+            else:
+                end_segment(";")
+                keywords.append(Word("do", "plain word"))
+            continue
+        # The values of a `for` or `select` loop reach its body through the loop
+        # variable, so they stay words of a segment that runs no program.
+        if not segment and redirect is None and _reserved(token, _LIST_LOOPS):
+            open_segment(Word(token.value, "plain word"))
+            header = "variable"
             continue
         if token.here_document:
             # A body bash expands is unresolvable, and still shows the paths written in it.
@@ -923,23 +1364,21 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
             continue
         # Bash reads a reserved word only as the first word of a command: after an
         # assignment or a redirection, `if` is the name of the program to run.
-        if not segment and redirect is None and not token.quoted and token.value in _KEYWORDS:
+        if not segment and redirect is None and _reserved(token, _KEYWORDS):
             keywords.append(Word(token.value, "plain word"))
             continue
         moved = directories.moved
         produced = _resolve(token, directories.roots(), home_known=directories.home_known)
-        is_assignment = not has_command and bool(_ASSIGNMENT.match(token.raw))
-        is_command = not has_command and not is_assignment and redirect is None
+        assigns = not has_command and is_assignment(token.raw)
+        is_command = not has_command and not assigns and redirect is None
         if produced is None:
-            segment.append(
-                Word(token.value, "unresolvable", directories.evidence(token.value), redirect, token.quoted)
-            )
+            segment.append(unresolvable(token))
         else:
             for position, value in enumerate(produced):
                 kind: Kind
                 if redirect:
                     kind = "redirection target"
-                elif is_assignment:
+                elif assigns:
                     kind = "assignment"
                 elif is_command and position == 0:
                     kind = "command"
@@ -966,11 +1405,13 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
                 segment.append(Word(value, kind, paths, redirect, token.quoted))
         has_command |= is_command
         redirect = None
-    return segments
+    # A loop header, a `case`, or a `function` still open never closed, which bash refuses.
+    return None if header is not None or cases or function_name else segments
 
 
 def lex(command: str, cwd: str | None) -> list[Segment] | None:
     """Return segments with word kinds, or no reading for an unresolvable command."""
+    _Budget.case_closes = _CASE_CLOSE_TRIES
     try:
         return _lex(command, cwd)
     except (OSError, ValueError, UnicodeError, RecursionError):

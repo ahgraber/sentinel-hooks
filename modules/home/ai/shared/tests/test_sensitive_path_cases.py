@@ -74,14 +74,8 @@ def test_a_placeholder_read_proceeds_on_one_line(multi_line, one_line, tmp_path)
 @pytest.mark.parametrize(
     ("multi_line", "one_line"),
     [
-        pytest.param(
-            *PLACEHOLDER_READS_ACROSS_LINES[0],
-            marks=pytest.mark.xfail(strict=True, reason="known gap LineContinuation"),
-        ),
-        pytest.param(
-            *PLACEHOLDER_READS_ACROSS_LINES[1],
-            marks=pytest.mark.xfail(strict=True, reason="known gap CompoundCommandAcrossLines"),
-        ),
+        PLACEHOLDER_READS_ACROSS_LINES[0],
+        PLACEHOLDER_READS_ACROSS_LINES[1],
         PLACEHOLDER_READS_ACROSS_LINES[2],
     ],
 )

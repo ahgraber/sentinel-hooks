@@ -404,7 +404,8 @@ def _may_name_a_file(word, segment, reads: bool) -> bool:
 
 
 def _read_words(segment):
-    reads = any(os.path.basename(word.value) in READ_CMDS for word in segment)
+    # A loop header's values reach its body through the loop variable, where any program may read them.
+    reads = segment.loop_header or any(os.path.basename(word.value) in READ_CMDS for word in segment)
     for word in segment:
         # A here-document body a data reader takes is input, not a name.
         if word.kind != "here-document" and (reads or _input_redirect(word) or word.kind == "unresolvable"):

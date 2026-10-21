@@ -96,25 +96,36 @@
 
 - [x] Read a named descriptor, `{fd}<f`, as part of its redirection, which the corpus found read as an argument.
 
-- [ ] Close `OneLineCompoundCommand`: read loop headers and bodies as bash does, and remove its expected-failure marks.
+- [x] Close `OneLineCompoundCommand`: read loop headers and bodies as bash does, and remove its expected-failure marks.
 
-- [ ] Close `ConditionalExpression`: read `[[ … ]]` as one command that runs no program, and remove its expected-failure marks.
+- [x] Judge a loop header's values as reads in `block-sensitive-paths.py`, which allowed a secret named only in a one-line header; add the cases to the sensitive-path verdict table.
 
-- [ ] Close `ArrayAssignment`: read array and subscript assignments and `let` operands as bash does, and remove its expected-failure marks.
+- [x] Close `ConditionalExpression`: read `[[ … ]]` as one command that runs no program, and remove its expected-failure marks.
 
-- [ ] Close `LineContinuation`: read a backslash-newline outside single quotes and comments as nothing, and remove its expected-failure marks.
+- [x] Close `ArrayAssignment`: read array and subscript assignments and `let` operands as bash does, and remove its expected-failure marks.
 
-- [ ] Close `CompoundCommandAcrossLines`: track command position and compound state across lines, and remove its expected-failure marks.
+- [x] Read `NAME+=` and `NAME[…]=` as assignments, which the array probe found read as the program name, and treat `HOME+=` and `HOME[…]=` as moving `~`.
+
+- [x] End an ANSI-C quote, `$'…'`, inside a substitution at its first unescaped `'`.
+
+- [x] Close `LineContinuation`: read a backslash-newline outside single quotes and comments as nothing, and remove its expected-failure marks.
+
+- [x] Close `CompoundCommandAcrossLines`: track command position and compound state across lines, and remove its expected-failure marks.
+  `if`, `while`, `until`, `for`, `select`, `!`, and `{ … }` read across lines; `case`, `function`, and `coproc` move to their own gap.
+
+- [x] Close `CaseFunctionOrCoprocessAcrossLines`: read `case` patterns, `function` bodies, and coprocesses as bash does, on one line and across lines, and remove its expected-failure marks.
 
 - [x] Close `SubstitutionAcrossLines`: read substitutions with a recursive scanner, and remove its expected-failure marks.
 
-- [ ] Close `ParenthesisAcrossLines`: read subshells and arithmetic commands across lines, and remove its expected-failure marks.
+- [x] Close `ParenthesisAcrossLines`: read subshells and arithmetic commands across lines, and remove its expected-failure marks.
 
 - [x] Close `ParameterExpansionInDoubleQuotesAcrossLines`: admit the form once quotes inside `${…}` are read, and remove its expected-failure marks.
 
 - [x] Close the comment half of `CommentOrHereDocumentInsideSubstitution`: a comment inside a substitution runs to its newline.
 
-- [ ] Close `HereDocumentOrCaseInsideSubstitution`: read here-document bodies and `case` patterns inside a substitution, and remove its expected-failure marks.
+- [x] Close the here-document half of `HereDocumentOrCaseInsideSubstitution`: a here-document body inside a substitution is input, skipped to its delimiter line.
+
+- [x] Close `CaseInsideSubstitution`: read `case` patterns inside a substitution, and remove its expected-failure marks.
 
 - [x] Close `QuoteInsideNestedExpansionInDoubleQuotes`: scan nested expansions inside double quotes with their own quote state, and remove its expected-failure marks.
 
@@ -124,8 +135,10 @@
 
 - [x] Close `ArithmeticCommand`: scan `((…))` as arithmetic, and remove its expected-failure marks.
 
-- [ ] Close `HereDocumentDelimiterWithDollar`: read a delimiter with quote removal only, and remove its expected-failure marks.
+- [x] Close `HereDocumentDelimiterWithDollar`: read a delimiter with quote removal only, and remove its expected-failure marks.
 
-- [ ] Close `HereDocumentBodyEscapes`: scan an unquoted body with bash's backslash rules, and remove its expected-failure marks.
+- [x] Close `HereDocumentBodyEscapes`: scan an unquoted body with bash's backslash rules, and remove its expected-failure marks.
 
-- [ ] Close `HereDocumentReadByARecognizedRead`: admit every recognized read as a data reader under the reader conditions, and remove its expected-failure marks.
+- [x] Close `HereDocumentReadByARecognizedRead`: admit every recognized read as a data reader under the reader conditions, and remove its expected-failure marks.
+
+- [x] Stop admitting as a recognized read a utility that takes the names of the files it reads from a file or its input (`du`, `sort`, and `wc` with `--files0-from`, `file -f` or `--files-from`, `find -files0-from`), which read files its words do not name.

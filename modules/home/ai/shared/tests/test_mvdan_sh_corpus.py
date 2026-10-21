@@ -18,20 +18,6 @@ from shellprobe import ShellProbe
 CORPUS = json.loads((Path(__file__).parent / "corpus" / "mvdan-sh-inputs.json").read_text())
 INPUTS = [text for group in CORPUS["groups"] for text in group["inputs"]]
 
-# Groups whose spellings the lexer reads unlike each other, by the group's first
-# input, each under the gap it shows; a strict expected failure each.
-KNOWN_GAPS = {
-    "for i\ndo foo\ndone": "OneLineCompoundCommand",
-    "for (( i = 0 ; i < 10 ; i++ ))\ndo echo $i\ndone": "OneLineCompoundCommand",
-    "select i in; do foo; done": "OneLineCompoundCommand",
-    "[[\n!\n-a $a\n]]": "ConditionalExpression",
-    "[[ -S a && -L b ]]": "ConditionalExpression",
-    "let a=(1 + 2) b=3+4": "ArrayAssignment",
-    "b[ i ]+=2": "ArrayAssignment",
-    'a[ $"x y" ]=b': "ArrayAssignment",
-    'a=( [ "x y" ]=b)': "ArrayAssignment",
-}
-
 
 @pytest.fixture(scope="module")
 def probe(tmp_path_factory):
@@ -119,15 +105,13 @@ def _shape(text: str) -> list | None:
     ]
 
 
-def _group_param(group: dict):
-    gap = KNOWN_GAPS.get(group["inputs"][0])
-    marks = [pytest.mark.xfail(strict=True, reason=f"known gap {gap}")] if gap else []
-    return pytest.param(group["inputs"], marks=marks, id=group["inputs"][0][:40])
-
-
 @pytest.mark.parametrize(
     "inputs",
-    [_group_param(group) for group in CORPUS["groups"] if group["one_program"] and len(group["inputs"]) > 1],
+    [
+        pytest.param(group["inputs"], id=group["inputs"][0][:40])
+        for group in CORPUS["groups"]
+        if group["one_program"] and len(group["inputs"]) > 1
+    ],
 )
 def test_inputs_bash_runs_as_one_program_read_alike(inputs):
     shapes = {text: shape for text in inputs if (shape := _shape(text)) is not None}

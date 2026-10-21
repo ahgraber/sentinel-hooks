@@ -263,6 +263,15 @@ NOT_READS = [
     f"sort --compress-program=/tmp/helper {SKILL_FILE}",
     f"sort -o ~/.claude/skills/sdd-sync/SKILL.md {SKILL_FILE}",
     f"sort --out=~/.claude/skills/sdd-sync/SKILL.md {SKILL_FILE}",
+    # A utility that takes the names of the files it reads from a file or its input
+    # reads files its words do not name.
+    f"sort --files0-from=/tmp/list {SKILL_FILE}",
+    f"wc --files0-from /tmp/list {SKILL_FILE}",
+    f"du --files0-fr=- {SKILL_FILE}",
+    f"file -f /tmp/list {SKILL_FILE}",
+    f"file -bf /tmp/list {SKILL_FILE}",
+    f"file --files-from=/tmp/list {SKILL_FILE}",
+    f"find {SKILL_DIR} -files0-from /tmp/list",
     "find ~/.claude/skills -name SKILL.md -delete",
     "find ~/.claude/skills -name SKILL.md -exec rm {} ;",
     f"cp /tmp/replacement.md {SKILL_FILE}",

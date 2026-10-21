@@ -1,4 +1,4 @@
-"""A here-document is read only where `cat` or a record sink keeps it as data."""
+"""A here-document is read only where a recognized read or a record sink keeps it as data."""
 
 from __future__ import annotations
 
@@ -17,6 +17,12 @@ def _here(reader: str, after: str = "") -> str:
     "reader",
     [
         "cat",
+        "cat -",
+        "cat /a",
+        "head",
+        "tr a b",
+        "wc -l",
+        "grep -f - /a",
         "git commit -F -",
         "git commit --file=-",
         "git commit --file -",
@@ -34,7 +40,7 @@ def test_a_data_reader_keeps_the_body_as_data(reader):
 
     assert reading.unlexable is None
     assert [segment.programs for segment in reading.segments] == [()]
-    assert reading.segments[0].read_only == (reader == "cat")
+    assert reading.segments[0].read_only == (reader.split()[0] in bash_commands.READ_ONLY_UTILITIES)
 
 
 @pytest.mark.parametrize("after", ["", " > /out", "; head /a", " && head /a"])
@@ -57,11 +63,11 @@ def test_cat_keeps_its_body_as_data_beside_redirections_and_later_commands(after
         ("git apply", ""),
         ("crontab -", ""),
         ("unknown-program", ""),
-        # A read other than a bare `cat`.
-        ("tr a b", ""),
-        ("cat -", ""),
-        ("cat /a", ""),
-        ("head", ""),
+        # A read that takes the names of the files it reads from its input.
+        ("sort --files0-from=-", ""),
+        ("wc --files0-from -", ""),
+        ("file -f -", ""),
+        ("find . -files0-from -", ""),
         # A record reader whose output goes to another program.
         ("cat", " | sh"),
         ("cat", " | xargs rm"),

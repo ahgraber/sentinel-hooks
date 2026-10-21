@@ -46,7 +46,10 @@ Emitting `;` keeps every consumer of segments unchanged, so a multi-line command
 **Chosen:** the requirements state what bash reads.
 The tokenizer reads a multi-line command today only when it is plain: commands joined by newlines and list operators, with comments, quoted newlines in single quotes or in double quotes that hold no substitution, and here-documents.
 A newline after `|`, `&&`, `||`, `;`, or `&` is whitespace, and any other unquoted newline ends the command.
-A multi-line command that holds a line continuation, a `(` operator, or an unquoted reserved word in command position has no reading, so the hooks judge its whole text.
+`case`, `function`, and `coproc` read across lines as on one line; a substitution holding a `case` ends at the first `)` before which its text reads as complete commands.
+After any other reserved word that leads a command, a newline ends an empty command, which adds no segment, so `if`, `while`, `for`, and `{ … }` read across lines as on one line, and so do subshells and `((…))`, whose `<<` the arithmetic scan reads as a shift.
+A line continuation is removed where the tokenizer reaches it, outside single quotes and comments and inside an operator too, so the rest of the scan reads the joined text.
+`((…))` and `[[ … ]]` in command position are each one unresolvable word, and so is a word holding an array subscript or value where bash reads one: before the command word, or after an assignment builtin such as `declare`.
 A substitution ends where bash ends it: `_expansion_end` matches quotes, comments, and nesting inside `$(…)`, `${…}`, and backquotes, and refuses one holding a here-document or a `case` pattern.
 Command position is tracked in the tokenizer: the first word, or the first word after a control operator; an assignment or a redirection before a word takes the position, as in bash.
 Each form the tokenizer does not read as bash does is a gap, with a task to close it and a strict expected-failure test that states bash's reading.
@@ -81,7 +84,8 @@ On 2026-10-18 the user restored the requirement that the hooks read commands as 
 ### Decision: AHereDocumentIsDataOnlyForNamedReaders
 
 **Chosen:** a here-document body is data only where its reader is a recognized read or one of four named sinks.
-The implementation admits only `cat` with no word but its redirections among the recognized reads; the rest is the gap `HereDocumentReadByARecognizedRead`.
+A recognized read is one `read_only()` admits, judged without the body, which may expand.
+A utility that takes the names of the files it reads from a file or its input, such as `sort --files0-from=-` or `file -f -`, is not a recognized read: it reads files its words do not name, here-document or not, so `WRITE_OPTIONS` lists those options.
 The named sinks are `git commit` or `git tag` with `-F -` or `--file=-` and no `-c`, `-e`, or `--edit`, `gh pr` or `gh issue` with `--body-file -`, and `tee`.
 The reader is the first word of its segment, with no assignment or wrapper before it, and its segment does not pipe.
 `bash_commands.unread_here_document()` applies that test, beside `READ_ONLY_UTILITIES`.
@@ -109,12 +113,25 @@ The conditions on the reader are policy and stay; the restriction of recognized 
 
 ### Decision: AnExpandedBodyIsUnresolvable
 
-**Chosen:** a body under an unquoted delimiter that holds `$` or a backquote is unresolvable.
-The implementation also refuses a delimiter that holds `$` or a backquote, which bash takes literally, and a body with an escape or a continuation; both are gaps.
+**Chosen:** a body under an unquoted delimiter that holds a `$` or a backquote no backslash escapes is unresolvable.
+A delimiter is taken after quote removal alone, as bash takes it, so `<<$X` ends at a line reading `$X`.
+An unquoted body joins continued lines before the delimiter is matched, and loses only the backslashes before `$`, a backquote, or a backslash.
 
 **Rationale:** bash expands parameters, command substitutions, and arithmetic in such a body before the command starts, so the body runs code whatever reads it.
 Treating any `$` as an expansion over-refuses a body holding a literal dollar; a narrower test would have to reimplement bash's expansion rules.
 Only 3 of the 500 here-documents counted had an unquoted delimiter, so the over-refusal has little to reach.
+
+### Decision: ALoopHeaderIsASegmentThatRunsNoProgram
+
+**Chosen:** the header of a `for` or `select` loop is its own segment, marked `loop_header`, whose first word is the reserved word and whose other words are the values after `in`, with their usual kinds; the loop variable and `in` are dropped, and a `for ((…))` header holds one unresolvable word.
+No word of a header is a `command`.
+`block-sensitive-paths.py` judges every header value as a read.
+
+**Rationale:** the lexer read `for` as a program and its header as arguments, so `for i do foo; done` hid `foo`, which bash runs.
+Dropping the header words, as `if` and `while` are dropped, would remove values that reach the body through the loop variable: `cat "$f"` names no path, so only the header shows what is read.
+The reserved word stays first because about a dozen helpers take a segment's first word as its program; `for` matches no program table, so a value such as `rm` is never taken for one, and directory tracking still counts the loop.
+On 2026-10-19 a probe found the one-line `for f in <secret>; do cat "$f"; done` allowed by the sensitive-path hook, which judged words only in a segment holding a recognized read; judging header values as reads closes it, and the verdict tables hold the case.
+The body's program is not known from the header, so a placeholder value gets the write verdict.
 
 ### Decision: TheFallbacksStayForUnreadableText
 

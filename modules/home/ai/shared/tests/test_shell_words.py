@@ -147,6 +147,8 @@ def test_control_operator_splits_segments(lexer, shell_world, separator):
         "cat a\n;; b",
         "cat a >\nb",
         "cat a\\",
+        "[[ -n x; ]]",
+        "[[ -n x",
     ],
 )
 def test_unreadable_command_returns_no_partial_reading(lexer, shell_world, command):
@@ -170,6 +172,14 @@ def test_unreadable_command_returns_no_partial_reading(lexer, shell_world, comma
         ("cat $(#'\n); rm x; #')", ["rm", "x"]),
         ('cat "`echo"`"; rm x; " #\n" #"', ["rm", "x"]),
         ("echo $((1<<2)); echo HIDDEN", ["echo", "HIDDEN"]),
+        ("echo $(cat <<'EOF'\n'\nEOF\n); echo HIDDEN; #')", ["echo", "HIDDEN"]),
+        ('echo "$(cat <<\'EOF\'\nit\'s "q" )\nEOF\n)"; echo HIDDEN', ["echo", "HIDDEN"]),
+        ("echo $(cat <<E1 <<-E2\n)\nE1\n\t)\n\tE2\n); echo HIDDEN", ["echo", "HIDDEN"]),
+        ("echo $(echo $'\\'') ; echo HIDDEN ; echo ')'", ["echo", "HIDDEN"]),
+        # A `case` pattern's `)` does not close the substitution, nor does one in a quote or a comment.
+        ("echo $(case x in x) cat a;; esac); echo HIDDEN", ["echo", "HIDDEN"]),
+        ('echo $(case x in x) echo ")";; esac); echo HIDDEN', ["echo", "HIDDEN"]),
+        ("echo $(case x in (a|b) :;; esac # )\n); echo HIDDEN", ["echo", "HIDDEN"]),
     ],
 )
 def test_a_substitution_ends_where_bash_ends_it(lexer, shell_world, command, hidden):
@@ -213,6 +223,35 @@ def reading(lexer, command, cwd):
         # A substitution is one unresolvable word, wherever its command sits.
         ("x=$(cat a)\nhead b", "x=$(cat a); head b"),
         ("cat `echo a`\nhead b", "cat `echo a`; head b"),
+        # A line continuation joins its lines before bash reads words, operators, or comments.
+        ("cat a \\\n  b", "cat a b"),
+        ("cat a\\\nb", "cat ab"),
+        ("cat \\\n~/x", "cat ~/x"),
+        ('cat "a\\\nb"', 'cat "ab"'),
+        ("cd sub &\\\n& cat a", "cd sub && cat a"),
+        ("cat a\\\n#x", "cat a#x"),
+        # After a reserved word that leads a command, a newline ends an empty command.
+        ("if true; then\ncat a\nfi", "if true; then cat a; fi"),
+        ("if true\nthen\n  cat a\nelse\n  head b\nfi", "if true; then cat a; else head b; fi"),
+        ("while true; do\ncat a\ndone", "while true; do cat a; done"),
+        ("for i in 1 2\ndo\ncat a\ndone", "for i in 1 2; do cat a; done"),
+        ("for i #c\n\tin 1 2; do\ncat a\ndone", "for i in 1 2; do cat a; done"),
+        ("{\ncat a\n}", "{ cat a; }"),
+        ("!\ncat a", "cat a"),
+        ("cat a\n! head b", "cat a; ! head b"),
+        ("time cat a\nhead b", "time cat a; head b"),
+        # A subshell or an arithmetic command across lines; `<<` in `((…))` is a shift.
+        ("(cat a)\nhead b", "(cat a); head b"),
+        ("(\ncat a\n)", "(cat a;)"),
+        ("((x<<2))\ncat a", "((x<<2)); cat a"),
+        # A `case`, a function definition, and a coprocess across lines.
+        ("case x in\nx) cat a;;\nesac", "case x in x) cat a;; esac"),
+        ("case x\nin\n  x | y)\n    cat a\n    ;;\nesac", "case x in x|y) cat a;; esac"),
+        ("function f {\ncat a\n}", "function f { cat a; }"),
+        ("coproc cat a\nhead b", "coproc cat a; head b"),
+        ("A\\\n=1 rm a", "A=1 rm a"),
+        ("i\\\nf true; then cat a; fi", "if true; then cat a; fi"),
+        ("cat <<E\\\nOF\nbody\nEOF", "cat <<EOF\nbody\nEOF"),
         ('cat "$(echo a)"\nhead b', 'cat "$(echo a)"; head b'),
         ('cat "${A}/a"\nhead b', 'cat "${A}/a"; head b'),
         ("cat ${X:-$(echo a)}\nhead b", "cat ${X:-$(echo a)}; head b"),
@@ -228,30 +267,8 @@ def test_a_multi_line_command_reads_as_its_one_line_form(lexer, shell_world, mul
 @pytest.mark.parametrize(
     "command",
     [
-        # A line continuation, anywhere outside single quotes.
-        "cat a\\\nb",
-        "cat \\\n~/x",
-        'cat "a\\\nb"',
-        "cd ~/base &\\\n& cat private",
-        "cat a\\\n#x",
-        # A here-document or a `case` pattern inside a substitution.
-        "echo $(cat <<'EOF'\n'\nEOF\n); echo HIDDEN; #')",
-        "echo $(case x in x) cat a;; esac)\nhead b",
-        # A parenthesis: a subshell or arithmetic.
-        "(cat a)\nhead b",
-        "(\ncat a\n)",
-        "((cat<<2))\nrm /g/file\n2",
+        # A process substitution.
         "cat <(head\nb)",
-        # A reserved word in command position.
-        "if true; then\ncat a\nfi",
-        "while true; do\ncat a\ndone",
-        "for i in 1 2\ndo\ncat a\ndone",
-        "!\ncat a",
-        "{\ncat a\n}",
-        "cat a\n! head b",
-        "A=1 if true; then :; fi\ncat a",
-        "case x in\nx) cat a;;\nesac",
-        "time cat a\nhead b",
     ],
 )
 def test_a_multi_line_form_the_lexer_does_not_yet_read_has_no_reading(lexer, shell_world, command):
@@ -307,6 +324,8 @@ def test_a_comment_runs_to_the_end_of_its_line(lexer, shell_world, command, expe
     [
         ("X=1 if cat file", "if"),
         ("> out if cat file", "if"),
+        ("X=1 [[ -n x ]]", "[["),
+        ("> out [[ -n x ]]", "[["),
         ("X=1 if cat file\nhead b", "if"),
         ("X=1 time cat file\nhead b", "time"),
     ],
@@ -336,6 +355,127 @@ def test_an_arithmetic_command_bash_may_read_otherwise_is_unresolvable(lexer, sh
     _, repository = shell_world
 
     assert lexer.lex(command, str(repository)) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "[[ -S a && -L b ]] && echo HIDDEN",
+        "[[ ( -n x )]]; echo HIDDEN",
+        "[[ x =~ (a|b) ]] || echo HIDDEN",
+        "[[ x < y ]]; echo HIDDEN",
+        '[[ "]]" ]]; echo HIDDEN',
+        "[[ $(echo ]]) ]]; echo HIDDEN",
+        "! [[ -n x ]] || echo HIDDEN",
+        "[[ -n x\n]] && echo HIDDEN",
+        "[[ # ]]\n-n x ]]; echo HIDDEN",
+        "[[ -n x \\\n]] && echo HIDDEN",
+    ],
+)
+def test_a_conditional_expression_runs_no_program(lexer, shell_world, command):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [word.kind for word in segments[0]] == ["unresolvable"]
+    assert [word.value for word in segments[-1]] == ["echo", "HIDDEN"]
+
+
+def test_a_conditional_expression_keeps_its_written_paths(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("[[ -f /etc/secret && -r ~/notes ]]", str(repository))
+
+    assert {"/etc/secret", "~/notes"} <= set(segments[0][0].paths)
+
+
+@pytest.mark.parametrize(("command", "name"), [("[[-n x ]]", "[[-n"), ("echo [[ -n x ]]", "echo")])
+def test_double_brackets_outside_command_position_are_a_word(lexer, shell_world, command, name):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [word.value for word in segments[0] if word.kind == "command"] == [name]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "a+=1 rm x",
+        "a[0]=1 rm x",
+        "a[ i ]+=1 rm x",
+        "a[x[1]]=1 rm x",
+        "a=(1 2) rm x",
+        "a=(\n1\n2) rm x",
+        "X=1 a=( $(echo) ) rm x",
+    ],
+)
+def test_an_array_or_append_assignment_leaves_the_program_in_command_position(lexer, shell_world, command):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert len(segments) == 1
+    assert [word.value for word in segments[0] if word.kind == "command"] == ["rm"]
+
+
+@pytest.mark.parametrize(
+    ("command", "words"),
+    [
+        ("declare a=(1 2) b; echo x", ["declare", "a=(1 2)", "b"]),
+        ("let a=(1 + 2) b=3; echo x", ["let", "a=(1 + 2)", "b=3"]),
+        ("X=1 export a=(1)> out; echo x", ["X=1", "export", "a=(1)", "out"]),
+    ],
+)
+def test_an_assignment_builtin_takes_an_array_value_as_one_word(lexer, shell_world, command, words):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [word.value for word in segments[0]] == words
+    assert [word.value for word in segments[1]] == ["echo", "x"]
+
+
+def test_an_array_value_keeps_its_written_paths(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("a=( /etc/secret [k]=~/notes ) cat", str(repository))
+
+    assert segments[0][0].kind == "unresolvable"
+    assert {"/etc/secret", "~/notes"} <= set(segments[0][0].paths)
+
+
+def test_a_subscript_that_closes_before_its_word_ends_names_the_program(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("a[x]]=1 rm x", str(repository))
+
+    assert [word.kind for word in segments[0]] == ["unresolvable", "plain word", "plain word"]
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cat 'a\\\nb'", [["cat", "a\\\nb"]]),
+        ("cat $'a\\\nb'", [["cat", "a\\\nb"]]),
+        ("cat a # c \\\nhead b", [["cat", "a"], ["head", "b"]]),
+        ("cat a\\\\\nhead b", [["cat", "a\\"], ["head", "b"]]),
+    ],
+)
+def test_a_backslash_newline_bash_keeps_is_not_a_continuation(lexer, shell_world, command, expected):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [[word.value for word in segment] for segment in segments] == expected
+
+
+def test_a_continuation_inside_unresolvable_text_keeps_the_joined_path(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("cat $(cat /etc/sec\\\nret)", str(repository))
+
+    assert "/etc/secret" in segments[0][1].paths
 
 
 @pytest.mark.parametrize("command", ["if cat file; then :; fi", "! cat file", "{ cat file; }"])
@@ -388,6 +528,14 @@ def test_a_here_document_kind_is_declared(lexer):
         ("cat <<'EOF'\na\n EOF\nEOF", "a\n EOF\n"),
         ("cat <<-'EOF'\n\t\ta\n  b\n\tEOF", "a\n  b\n"),
         ("cat <<'EOF'\n\ta\n\tEOF\nEOF", "\ta\n\tEOF\n"),
+        # A delimiter is taken after quote removal alone; any quoting keeps the body literal.
+        ("cat <<$X\na\n$X", "a\n"),
+        ("cat <<${HOME}\na\n${HOME}", "a\n"),
+        ('cat <<a"b"c\n$x\nabc', "$x\n"),
+        ("cat <<$'E'\n$x\nE", "$x\n"),
+        # An unquoted body loses only the backslashes before `$`, a backquote, or a backslash.
+        ('cat <<EOF\na \\$x \\`y\\` \\\\ \\" \\z\nEOF', 'a $x `y` \\ \\" \\z\n'),
+        ("cat <<-EOF\n\ta\\\n\tb\nEOF", "a\tb\n"),
     ],
 )
 def test_a_here_document_body_is_one_word(lexer, shell_world, command, body):
@@ -411,18 +559,116 @@ def test_an_unquoted_body_with_an_expansion_is_unresolvable(lexer, shell_world, 
 
 
 @pytest.mark.parametrize(
+    ("command", "header", "body"),
+    [
+        ('for f in a b; do cat "$f"; done', ["for", "a", "b"], ["cat", "$f"]),
+        ("for i do foo; done", ["for"], ["foo"]),
+        ("for i in; do foo; done", ["for"], ["foo"]),
+        ("select i; do foo; done", ["select"], ["foo"]),
+        ("for ((i=0;i<3;i++)) do echo x; done", ["for", "((i=0;i<3;i++))"], ["echo", "x"]),
+        ("for f in rm a; do echo; done", ["for", "rm", "a"], ["echo"]),
+    ],
+)
+def test_a_loop_header_is_a_segment_that_runs_no_program(lexer, shell_world, command, header, body):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [word.value for word in segments[0]] == header
+    assert segments[0].loop_header
+    assert "command" not in [word.kind for word in segments[0]]
+    assert [word.value for word in segments[1]] == body
+    assert not segments[1].loop_header
+
+
+@pytest.mark.parametrize(
+    "command", ["for f in a > x; do :; done", "for f in a | cat; do :; done", "for a b; do :; done"]
+)
+def test_a_loop_header_bash_refuses_has_no_reading(lexer, shell_world, command):
+    _, repository = shell_world
+
+    assert lexer.lex(command, str(repository)) is None
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (
+            "case $(x) in a) cat a;; b|c) rm b;& *) echo;;& d) head d;; esac; echo HIDDEN",
+            [["case", "$(x)"], ["cat", "a"], ["rm", "b"], ["echo"], ["head", "d"], ["echo", "HIDDEN"]],
+        ),
+        ("case x in $(rm p)) cat a;; esac", [["case", "$(rm p)"], ["cat", "a"]]),
+        ("case x in (a) cat a;; esac", [["cat", "a"]]),
+        ("case x in a) cat a; esac", [["cat", "a"]]),
+        ("case x in a) echo esac;; esac", [["echo", "esac"]]),
+        ("case x in a) case y in b) cat b;; esac;; esac", [["cat", "b"]]),
+        ("case x in a) (cat a);; esac | head", [["cat", "a"], ["head"]]),
+        ("coproc cat a", [["cat", "a"]]),
+        ("coproc NAME { cat a; }", [["cat", "a"]]),
+        ("coproc NAME [[\t-n x ]]", [["[[\t-n x ]]"]]),
+        ("coproc NAME ((x))", [["((x))"]]),
+        ("coproc NAME cat a", [["NAME", "cat", "a"]]),
+        ("function f { cat a; }", [["function", "f"], ["cat", "a"]]),
+    ],
+)
+def test_case_coproc_and_function_read_as_bash_reads_them(lexer, shell_world, command, expected):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [[word.value for word in segment] for segment in segments] == expected
+
+
+@pytest.mark.parametrize("command", ["case x", "case x in a) cat a", "case x of a) cat a;; esac", "function"])
+def test_a_case_or_function_bash_refuses_has_no_reading(lexer, shell_world, command):
+    _, repository = shell_world
+
+    assert lexer.lex(command, str(repository)) is None
+
+
+@pytest.mark.parametrize("operator", ["|&", "&&", "||", "&>", "&>>", ">>", ";;", "&\\\n&"])
+def test_an_operator_at_the_end_of_the_text_ends_the_scan(lexer, shell_world, operator):
+    _, repository = shell_world
+
+    segments = lexer.lex(f"cat a {operator}", str(repository))
+
+    assert segments is None or segments[0][0].value == "cat"
+
+
+@pytest.mark.parametrize(
     "command",
     [
-        "cat <<$X\na\n$X",
+        "echo $(case x in " + "a) :;; " * 200 + "esac)",
+        "echo $(case x in a) $(case y in " + "b) :;; " * 20 + "esac);; esac)",
+    ],
+)
+def test_a_case_substitution_with_more_closes_than_the_budget_has_no_reading(lexer, shell_world, command):
+    _, repository = shell_world
+
+    assert lexer.lex(command, str(repository)) is None
+
+
+def test_a_continuation_joins_a_body_line_before_the_delimiter_is_matched(lexer, shell_world):
+    _, repository = shell_world
+
+    segments = lexer.lex("cat <<EOF\nE\\\nOF\nrm a\nEOF", str(repository))
+
+    assert [[word.value for word in segment] for segment in segments] == [["cat", ""], ["rm", "a"], ["EOF"]]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "cat <<$(echo E)\na\nE",
         "cat <<EOF\na",
         "cat <<'EOF'\na\nEOF ",
         "cat <<EOF",
         "cat << ;\na",
         "cat <<EOF <<END\na\nEOF",
-        # Under an unquoted delimiter a trailing backslash joins the next line, delimiter included.
-        "cat <<EOF\nE\\\nOF\nrm ~/base/file\nEOF",
+        # Under an unquoted delimiter a line continuation joins the next line, delimiter included.
         "cat <<EOF\na\\\nEOF",
+        # A here-document inside a substitution whose body never starts.
+        "echo $(cat <<EOF)\nx\nEOF\necho HIDDEN",
     ],
 )
 def test_an_unreadable_here_document_makes_the_command_unresolvable(lexer, shell_world, command):
@@ -628,6 +874,8 @@ DIRECTORY_CASES = [
     ("while cd sub; do :; done; cat a", [START, None, None]),
     ("(cd sub && true) > out", [START, ("sub",), START]),
     ("export CDPATH=/x; cd sub && cat a", [START, None, None]),
+    ("cd sub && [[ -n x ]] && cat a", [START, ("sub",), ("sub",)]),
+    ("cd sub && ((1)) && cat a", [START, ("sub",), ("sub",)]),
 ]
 
 
@@ -657,7 +905,16 @@ def test_cd_without_an_operand_enters_home(lexer, shell_world):
     assert segments[1].directories == (str(home),)
 
 
-@pytest.mark.parametrize("command", ["HOME=/x; cat ~/a", "export HOME=/x; cat $HOME/a", "HOME=/x; DEST=~/a cat"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "HOME=/x; cat ~/a",
+        "export HOME=/x; cat $HOME/a",
+        "HOME=/x; DEST=~/a cat",
+        "HOME+=/x; cat ~/a",
+        "HOME[0]=/x; cat ~/a",
+    ],
+)
 def test_a_home_assignment_leaves_later_home_spellings_unresolvable(lexer, shell_world, command):
     _, repository = shell_world
 

@@ -1,8 +1,9 @@
 """Record the words the shell passes to each program of a command.
 
-The read classifier decides from command text, lexing it with `shlex`. The shell
-expands words after that lexing — braces, parameters, pathnames, tildes — so a
-token the classifier judged as a filename can reach a program as an option.
+The read classifier decides from command text, lexing it with `shell_words`.
+The shell expands words after that lexing (braces, parameters, pathnames,
+tildes), so a token the classifier judged as a filename can reach a program as
+an option.
 
 This runs the same text through the real shell with every program replaced by a
 recorder, which makes that divergence observable without running anything that

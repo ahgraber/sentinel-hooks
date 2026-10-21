@@ -153,8 +153,9 @@ LINE_JOINS = {
 def line_pairs(draw: st.DrawFn, forms: list = STABLE_FORMS) -> tuple[str, str]:
     """Plain commands on one line, and the same commands with newlines bash reads as whitespace or `;`.
 
-    The multi-line form may break a line after a list operator and carry
-    comments, some ending in a backslash, which continues nothing.
+    The multi-line form may break a line after a list operator or with a line
+    continuation between words, and carry comments, some ending in a
+    backslash, which continues nothing.
     """
     comments = st.sampled_from(["rm notes.md", "cat " + GUARDED, "trailing \\"])
     one_line: list[str] = []
@@ -175,25 +176,18 @@ def line_pairs(draw: st.DrawFn, forms: list = STABLE_FORMS) -> tuple[str, str]:
         # A reserved word passed as an argument stays a word.
         if draw(st.booleans()):
             arguments.append(draw(st.sampled_from(["then", "done", "if", "!", "{"])))
-        segment = " ".join([program, *arguments])
-        one_line.append(segment)
-        multi_line.append(segment)
+        one_line.append(" ".join([program, *arguments]))
+        multi_line.append(draw(st.sampled_from([" ", " \\\n", " \\\n  "])).join([program, *arguments]))
     if draw(st.booleans()):
         multi_line.append(f" # {draw(comments)}")
     return "".join(one_line), "".join(multi_line)
 
 
-# Forms the lexer does not yet read across lines, each written where it would
-# change the reading if the lexer took it for plain text. `test_known_gaps.py`
-# states what bash reads for each; until a form is read, it must have none.
+# Forms the lexer does not read, each written where it would change the
+# reading if the lexer took it for plain text; a command holding one has no
+# reading.
 NOT_YET_READ = [
-    lambda c: c.replace(" ", " \\\n", 1),
-    lambda c: f"( {c} )",
-    lambda c: f"((x<<2))\n{c}",
-    lambda c: f"if true; then\n{c}\nfi",
-    lambda c: f"while false; do\n{c}\ndone",
-    lambda c: f"{{\n{c}\n}}",
-    lambda c: f"! {c}",
+    lambda c: f"cat <({c})",
 ]
 
 

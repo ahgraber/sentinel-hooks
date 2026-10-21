@@ -34,17 +34,21 @@ READ_ONLY_UTILITIES = frozenset(
     }
 )  # fmt: skip
 
-# Options that make one of the above write or run something, as (short letters,
-# whole tokens). A letter is sought anywhere in a cluster, so `-no` catches `-o`.
+# Options that make one of the above write, run something, or read files named
+# in a list, from a file or standard input, rather than in its words, as (short
+# letters, whole tokens). A letter is sought anywhere in a cluster, so `-no`
+# catches `-o`.
 WRITE_OPTIONS = {
+    "du": ("", ("--files0-from",)),
     "find": (
         "",
         ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fls", "-fprint",
-         "-fprint0", "-fprintf"),
+         "-fprint0", "-fprintf", "-files0-from"),
     ),
-    "file": ("zZC", ("--uncompress", "--uncompress-noreport", "--compile")),
+    "file": ("zZCf", ("--uncompress", "--uncompress-noreport", "--compile", "--files-from")),
     "rg": ("z", ("--pre", "--search-zip", "--hostname-bin")),
-    "sort": ("o", ("--output", "--compress-program")),
+    "sort": ("o", ("--output", "--compress-program", "--files0-from")),
+    "wc": ("", ("--files0-from",)),
 }  # fmt: skip
 
 # For these commands, the specified option must come first.
@@ -86,7 +90,7 @@ UNKNOWN_PROGRAM = "a command or argument outside the recognized read and run for
 # A shape stop the agent can resolve: the same command with each path absolute is judged in full.
 RELATIVE_PATH = "a relative path after a directory change or without a known directory"
 UNREAD_HERE_DOCUMENT = (
-    "a here-document read by a program that may act on it: a program other than cat or a record sink, "
+    "a here-document read by a program that may act on it: a program other than a recognized read or a record sink, "
     "or one run with an editor option, a wrapper, an assignment, or a pipe"
 )
 
@@ -368,13 +372,14 @@ def _git_record_sink(args: list[Word]) -> bool:
     return _option_value(rest, "-F", "--file") == "-"
 
 
-def _data_reader(segment: Segment) -> bool:
+def _keeps_here_document_as_data(segment: Segment) -> bool:
     """Whether the segment's program keeps its here-document as data.
 
-    The readers are `cat` with nothing but redirections, and the sinks that keep
-    their input as a record: `git commit` or `git tag` with `-F -`, `gh pr` or
-    `gh issue` with `--body-file -`, and `tee`. The reader is the segment's first
-    word, with no assignment or wrapper before it, since either may pick another
+    The readers are the recognized reads run with no option that writes or
+    runs, and the sinks that keep their input
+    as a record: `git commit` or `git tag` with `-F -`, `gh pr` or `gh issue`
+    with `--body-file -`, and `tee`. The reader is the segment's first word,
+    with no assignment or wrapper before it, since either may pick another
     program; and its output goes to no other program.
     """
     if segment.separator == "|" or any(word.kind == "assignment" for word in segment):
@@ -383,8 +388,10 @@ def _data_reader(segment: Segment) -> bool:
     if not words or words[0].kind != "command":
         return False
     name, args = words[0].value, words[1:]
-    if name == "cat":
-        return not args
+    if name in READ_ONLY_UTILITIES:
+        # Whether the reader only reads rests on its own words: the body may expand, and each
+        # redirection target is judged by its direction.
+        return read_only(words)
     if name == "tee":
         return True
     if name == "git":
@@ -401,7 +408,8 @@ def unread_here_document(segments: list[Segment]) -> bool:
     included, as text it cannot lex.
     """
     return any(
-        any("<<" in (word.redirection or "") for word in segment) and not _data_reader(segment) for segment in segments
+        any("<<" in (word.redirection or "") for word in segment) and not _keeps_here_document_as_data(segment)
+        for segment in segments
     )
 
 
@@ -751,8 +759,7 @@ def _unlexable_syntax(command: str) -> str:
         return "a carriage return"
     if "\n" in command:
         return (
-            "a multi-line form the lexer does not read: a line continuation, a parenthesis, a compound "
-            "command, a here-document or case pattern inside a substitution, an unclosed quote or "
+            "a multi-line form the lexer does not read: an unclosed quote or "
             "here-document, or syntax the lexer does not read on one line"
         )
     return "unresolvable shell syntax"

@@ -189,6 +189,16 @@ def test_a_multi_line_read_is_recognized(world, monkeypatch, capsys):
         ("cd ~/base &&\ncat ./file", "cd ~/base && cat ./file", "ask"),
         ("# rm ~/base/file\ncat ~/base/file", "cat ~/base/file", "allow"),
         ("echo if then\nrm ~/base/file", "echo if then; rm ~/base/file", "ask"),
+        ("cat ~/base/file \\\n  ~/base/private", "cat ~/base/file ~/base/private", "block"),
+        ("echo x \\\n> ~/base/file", "echo x > ~/base/file", "ask"),
+        ("cd ~/base &\\\n& cat private", "cd ~/base && cat private", "block"),
+        (
+            "if true; then\nbash -c 'rm ~/base/file'\nfi",
+            "if true; then bash -c 'rm ~/base/file'; fi",
+            "ask",
+        ),
+        ("while false; do\ncat ~/base/private\ndone", "while false; do cat ~/base/private; done", "block"),
+        ("((cat<<2))\ncat ~/base/private\n2", "((cat<<2)); cat ~/base/private; 2", "block"),
     ],
 )
 def test_a_multi_line_command_reaches_its_one_line_verdict(world, monkeypatch, capsys, multi_line, one_line, expected):
@@ -198,7 +208,6 @@ def test_a_multi_line_command_reaches_its_one_line_verdict(world, monkeypatch, c
     assert decision[0] == expected
 
 
-@pytest.mark.xfail(strict=True, reason="known gap HereDocumentReadByARecognizedRead")
 @pytest.mark.parametrize("reader", ["head -n 1", "tr a b", "cat -n", "wc -l"])
 def test_a_here_document_a_recognized_read_takes_is_data(world, monkeypatch, capsys, reader):
     command = f"{reader} <<'EOF'\nrm ~/base/file\nEOF"
@@ -217,14 +226,8 @@ def test_a_hash_after_a_character_bash_does_not_split_on_hides_nothing(
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
-        ("cat ~/base/file \\\n  ~/base/private", "block"),
-        ("echo x \\\n> ~/base/file", "ask"),
-        ("cd ~/base &\\\n& cat private", "ask"),
-        ("if true; then\nbash -c 'rm ~/base/file'\nfi", "ask"),
-        ("while false; do\ncat ~/base/private\ndone", "block"),
         ("echo $(#'\n); rm ~/base/file; #')", "ask"),
         ('cat "`echo"`"; rm ~/base/file; " #\n" #"', "ask"),
-        ("((cat<<2))\ncat ~/base/private\n2", "block"),
     ],
 )
 def test_a_multi_line_form_the_lexer_does_not_yet_read_falls_back(world, monkeypatch, capsys, command, expected):
@@ -433,7 +436,6 @@ def test_two_hooks_one_reading(world, monkeypatch, command):
         ("bash -c 'rm ~/base/file'", "program text"),
         ("echo ~/base/file | xargs rm", "command builder"),
         ("cat <<'EOF'\n~/base/file", "multi-line form"),
-        ("cat ~/base/file \\\n  /tmp/x", "line continuation"),
         ("cat ~/base/file\r\necho done", "carriage return"),
         ("bash <<'EOF'\nrm ~/base/file\nEOF", "here-document"),
         ("cat ${FILE:-~/base/file}", "substitution"),

@@ -61,7 +61,6 @@ def test_a_multi_line_command_lexes_as_its_one_line_form(tmp_path, pair):
 
 @given(command=not_yet_read_commands())
 @settings(max_examples=250, deadline=None)
-@example(command="echo a\ncd ~/base &\\\n& cat private")
 def test_a_multi_line_form_the_lexer_does_not_yet_read_has_no_reading(command):
     assert lex(command, "/tmp") is None, command
 
