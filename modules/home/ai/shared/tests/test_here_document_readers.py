@@ -68,6 +68,8 @@ def test_cat_keeps_its_body_as_data_beside_redirections_and_later_commands(after
         ("wc --files0-from -", ""),
         ("file -f -", ""),
         ("find . -files0-from -", ""),
+        ("sha256sum -c", ""),
+        ("md5sum --check", ""),
         # A record reader whose output goes to another program.
         ("cat", " | sh"),
         ("cat", " | xargs rm"),

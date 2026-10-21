@@ -99,9 +99,9 @@ A count of the 500 here-documents agents sent in the 30 days to 2026-10-08 found
 The user chose generic sinks on 2026-10-08: `git agent-commit` is a git alias, and an alias can run a shell, so the hook cannot know what it does.
 The first implementation judged a program body as text the classifier scans, and admitted any recognized read and any wrapper or assignment before a sink.
 The 2026-10-15 review showed five ways a named reader still runs its input: a pipe into `sh`, `env -S`, `GIT_EDITOR=sh` or `git -c core.editor=sh -e`, a `PATH=` assignment, and a gh alias.
-As an interim step on 2026-10-15, the implementation admits only `cat` and the sinks, and every other here-document reaches the fallback, which judges the whole text as before this change.
+An interim step on 2026-10-15 admitted only `cat` and the sinks; the implementation now admits every recognized read, and every other here-document reaches the fallback, which judges the whole text as before this change.
 The fallback meets the requirement that a body read by any other program is judged as program text: the command is not recognized, and a guarded or block path in the body is found.
-The conditions on the reader are policy and stay; the restriction of recognized reads to `cat` is a gap.
+The conditions on the reader are policy and stay.
 
 **Alternatives considered:**
 
@@ -116,6 +116,8 @@ The conditions on the reader are policy and stay; the restriction of recognized 
 **Chosen:** a body under an unquoted delimiter that holds a `$` or a backquote no backslash escapes is unresolvable.
 A delimiter is taken after quote removal alone, as bash takes it, so `<<$X` ends at a line reading `$X`.
 An unquoted body joins continued lines before the delimiter is matched, and loses only the backslashes before `$`, a backquote, or a backslash.
+Where two here-documents feed one descriptor, as in `cat <<A <<B`, the program reads only the last, but bash expands each body under an unquoted delimiter, so a substitution in the first runs.
+The lexer keeps every body in the reading: a quoted body is data and changes no verdict, and an expanding body is unresolvable, so the paths written in it are judged.
 
 **Rationale:** bash expands parameters, command substitutions, and arithmetic in such a body before the command starts, so the body runs code whatever reads it.
 Treating any `$` as an expansion over-refuses a body holding a literal dollar; a narrower test would have to reimplement bash's expansion rules.
@@ -124,7 +126,7 @@ Only 3 of the 500 here-documents counted had an unquoted delimiter, so the over-
 ### Decision: ALoopHeaderIsASegmentThatRunsNoProgram
 
 **Chosen:** the header of a `for` or `select` loop is its own segment, marked `loop_header`, whose first word is the reserved word and whose other words are the values after `in`, with their usual kinds; the loop variable and `in` are dropped, and a `for ((…))` header holds one unresolvable word.
-No word of a header is a `command`.
+No word of a header is a `command`, and `shell-lexing` `EveryWordHasAKind` names the command only in a segment that runs a program.
 `block-sensitive-paths.py` judges every header value as a read.
 
 **Rationale:** the lexer read `for` as a program and its header as arguments, so `for i do foo; done` hid `foo`, which bash runs.
@@ -146,8 +148,8 @@ command text
     │
     ▼
 shell_words._split_words ── quotes, comments, newline → ";" or whitespace,
-    │                        here-document body; no reading for a multi-line
-    │                        form that is not plain
+    │                        here-document body, substitutions, compound
+    │                        commands; no reading for text it cannot read
     ▼
 shell_words._lex ────────── segments with word kinds; "here-document" kind
     │
@@ -166,7 +168,7 @@ shell_words._lex ────────── segments with word kinds; "here-
 - **A lexer change reaches every path-judging hook.**
   Mitigation: a property test that plain commands and their multi-line form, built by inserting newlines where bash reads them as whitespace or `;`, lex to the same segments and words.
   The existing differential property, `test_bash_runs_only_the_words_the_lexer_handed`, gains generators for newlines, comments, and here-documents, so `shellprobe` holds every new form to what bash hands each program, standard input included.
-  A property test holds that every multi-line form outside the plain set has no reading.
+  A property test holds that the programs in a reading are exactly the programs bash runs, and another that a form the lexer does not read, a process substitution, has no reading.
 - **A program the sink list should include is missing.**
   The cost is a gate or refusal where a body names a guarded or secret-looking path, the same verdict every multi-line command reaches today.
 - **`single-command-rule-engine` keeps its quote-splice rewrite for newline commands.**
@@ -212,3 +214,15 @@ shell_words._lex ────────── segments with word kinds; "here-
   **Rationale:** a restatement of bash's grammar is a second grammar that drifts; the original said `<<$X` expands its delimiter, which bash does not do.
   Specific forms live in the differential property against bash and in the gap tests.
   **Approved by user:** 2026-10-18
+- **Change:** `shell-lexing` `EveryWordHasAKind`: the command is the first word of a segment that runs a program and is not an assignment; a loop header, a `case` subject or pattern, `((…))`, and `[[ … ]]` run no program.
+  **Source:** `ALoopHeaderIsASegmentThatRunsNoProgram`, and the verification report of 2026-10-21.
+  **Rationale:** the definition named the first word of every segment the command, which a segment that runs no program contradicts; the forms named are examples of the behavior.
+  **Approved by user:** 2026-10-21
+- **Change:** `sensitive-path-blocking` `BlockBashReadFromZeroAccessPath`: a value a loop passes to its body through the loop variable is a read-from-path form; add `AZeroAccessPathALoopPassesToItsBody`.
+  **Source:** `ALoopHeaderIsASegmentThatRunsNoProgram`, and the verification report of 2026-10-21.
+  **Rationale:** the hook judges a loop's values as reads, which no requirement stated; without it, a later change could drop the rule and reopen the one-line route it closed.
+  **Approved by user:** 2026-10-21
+- **Change:** proposal Out of scope: `case` and `{ …; }` groups leave it; a here-string and a process substitution stay.
+  **Source:** the user, 2026-10-21, after the verification report of 2026-10-21.
+  **Rationale:** reading `case`, `function`, and `coproc` across lines required reading them on one line; the proposal still named `case` out of scope.
+  **Approved by user:** 2026-10-21

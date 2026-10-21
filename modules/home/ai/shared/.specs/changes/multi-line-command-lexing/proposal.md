@@ -35,7 +35,7 @@ The measurement did not count multi-line commands that name a guarded location, 
 
 **Out of scope:**
 
-- Syntax the lexer does not read on one line either, including `case`, `{ …; }` groups, and a here-string: it stays unresolvable or as it is read today, and the fallbacks stay as they are.
+- Syntax the lexer does not read on one line either, a here-string and a process substitution: it stays unresolvable, and the fallbacks stay as they are.
 - `single-command-rule-engine`'s quote-splice rewrite for newline commands.
   That change decides whether to drop it once this one lands.
 
@@ -85,4 +85,7 @@ Each multi-line form is tested against the verdict the same command on one line 
   The here-document reader conditions stay as policy.
   Decided with the user.
 - 2026-10-18: the `shell-lexing` requirements mandate bash's reading and do not restate bash's rules; specific forms are checked against bash by the differential property and the gap tests.
+  Decided with the user.
+- 2026-10-21: the scope grows to `case`, `function`, and `coproc`, on one line and across lines, which closing the compound-command gap brought in: a multi-line command reads as its one-line form, so its one-line form must be read.
+  A here-string and a process substitution stay out of scope.
   Decided with the user.

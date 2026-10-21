@@ -268,6 +268,11 @@
       "command": "head -n 1 <<'EOF'\nid_rsa\nEOF",
       "blocked": false,
       "exists": []
+    },
+    {
+      "command": "sha256sum -c <<'EOF'\n0000  id_rsa\nEOF",
+      "blocked": true,
+      "exists": []
     }
   ],
   "cases": [

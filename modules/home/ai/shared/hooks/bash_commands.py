@@ -39,6 +39,12 @@ READ_ONLY_UTILITIES = frozenset(
 # letters, whole tokens). A letter is sought anywhere in a cluster, so `-no`
 # catches `-o`.
 WRITE_OPTIONS = {
+    # A checksum check reads every file its list names.
+    "cksum": ("c", ("--check",)),
+    "md5sum": ("c", ("--check",)),
+    "sha1sum": ("c", ("--check",)),
+    "sha256sum": ("c", ("--check",)),
+    "shasum": ("c", ("--check",)),
     "du": ("", ("--files0-from",)),
     "find": (
         "",
@@ -757,12 +763,8 @@ def _unlexable_syntax(command: str) -> str:
     """Name what kept the lexer from reading `command`, so a refusal can say what to rewrite."""
     if "\r" in command:
         return "a carriage return"
-    if "\n" in command:
-        return (
-            "a multi-line form the lexer does not read: an unclosed quote or "
-            "here-document, or syntax the lexer does not read on one line"
-        )
-    return "unresolvable shell syntax"
+    # A command reads the same on one line and across lines, so the reason does not depend on newlines.
+    return "unresolvable shell syntax: an unclosed quote or here-document, or a form the lexer does not read"
 
 
 def read(command: str, cwd: str | None = None) -> Reading:

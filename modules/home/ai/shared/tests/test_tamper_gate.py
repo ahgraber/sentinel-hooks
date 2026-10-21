@@ -272,6 +272,12 @@ NOT_READS = [
     f"file -bf /tmp/list {SKILL_FILE}",
     f"file --files-from=/tmp/list {SKILL_FILE}",
     f"find {SKILL_DIR} -files0-from /tmp/list",
+    # A checksum check reads every file its list names.
+    f"sha256sum -c /tmp/list {SKILL_FILE}",
+    f"md5sum --check /tmp/list {SKILL_FILE}",
+    f"shasum -wc /tmp/list {SKILL_FILE}",
+    f"cksum --check=/tmp/list {SKILL_FILE}",
+    f"sha1sum --ch /tmp/list {SKILL_FILE}",
     "find ~/.claude/skills -name SKILL.md -delete",
     "find ~/.claude/skills -name SKILL.md -exec rm {} ;",
     f"cp /tmp/replacement.md {SKILL_FILE}",

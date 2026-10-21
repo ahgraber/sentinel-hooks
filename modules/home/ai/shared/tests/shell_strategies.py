@@ -186,17 +186,17 @@ def line_pairs(draw: st.DrawFn, forms: list = STABLE_FORMS) -> tuple[str, str]:
 # Forms the lexer does not read, each written where it would change the
 # reading if the lexer took it for plain text; a command holding one has no
 # reading.
-NOT_YET_READ = [
+UNREAD_FORMS = [
     lambda c: f"cat <({c})",
 ]
 
 
 @st.composite
-def not_yet_read_commands(draw: st.DrawFn) -> str:
-    """A multi-line command holding one form the lexer does not yet read, applied to its first command."""
+def unread_commands(draw: st.DrawFn) -> str:
+    """A multi-line command holding one form the lexer does not read, applied to its first command."""
     lead = draw(segments(STABLE_FORMS))
     _, rest = draw(line_pairs())
-    return draw(st.sampled_from(NOT_YET_READ))(lead) + "\n" + rest
+    return draw(st.sampled_from(UNREAD_FORMS))(lead) + "\n" + rest
 
 
 # Body lines for here-documents: shell syntax a body holds as text, and the
@@ -248,6 +248,36 @@ SUBSTITUTIONS = [
 ]
 # Inner text holding the characters a scan could take for the substitution's end.
 INNER_TEXT = st.text(alphabet="ab ;#)}'\"", max_size=6)
+
+
+# Compound commands that run their body exactly once, so a reading of the body
+# names every program bash runs inside them.
+RUN_ONCE = [
+    lambda c: c,
+    lambda c: f"if true; then\n{c}\nfi",
+    lambda c: f"for i in 1; do\n{c}\ndone",
+    lambda c: f"{{\n{c}\n}}",
+    lambda c: f"(\n{c}\n)",
+    lambda c: f"case x in\nx)\n{c}\n;;\nesac",
+    lambda c: f"while true; do\n{c}\nbreak\ndone",
+]
+
+
+@st.composite
+def run_once_commands(draw: st.DrawFn) -> str:
+    """Plain commands inside a compound command that runs them once, perhaps with a substitution.
+
+    The substitution runs `inner`, a program no probe records, so every
+    program a probe records ran outside it.
+    """
+    one_line, multi_line = draw(line_pairs())
+    command = draw(st.sampled_from([one_line, multi_line]))
+    if draw(st.booleans()):
+        inner = f"inner {shlex.quote(draw(INNER_TEXT))}"
+        substitution = draw(st.sampled_from(SUBSTITUTIONS)).format(inner=inner)
+        head, _, rest = command.partition(" ")
+        command = f"{head} {substitution} {rest}"
+    return draw(st.sampled_from(RUN_ONCE))(command)
 
 
 @st.composite

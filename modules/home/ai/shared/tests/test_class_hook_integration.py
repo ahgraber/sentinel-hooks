@@ -228,9 +228,12 @@ def test_a_hash_after_a_character_bash_does_not_split_on_hides_nothing(
     [
         ("echo $(#'\n); rm ~/base/file; #')", "ask"),
         ('cat "`echo"`"; rm ~/base/file; " #\n" #"', "ask"),
+        # A shell runs its here-document, so a guarded directory the body deletes is found.
+        ("bash <<'EOF'\nrm -rf ~/base\nEOF", "ask"),
+        ("sh <<EOF\nrm -r ~/base\nEOF", "ask"),
     ],
 )
-def test_a_multi_line_form_the_lexer_does_not_yet_read_falls_back(world, monkeypatch, capsys, command, expected):
+def test_a_multi_line_command_with_a_substitution_or_a_shell_body_asks(world, monkeypatch, capsys, command, expected):
     assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
 
 
@@ -430,12 +433,21 @@ def test_two_hooks_one_reading(world, monkeypatch, command):
     assert readings == [expected]
 
 
+@pytest.mark.parametrize(("multi_line", "one_line"), [("cat /a |&\nsh", "cat /a |& sh"), ("cat 'a\nb", "cat 'a b")])
+def test_an_unreadable_command_gives_one_reason_on_one_line_and_across_lines(world, multi_line, one_line):
+    _, repo, hook = world
+
+    multi = hook.bash_commands.read(multi_line, str(repo)).stopping_syntax()
+
+    assert multi == hook.bash_commands.read(one_line, str(repo)).stopping_syntax()
+
+
 @pytest.mark.parametrize(
     ("command", "syntax"),
     [
         ("bash -c 'rm ~/base/file'", "program text"),
         ("echo ~/base/file | xargs rm", "command builder"),
-        ("cat <<'EOF'\n~/base/file", "multi-line form"),
+        ("cat <<'EOF'\n~/base/file", "unclosed quote or here-document"),
         ("cat ~/base/file\r\necho done", "carriage return"),
         ("bash <<'EOF'\nrm ~/base/file\nEOF", "here-document"),
         ("cat ${FILE:-~/base/file}", "substitution"),

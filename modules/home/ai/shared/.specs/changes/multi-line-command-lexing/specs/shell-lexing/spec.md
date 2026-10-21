@@ -57,7 +57,7 @@ Serves: a-multi-line-command-is-read-line-by-line
 The kinds are disjoint and cover every word.
 A hook that decides from words decides from their kinds, so a rule that applies to a path applies to path candidates and redirection targets, whichever hook holds the rule.
 
-The command is the first word of a segment that is not an assignment.
+The command is the first word of a segment that runs a program and is not an assignment; a loop header, a `case` subject or pattern, `((…))`, and `[[ … ]]` run no program, so no word of theirs is the command.
 An option is a word beginning with `-` in a position bash would pass to the program.
 A redirection target is the operand of a redirection operator, whether or not a space separates the two.
 A here-document is the body of a `<<` or `<<-` redirection: text its command reads on its standard input, not a file it names.

@@ -1,18 +1,22 @@
 """Compare the shared lexer with Bash and exercise arbitrary input."""
 
+from collections import Counter
 import re
 import shlex
+import subprocess
 
 from hypothesis import HealthCheck, assume, example, given, settings, strategies as st
 import pytest
 from shell_strategies import (
     ATTACHED_FORMS,
+    PROGRAMS,
     UNRESOLVED_FORMS,
     commands as structured_commands,
     here_document_commands,
     line_pairs,
-    not_yet_read_commands,
+    run_once_commands,
     substitution_commands,
+    unread_commands,
 )
 from shell_words import lex
 from shellprobe import ShellProbe
@@ -59,9 +63,9 @@ def test_a_multi_line_command_lexes_as_its_one_line_form(tmp_path, pair):
     assert _reading(multi_line, str(tmp_path)) == _reading(one_line, str(tmp_path)), pair
 
 
-@given(command=not_yet_read_commands())
+@given(command=unread_commands())
 @settings(max_examples=250, deadline=None)
-def test_a_multi_line_form_the_lexer_does_not_yet_read_has_no_reading(command):
+def test_a_form_the_lexer_does_not_read_has_no_reading(command):
     assert lex(command, "/tmp") is None, command
 
 
@@ -134,6 +138,59 @@ def test_every_program_bash_runs_is_in_the_reading(probe, command):
     ]
 
     assert not hidden, (command, commands, opaque, hidden)
+
+
+def _programs_the_reading_runs(segments) -> Counter | None:
+    """Count the recorded programs a reading runs, following `&&` and `||` on each pipeline's status.
+
+    A recorded program, `true`, `:`, `break`, and a segment that runs no
+    program succeed; any other program is not found and fails. `None` where
+    `&&` or `||` follows a program an unresolvable word names, whose status
+    the reading cannot know.
+    """
+    programs: Counter = Counter()
+    previous, runs, status = ";", True, 0
+    for segment in segments:
+        if previous not in {"|", "|&"}:
+            if previous in {"&&", "||"} and status is None:
+                return None
+            runs = previous not in {"&&", "||"} or (previous == "&&") == (status == 0)
+        names = [word.value for word in segment if word.kind == "command"]
+        if runs:
+            programs.update(name for name in names if name in PROGRAMS)
+            if segment.separator not in {"|", "|&"}:
+                leading = next((word for word in segment if word.kind != "assignment"), None)
+                if leading is not None and leading.kind == "unresolvable":
+                    status = None
+                else:
+                    status = 0 if not names or names[0] in {*PROGRAMS, "true", ":", "break"} else 127
+        previous = segment.separator
+    return programs
+
+
+@given(command=run_once_commands())
+@settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@example(command="cat a $(inner ')') ; head b")
+@example(command="if true; then\ncat a || head b | sort c\nfi")
+@example(command="cat notes/a\nb.md && cat notes/c")
+@example(command="cat {notes/a\nb.md} && cat notes/c")
+def test_bash_runs_exactly_the_programs_the_reading_names(probe, command):
+    """Each program bash runs outside a substitution is a command of the reading, and the reading names no other.
+
+    A substitution read past its `)` would take a later program into its text, which this catches.
+    """
+    segments = lex(command, str(probe.work))
+    assume(segments is not None)
+    # A background job may end after the probe stops recording.
+    assume(all(segment.separator != "&" for segment in segments))
+    checked = subprocess.run([probe.bash, "-n"], input=command, text=True, capture_output=True, check=False)
+    assume(checked.returncode == 0)
+
+    expected = _programs_the_reading_runs(segments)
+    assume(expected is not None)
+    ran = Counter(invocation.program for invocation in probe.run(command) if invocation.program in PROGRAMS)
+
+    assert ran == expected, command
 
 
 @given(case=here_document_commands())

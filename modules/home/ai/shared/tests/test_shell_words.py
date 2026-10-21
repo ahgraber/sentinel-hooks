@@ -271,7 +271,7 @@ def test_a_multi_line_command_reads_as_its_one_line_form(lexer, shell_world, mul
         "cat <(head\nb)",
     ],
 )
-def test_a_multi_line_form_the_lexer_does_not_yet_read_has_no_reading(lexer, shell_world, command):
+def test_a_form_the_lexer_does_not_read_has_no_reading(lexer, shell_world, command):
     _, repository = shell_world
 
     assert lexer.lex(command, str(repository)) is None
@@ -617,6 +617,26 @@ def test_case_coproc_and_function_read_as_bash_reads_them(lexer, shell_world, co
     segments = lexer.lex(command, str(repository))
 
     assert [[word.value for word in segment] for segment in segments] == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "kinds"),
+    [
+        (
+            "case $(x) in $(y)) cat a;; esac",
+            [["plain word", "unresolvable"], ["plain word", "unresolvable"], ["command", "plain word"]],
+        ),
+        # A function body may change directory when called, so a relative word after it is unresolvable.
+        ("function f { cat a; }", [["command", "plain word"], ["command", "unresolvable"]]),
+        ("for f in a; do cat a; done", [["plain word", "plain word"], ["command", "plain word"]]),
+    ],
+)
+def test_a_reserved_word_that_opens_a_segment_is_a_plain_word_except_function(lexer, shell_world, command, kinds):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [[word.kind for word in segment] for segment in segments] == kinds
 
 
 @pytest.mark.parametrize("command", ["case x", "case x in a) cat a", "case x of a) cat a;; esac", "function"])
