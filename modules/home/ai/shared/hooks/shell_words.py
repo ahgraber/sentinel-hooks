@@ -14,7 +14,7 @@ input. `((…))` and `[[ … ]]` in command position are each one word that runs
 no program, and an array subscript or value, as in `a[ i ]=1` or `a=(1 2)`, is
 part of its word. The header of a `for` or `select` loop is a segment of its
 own that runs no program; so is a `case` subject or pattern where it expands,
-and a `function` keyword with its name. `((…))`, `[[ … ]]`, array subscripts
+and a function's name, after `function` or before `(`. `((…))`, `[[ … ]]`, array subscripts
 and values, expanding `case` words, substitutions, and brace expansions keep
 their written paths but are unresolvable, except a leading `$HOME`, which
 expands as a leading `~` does.
@@ -24,7 +24,7 @@ directory change is unresolvable and carries its spelling in each of them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import glob
 import os
 import re
@@ -1227,6 +1227,14 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
 
     def end_segment(separator: str) -> None:
         nonlocal segment, keywords, has_command, header
+        # A lone name before `(` is the name a function definition binds, which runs no program.
+        if (
+            separator == "("
+            and len(segment) == 1
+            and segment[0].kind == "command"
+            and _NAME.fullmatch(segment[0].value)
+        ):
+            segment = [replace(segment[0], kind="plain word")]
         if segment:
             segments.append(Segment(segment, separator, directories.spelled(), loop_header=header is not None))
         directories.follow(keywords + segment, separator)
@@ -1314,7 +1322,7 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
                 cases.append("subject")
                 continue
             if token.value == "function":
-                open_segment(Word("function", "command"))
+                open_segment(Word("function", "plain word"))
                 function_name = True
                 continue
             if token.value == "coproc":

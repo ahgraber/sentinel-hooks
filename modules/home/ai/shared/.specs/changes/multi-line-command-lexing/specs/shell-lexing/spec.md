@@ -84,7 +84,8 @@ A here-document is the body of a `<<` or `<<-` redirection: text its command rea
 
 ### Requirement: AHereDocumentBodyIsInput
 
-A path hook SHALL judge a here-document body as one word of the here-document kind, holding the text bash delivers to the standard input of the command that reads it.
+A path hook SHALL judge each here-document body as one word of the here-document kind, holding that body as bash reads it.
+Which body reaches the command's standard input follows bash's order of redirections; a body a later redirection replaces is still judged, since bash still expands it.
 The word belongs to that command's segment.
 The hook SHALL NOT split the body into segments.
 If bash would expand any part of the body, the hook SHALL treat the body as unresolvable.

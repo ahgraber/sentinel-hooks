@@ -1,4 +1,4 @@
-"""A here-document is read only where a recognized read or a record sink keeps it as data."""
+"""A here-document is read only where a data reader or a record sink keeps it as data."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ def _here(reader: str, after: str = "") -> str:
         "tr a b",
         "wc -l",
         "grep -f - /a",
+        "sort",
+        "sha256sum",
         "git commit -F -",
         "git commit --file=-",
         "git commit --file -",
@@ -41,6 +43,10 @@ def test_a_data_reader_keeps_the_body_as_data(reader):
     assert reading.unlexable is None
     assert [segment.programs for segment in reading.segments] == [()]
     assert reading.segments[0].read_only == (reader.split()[0] in bash_commands.READ_ONLY_UTILITIES)
+
+
+def test_every_data_reader_is_a_recognized_read():
+    assert bash_commands.DATA_READERS <= bash_commands.READ_ONLY_UTILITIES
 
 
 @pytest.mark.parametrize("after", ["", " > /out", "; head /a", " && head /a"])
@@ -70,7 +76,17 @@ def test_cat_keeps_its_body_as_data_beside_redirections_and_later_commands(after
         ("find . -files0-from -", ""),
         ("sha256sum -c", ""),
         ("md5sum --check", ""),
-        # A record reader whose output goes to another program.
+        # A read that takes arguments or a program from its input.
+        ("strings @/dev/stdin", ""),
+        ("jq -n -f /dev/stdin", ""),
+        # A recognized read is a data reader only where it is named as one.
+        ("strings", ""),
+        ("jq .", ""),
+        ("rg pattern", ""),
+        ("ls", ""),
+        # A data reader run with an option that writes.
+        ("sort -o /out", ""),
+        # A data reader or record sink whose output goes to another program.
         ("cat", " | sh"),
         ("cat", " | xargs rm"),
         ("tee /tmp/o", " | bash"),

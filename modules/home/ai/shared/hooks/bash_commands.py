@@ -22,8 +22,9 @@ from shell_words import Segment, Word
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _DESCRIPTOR = re.compile(r"(?:[0-9]+-?|-)")
 
-# Allow utilities that only read arguments; exclude helper execution and
-# write-capable options. `echo` and `printf` are harmless separators.
+# Allow utilities that only read the files their words name; exclude helper
+# execution and write-capable options. `echo` and `printf` are harmless
+# separators.
 READ_ONLY_UTILITIES = frozenset(
     {
         "basename", "cat", "cksum", "column", "comm", "cut", "diff", "dirname",
@@ -34,8 +35,9 @@ READ_ONLY_UTILITIES = frozenset(
     }
 )  # fmt: skip
 
-# Options that make one of the above write, run something, or read files named
-# in a list, from a file or standard input, rather than in its words, as (short
+# Options that make one of the above write, run something, load a program or
+# module, or read files named in a list, from a file or standard input, rather
+# than in its words, as (short
 # letters, whole tokens). A letter is sought anywhere in a cluster, so `-no`
 # catches `-o`.
 WRITE_OPTIONS = {
@@ -46,6 +48,8 @@ WRITE_OPTIONS = {
     "sha256sum": ("c", ("--check",)),
     "shasum": ("c", ("--check",)),
     "du": ("", ("--files0-from",)),
+    # A program file or a library path lets jq load a module its words do not name.
+    "jq": ("fL", ("--from-file", "--library-path")),
     "find": (
         "",
         ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fls", "-fprint",
@@ -56,6 +60,24 @@ WRITE_OPTIONS = {
     "sort": ("o", ("--output", "--compress-program", "--files0-from")),
     "wc": ("", ("--files0-from",)),
 }  # fmt: skip
+
+# These read further arguments, and so further file names, from the file an
+# argument starting with `@` names.
+RESPONSE_FILE_UTILITIES = frozenset({"strings"})
+
+# A jq program that holds one of these loads a file from the module search path.
+_JQ_MODULE_DIRECTIVE = re.compile(r"\b(?:import|include)\b")
+
+# The recognized reads that take only content from standard input, never file
+# names, arguments, or a program, so a here-document they read is data. A
+# recognized read keeps a here-document as data only when it is listed here.
+DATA_READERS = frozenset(
+    {
+        "cat", "cksum", "column", "cut", "egrep", "fgrep", "fold", "grep",
+        "head", "md5sum", "nl", "od", "rev", "sha1sum", "sha256sum", "shasum",
+        "sort", "tail", "tr", "wc",
+    }
+)  # fmt: skip
 
 # For these commands, the specified option must come first.
 REQUIRED_FIRST_OPTION = {"rg": "--no-config"}
@@ -96,7 +118,8 @@ UNKNOWN_PROGRAM = "a command or argument outside the recognized read and run for
 # A shape stop the agent can resolve: the same command with each path absolute is judged in full.
 RELATIVE_PATH = "a relative path after a directory change or without a known directory"
 UNREAD_HERE_DOCUMENT = (
-    "a here-document read by a program that may act on it: a program other than a recognized read or a record sink, "
+    "a here-document read by a program that may act on it: a program other than a data reader "
+    f"({', '.join(sorted(DATA_READERS))}) or a record sink, "
     "or one run with an editor option, a wrapper, an assignment, or a pipe"
 )
 
@@ -381,9 +404,8 @@ def _git_record_sink(args: list[Word]) -> bool:
 def _keeps_here_document_as_data(segment: Segment) -> bool:
     """Whether the segment's program keeps its here-document as data.
 
-    The readers are the recognized reads run with no option that writes or
-    runs, and the sinks that keep their input
-    as a record: `git commit` or `git tag` with `-F -`, `gh pr` or `gh issue`
+    The readers are the data readers run with no option that writes or runs,
+    and the sinks that keep their input as a record: `git commit` or `git tag` with `-F -`, `gh pr` or `gh issue`
     with `--body-file -`, and `tee`. The reader is the segment's first word,
     with no assignment or wrapper before it, since either may pick another
     program; and its output goes to no other program.
@@ -394,7 +416,7 @@ def _keeps_here_document_as_data(segment: Segment) -> bool:
     if not words or words[0].kind != "command":
         return False
     name, args = words[0].value, words[1:]
-    if name in READ_ONLY_UTILITIES:
+    if name in DATA_READERS:
         # Whether the reader only reads rests on its own words: the body may expand, and each
         # redirection target is judged by its direction.
         return read_only(words)
@@ -420,7 +442,7 @@ def unread_here_document(segments: list[Segment]) -> bool:
 
 
 def read_only(segment: list[Word]) -> bool:
-    """Return whether one pipeline segment runs a utility that only reads its arguments.
+    """Return whether one pipeline segment runs a utility that reads only the files its words name.
 
     Redirections are left to the caller, which judges each target by direction.
     A here-document body is input, not an argument.
@@ -440,6 +462,10 @@ def read_only(segment: list[Word]) -> bool:
         return False
     required = REQUIRED_FIRST_OPTION.get(name.value)
     if required is not None and (not args or args[0].value != required):
+        return False
+    if name.value in RESPONSE_FILE_UTILITIES and any(arg.value.startswith("@") for arg in args):
+        return False
+    if name.value == "jq" and any(_JQ_MODULE_DIRECTIVE.search(arg.value) for arg in args):
         return False
     letters, whole = WRITE_OPTIONS.get(name.value, ("", ()))
     for arg in args:

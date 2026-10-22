@@ -231,6 +231,8 @@ def test_a_hash_after_a_character_bash_does_not_split_on_hides_nothing(
         # A shell runs its here-document, so a guarded directory the body deletes is found.
         ("bash <<'EOF'\nrm -rf ~/base\nEOF", "ask"),
         ("sh <<EOF\nrm -r ~/base\nEOF", "ask"),
+        # So is a directory above a guarded one.
+        ("bash <<'EOF'\nrm -r ~\nEOF", "ask"),
     ],
 )
 def test_a_multi_line_command_with_a_substitution_or_a_shell_body_asks(world, monkeypatch, capsys, command, expected):
@@ -254,6 +256,8 @@ def test_a_multi_line_command_with_a_substitution_or_a_shell_body_asks(world, mo
         # A body bash expands is unresolvable, so the paths written in it are judged.
         ("cat <<EOF\n$X ~/base/file\nEOF", "ask"),
         ("cat <<EOF\n$X ~/base/private\nEOF", "block"),
+        # A checksum check reads every file its list names, so a block path in the list is refused.
+        ("sha256sum -c <<'EOF'\n0000  ~/base/private\nEOF", "block"),
         # `|&` pipes the reader's output on, as `|` does.
         ("cat <<'EOF' |& sh\nrm ~/base/file\nEOF", "ask"),
         # The reader's own words and redirections are judged as on one line.
@@ -280,7 +284,7 @@ def test_a_here_document_read_as_data_is_not_judged(world, monkeypatch, capsys, 
         ("unknown-program", "~/base/file", "ask"),
         ("bash", "cat ~/base/private", "block"),
         ("xargs cat", "~/base/private", "block"),
-        # A record reader that may still run its input.
+        # A record sink that may still run its input.
         ("env -S'sh -s' tee", "rm ~/base/file", "ask"),
         ("git -c core.editor=sh commit -e -F -", "cat ~/base/private", "block"),
         ("GIT_EDITOR=sh git commit -e -F -", "cat ~/base/private", "block"),

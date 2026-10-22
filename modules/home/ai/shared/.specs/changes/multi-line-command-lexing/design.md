@@ -44,16 +44,16 @@ Emitting `;` keeps every consumer of segments unchanged, so a multi-line command
 ### Decision: UnreadFormsFallBackUntilEachGapCloses
 
 **Chosen:** the requirements state what bash reads.
-The tokenizer reads a multi-line command today only when it is plain: commands joined by newlines and list operators, with comments, quoted newlines in single quotes or in double quotes that hold no substitution, and here-documents.
+The tokenizer reads a multi-line command into the segments bash runs: commands joined by newlines and list operators, with comments, quoted newlines, line continuations, here-documents, substitutions, and compound commands.
 A newline after `|`, `&&`, `||`, `;`, or `&` is whitespace, and any other unquoted newline ends the command.
 `case`, `function`, and `coproc` read across lines as on one line; a substitution holding a `case` ends at the first `)` before which its text reads as complete commands.
 After any other reserved word that leads a command, a newline ends an empty command, which adds no segment, so `if`, `while`, `for`, and `{ … }` read across lines as on one line, and so do subshells and `((…))`, whose `<<` the arithmetic scan reads as a shift.
 A line continuation is removed where the tokenizer reaches it, outside single quotes and comments and inside an operator too, so the rest of the scan reads the joined text.
 `((…))` and `[[ … ]]` in command position are each one unresolvable word, and so is a word holding an array subscript or value where bash reads one: before the command word, or after an assignment builtin such as `declare`.
-A substitution ends where bash ends it: `_expansion_end` matches quotes, comments, and nesting inside `$(…)`, `${…}`, and backquotes, and refuses one holding a here-document or a `case` pattern.
+A substitution ends where bash ends it: `_expansion_end` matches quotes, comments, here-documents, `case` patterns, and nesting inside `$(…)`, `${…}`, and backquotes.
 Command position is tracked in the tokenizer: the first word, or the first word after a control operator; an assignment or a redirection before a word takes the position, as in bash.
-Each form the tokenizer does not read as bash does is a gap, with a task to close it and a strict expected-failure test that states bash's reading.
-The tests that each such form has no reading stay until its gap closes, because they hold the fallback that keeps the gap from hiding a command.
+Each gap the reviews below found is closed, and its expected-failure test now passes as an ordinary test.
+A form the tokenizer does not read, a process substitution, has no reading, which a property test holds, so the fallback keeps it from hiding a command.
 
 **Rationale:** the first implementation read every multi-line form, following bash's rules in order.
 A review on 2026-10-15, by Codex and two Opus agents and confirmed against bash 5.3.9, found five forms it read more permissively than bash:
@@ -83,12 +83,15 @@ On 2026-10-18 the user restored the requirement that the hooks read commands as 
 
 ### Decision: AHereDocumentIsDataOnlyForNamedReaders
 
-**Chosen:** a here-document body is data only where its reader is a recognized read or one of four named sinks.
+**Chosen:** a here-document body is data only where its reader is a data reader or one of four named sinks.
+A recognized read is a data reader only where it takes only content from its standard input, never file names, arguments, or a program; `DATA_READERS` names those reads, and a recognized read is not one until it is listed.
 A recognized read is one `read_only()` admits, judged without the body, which may expand.
 A utility that takes the names of the files it reads from a file or its input, such as `sort --files0-from=-` or `file -f -`, is not a recognized read: it reads files its words do not name, here-document or not, so `WRITE_OPTIONS` lists those options.
+For the same reason `jq` with `-f`, `--from-file`, `-L`, `--library-path`, or a word holding `import` or `include` is not a recognized read, since its program can then load a module its words do not name, and `strings` with an argument starting with `@` is not one, since it reads further arguments from that file.
+The user chose on 2026-10-21 to keep plain `jq` a recognized read, because agents read guarded JSON with it and Codex, which cannot ask, would refuse every such read; a module route those rules miss stays open on one line, and the data-reader list keeps it from hiding in a here-document.
 The named sinks are `git commit` or `git tag` with `-F -` or `--file=-` and no `-c`, `-e`, or `--edit`, `gh pr` or `gh issue` with `--body-file -`, and `tee`.
 The reader is the first word of its segment, with no assignment or wrapper before it, and its segment does not pipe.
-`bash_commands.unread_here_document()` applies that test, beside `READ_ONLY_UTILITIES`.
+`bash_commands.unread_here_document()` applies that test, beside `DATA_READERS`.
 Every other here-document leaves the command with no reading: `bash_commands.read()` reports it as unlexable, and `block-sensitive-paths.py` applies the same test before it judges any word, so both hooks reach their fallbacks.
 A git alias is not a sink.
 
@@ -99,7 +102,10 @@ A count of the 500 here-documents agents sent in the 30 days to 2026-10-08 found
 The user chose generic sinks on 2026-10-08: `git agent-commit` is a git alias, and an alias can run a shell, so the hook cannot know what it does.
 The first implementation judged a program body as text the classifier scans, and admitted any recognized read and any wrapper or assignment before a sink.
 The 2026-10-15 review showed five ways a named reader still runs its input: a pipe into `sh`, `env -S`, `GIT_EDITOR=sh` or `git -c core.editor=sh -e`, a `PATH=` assignment, and a gh alias.
-An interim step on 2026-10-15 admitted only `cat` and the sinks; the implementation now admits every recognized read, and every other here-document reaches the fallback, which judges the whole text as before this change.
+An interim step on 2026-10-15 admitted only `cat` and the sinks, and a later step admitted every recognized read.
+Verification twice found a recognized read that takes file names or a program from its input: checksum `-c` on 2026-10-20, and `strings @/dev/stdin` and `jq -f /dev/stdin` on 2026-10-21.
+Each was also a one-line gap in the recognized reads, closed there after an audit of every recognized read against the files its words name.
+The user chose on 2026-10-21 to name the data readers as well, so a recognized read the audit misses still does not hide a body; every other here-document reaches the fallback, which judges the whole text as before this change.
 The fallback meets the requirement that a body read by any other program is judged as program text: the command is not recognized, and a guarded or block path in the body is found.
 The conditions on the reader are policy and stay.
 
@@ -226,3 +232,11 @@ shell_words._lex ────────── segments with word kinds; "here-
   **Source:** the user, 2026-10-21, after the verification report of 2026-10-21.
   **Rationale:** reading `case`, `function`, and `coproc` across lines required reading them on one line; the proposal still named `case` out of scope.
   **Approved by user:** 2026-10-21
+- **Change:** `hook-tampering-blocking` `UnrecognizedCommandsAreGated`: a recognized read is a data reader only where it takes only content from its standard input, never file names, arguments, or a program, in place of any recognized read; `AHereDocumentReadByAnyOtherProgramIsProgramText` names such reads.
+  **Source:** `AHereDocumentIsDataOnlyForNamedReaders`, and the verification report of 2026-10-21.
+  **Rationale:** a recognized read promises to read only the files its words name; a body it takes as names or a program, as `strings @/dev/stdin` and `jq -f /dev/stdin` do, is not data, and the audit of recognized reads that closes each case can miss one.
+  **Approved by user:** 2026-10-21
+- **Change:** `shell-lexing` `AHereDocumentBodyIsInput`: each here-document word holds its body as bash reads it, and a body a later redirection replaces is still judged, in place of a word holding the text bash delivers.
+  **Source:** `AnExpandedBodyIsUnresolvable`, and the verification report of 2026-10-21.
+  **Rationale:** for `cat <<A <<B` bash delivers only the second body but expands both, so a substitution in the first runs; the requirement named only the delivered text.
+  **Approved by user:** 2026-10-22

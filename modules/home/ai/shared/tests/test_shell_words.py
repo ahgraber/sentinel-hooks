@@ -627,11 +627,15 @@ def test_case_coproc_and_function_read_as_bash_reads_them(lexer, shell_world, co
             [["plain word", "unresolvable"], ["plain word", "unresolvable"], ["command", "plain word"]],
         ),
         # A function body may change directory when called, so a relative word after it is unresolvable.
-        ("function f { cat a; }", [["command", "plain word"], ["command", "unresolvable"]]),
+        ("function f { cat a; }", [["plain word", "plain word"], ["command", "unresolvable"]]),
+        # A name before `(` is a definition however the parentheses are spaced.
+        ("f() { cat a; }", [["plain word"], ["command", "unresolvable"]]),
+        ("f ( ) { cat a; }", [["plain word"], ["command", "unresolvable"]]),
+        ("f ()\n{\ncat a\n}", [["plain word"], ["command", "unresolvable"]]),
         ("for f in a; do cat a; done", [["plain word", "plain word"], ["command", "plain word"]]),
     ],
 )
-def test_a_reserved_word_that_opens_a_segment_is_a_plain_word_except_function(lexer, shell_world, command, kinds):
+def test_a_reserved_word_or_function_name_that_opens_a_segment_is_a_plain_word(lexer, shell_world, command, kinds):
     _, repository = shell_world
 
     segments = lexer.lex(command, str(repository))

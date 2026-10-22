@@ -88,4 +88,7 @@ Each multi-line form is tested against the verdict the same command on one line 
   Decided with the user.
 - 2026-10-21: the scope grows to `case`, `function`, and `coproc`, on one line and across lines, which closing the compound-command gap brought in: a multi-line command reads as its one-line form, so its one-line form must be read.
   A here-string and a process substitution stay out of scope.
+- 2026-10-21: a here-document is data only where a named sink or a recognized read that takes only content from its standard input reads it; a recognized read that takes file names or a program from its input is not a data reader.
+  Verification found `strings @/dev/stdin` and `jq -f /dev/stdin` after checksum `-c`, so the data readers are named, beside the audit of the recognized reads.
+  Decided with the user.
   Decided with the user.

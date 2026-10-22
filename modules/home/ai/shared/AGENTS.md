@@ -117,7 +117,7 @@ A recorder comparison on 2026-09-16 found these Bash/zsh differences:
 
 Quoted globs, matching `*.md`, brace expansion, ANSI-C octal escapes, home expansion, and backslash line continuation produced the same words in that sample.
 The lexer reads a plain multi-line command into the segments bash runs: commands joined by newlines and list operators, with comments and quoted newlines.
-It reads a here-document only where a recognized read or a record sink, such as `git commit -F -`, takes it as the first word of a segment that does not pipe.
+It reads a here-document only where a recognized read that takes only content from its input, such as `cat`, or a record sink, such as `git commit -F -`, takes it as the first word of a segment that does not pipe.
 A substitution, `$(…)`, `${…}`, or a backquote, is one unresolvable word that ends where bash ends it.
 So are `((…))` and `[[ … ]]` in command position, which run no program, and an array assignment's subscript or value.
 A `for` or `select` loop header is a segment that runs no program; its values stay words, which `block-sensitive-paths.py` judges as reads.

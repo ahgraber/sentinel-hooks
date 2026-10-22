@@ -260,6 +260,11 @@
       "exists": []
     },
     {
+      "command": "for f in .env.example; do cat \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
       "command": "sort --files0-from=- <<'EOF'\nid_rsa\nEOF",
       "blocked": true,
       "exists": []
@@ -271,6 +276,31 @@
     },
     {
       "command": "sha256sum -c <<'EOF'\n0000  id_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "strings @/dev/stdin <<'EOF'\nid_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "bash <<'EOF'\ncat ~/'Library/Application Support/Code/User/mcp.json'\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "bash <<'EOF'\ncat ~/Library/Application\\ Support/Code/User/mcp.json\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat \"/home/user/Library/Application Support/Code/User/mcp.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "jq -n -L . -f /dev/stdin <<'EOF'\nimport \"id_rsa\" as $k; $k\nEOF",
       "blocked": true,
       "exists": []
     }

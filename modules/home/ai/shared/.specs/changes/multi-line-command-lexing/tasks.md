@@ -142,3 +142,15 @@
 - [x] Close `HereDocumentReadByARecognizedRead`: admit every recognized read as a data reader under the reader conditions, and remove its expected-failure marks.
 
 - [x] Stop admitting as a recognized read a utility that takes the names of the files it reads from a file or its input (`du`, `sort`, and `wc` with `--files0-from`, `file -f` or `--files-from`, `find -files0-from`), which read files its words do not name.
+
+- [x] Stop admitting a checksum check (`-c`, `--check`) as a recognized read, and give one refusal reason for a command the lexer cannot read, on one line or across lines.
+
+- [x] Audit every recognized read against the files its words name: stop admitting `strings` with an `@` argument, and `jq` with a program file, a library path, or a module directive.
+
+- [x] Name the data readers, the recognized reads that take only content from standard input, and judge a here-document any other recognized read takes as program text.
+
+- [x] Give `function` and the name a `name()` definition binds the plain-word kind, since a definition runs no program.
+
+- [x] Search unreadable text whole for the declared block paths in `block-sensitive-paths.py`, so a block path that holds a space is refused inside a shell's here-document.
+
+- [x] Run every agent's suite after these fixes.

@@ -32,7 +32,7 @@ A command written across lines SHALL be classified the same way as the same comm
 
 A here-document SHALL be data only where its reader is a data reader, one of these:
 
-- a recognized read;
+- a recognized read that takes only content from its standard input, never file names, arguments, or a program;
 - `git commit` or `git tag` given `-F -`, `--file -`, or `--file=-`, with no option before the subcommand except `-C`, and with neither `-e` nor `--edit`;
 - `gh pr` or `gh issue` given `--body-file -` or `--body-file=-`;
 - `tee`, whose operands are judged as the writes they are.
@@ -164,7 +164,7 @@ A command with any unrecognized segment keeps the recognition reason, because it
 
 #### Scenario: AHereDocumentReadByAnyOtherProgramIsProgramText
 
-- **GIVEN** a here-document read by a shell, an interpreter, `xargs`, `sudo sh`, `source /dev/stdin`, `sed -f -`, `git apply`, or any program not named as a data reader
+- **GIVEN** a here-document read by a shell, an interpreter, `xargs`, `sudo sh`, `source /dev/stdin`, `sed -f -`, `git apply`, a read that takes file names, arguments, or a program from its input such as `jq -f /dev/stdin`, `strings @/dev/stdin`, or `file -f -`, or any program not named as a data reader
 - **WHEN** the body names a guarded path
 - **THEN** the gate applies, as it does for `bash -c` with the same text, and a block path in the body refuses the command
 

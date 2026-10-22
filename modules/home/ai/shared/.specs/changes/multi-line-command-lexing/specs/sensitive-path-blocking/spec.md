@@ -35,6 +35,8 @@ Read-from-path forms in Bash include:
 - `dd if=` a zero-access path
 - A value a `for` or `select` loop passes to its body through the loop variable, whatever program the body runs
 
+Serves: a-multi-line-command-is-read-line-by-line
+
 #### Scenario: CatEnvFile
 
 - **GIVEN** a Bash tool call is intercepted

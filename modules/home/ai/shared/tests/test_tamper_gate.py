@@ -210,6 +210,8 @@ READS = [
     f"rg --no-config --pre-glob '*.md' pattern {SKILL_FILE}",
     f"cat {SKILL_REAL}",
     f"grep -c . {SKILL_REAL}",
+    f"jq . {SKILL_FILE}",
+    f"jq -rc '.name' {SKILL_FILE}",
     # A banner separating two reads reaches standard output only, so it leaves
     # the surrounding reads recognized rather than gating the whole command.
     f"cat {SKILL_FILE} && printf '\\n--- next ---\\n' && cat {SKILL_REAL}",
@@ -278,6 +280,16 @@ NOT_READS = [
     f"shasum -wc /tmp/list {SKILL_FILE}",
     f"cksum --check=/tmp/list {SKILL_FILE}",
     f"sha1sum --ch /tmp/list {SKILL_FILE}",
+    # `strings` reads further arguments from a file an `@` argument names.
+    f"strings @/tmp/list {SKILL_FILE}",
+    # A jq program can load a file its words do not name.
+    f"jq -n 'import \".claude/skills/x/SKILL\" as $s; $s' {SKILL_FILE}",
+    f"jq 'include \"x\"; .' {SKILL_FILE}",
+    f"jq -n -f /tmp/prog.jq {SKILL_FILE}",
+    f"jq -nf /tmp/prog.jq {SKILL_FILE}",
+    f"jq --from-file=/tmp/prog.jq {SKILL_FILE}",
+    f"jq -L/tmp . {SKILL_FILE}",
+    f"jq --library-path /tmp . {SKILL_FILE}",
     "find ~/.claude/skills -name SKILL.md -delete",
     "find ~/.claude/skills -name SKILL.md -exec rm {} ;",
     f"cp /tmp/replacement.md {SKILL_FILE}",
