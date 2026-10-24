@@ -20,6 +20,7 @@ A second sequence:
 3. `sensitive-path-word-narrowing` (stub)
 
 `program-semantics-table` comes first.
+`script-content-judging` (stub) also starts after `program-semantics-table`, whose catalog says which word each interpreter runs as a script; it does not wait on the other two.
 Its catalog holds the recursive readers as rows, so `recursive-credential-read-refusal` adds rows instead of a fourth per-program table in `bash_commands.py`.
 `sensitive-path-word-narrowing` needs the catalog's effect typing and the evidence its proposal names before it starts.
 
