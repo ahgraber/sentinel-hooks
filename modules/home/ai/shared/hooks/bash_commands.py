@@ -312,33 +312,38 @@ def _inline_code(name: str, words: list[Word]) -> list[str]:
     return programs
 
 
-def defines_function(segment: Segment) -> bool:
-    """Return whether this segment binds a command name to a body."""
-    # `name()` lexes as a lone name terminated by `(`; `function name` keeps the keyword.
-    words = [word for word in segment if word.kind != "assignment"]
-    if not words:
-        return False
-    if segment.separator == "(" and len(words) == 1 and _NAME.match(words[0].value):
-        return True
-    return words[0].value == "function"
+# Bash's tables of hashed command paths and of aliases; writing either rebinds a name.
+_LOOKUP_TABLES = re.compile(r"\bBASH_(?:CMDS|ALIASES)\b")
+# Options that make `enable` only list builtins.
+_ENABLE_LISTS = frozenset({"-a", "-p", "-s"})
 
 
 def rebinds_command(segment: Segment) -> bool:
-    """Return whether this segment changes which program a later command name runs.
+    """Return whether this segment can change which program a command name runs.
 
     A function definition binds a name to a body; `hash -p` binds it to a path;
-    `alias` rebinds it once aliases expand; `enable` swaps a builtin for a
-    program or for a builtin loaded from a file.
+    `alias` with a value, or a write to `BASH_CMDS` or `BASH_ALIASES`, rebinds
+    it; `enable` swaps a builtin for a program or for one loaded from a file.
+    `eval` and `trap` run text this reading cannot see, which may do any of these.
     """
-    if defines_function(segment):
+    if segment.defines_function or any(_LOOKUP_TABLES.search(word.value) for word in segment):
         return True
     words = invoked(segment)
     if not words:
         return False
+    # A program the reading cannot name, as `$E` or `$(echo eval)` is, may be any
+    # of these; `((…))` and `[[ … ]]` run no program.
+    if words[0].kind == "unresolvable":
+        return not segment.loop_header and not words[0].value.startswith(("((", "[["))
     name, args = words[0].value, words[1:]
     if name == "hash":
         return any(arg.value.startswith("-") and "p" in arg.value for arg in args)
-    return name in {"alias", "enable"}
+    if name == "alias":
+        return any("=" in arg.value for arg in args)
+    if name == "enable":
+        return not all(arg.value in _ENABLE_LISTS for arg in args)
+    # Listing or resetting a trap installs no code.
+    return name in {"eval", "trap"} and bool(program_text(segment))
 
 
 def _su_code(words: list[Word]) -> list[str]:
@@ -451,18 +456,23 @@ def unread_here_document(segments: list[Segment]) -> bool:
     """Return whether any here-document is read by a program that may act on it.
 
     Such a command has no reading: a caller judges its whole text, the body
-    included, as text it cannot lex. A here-document after a command that
-    rebinds a name counts as read by such a program, since the reader's name
-    does not say which program runs.
+    included, as text it cannot lex. In a command that can rebind a name, or
+    that sources a file which may, every here-document counts as read by such
+    a program: the reader's name does not say which program runs, and a loop
+    can run a rebinding written after the reader before the reader's next pass.
     """
-    rebound = False
-    for segment in segments:
-        if any("<<" in (word.redirection or "") for word in segment) and (
-            rebound or not _keeps_here_document_as_data(segment)
-        ):
-            return True
-        rebound = rebound or rebinds_command(segment)
-    return False
+    rebound = any(rebinds_command(segment) or _sources(segment) for segment in segments)
+    return any(
+        any("<<" in (word.redirection or "") for word in segment)
+        and (rebound or not _keeps_here_document_as_data(segment))
+        for segment in segments
+    )
+
+
+def _sources(segment: Segment) -> bool:
+    """Return whether the segment runs a file in the current shell, as `source` and `.` do."""
+    words = invoked(segment)
+    return bool(words) and words[0].value in {"source", "."}
 
 
 def read_only(segment: list[Word]) -> bool:

@@ -111,9 +111,14 @@ The user chose on 2026-10-21 to name the data readers as well, so a recognized r
 Two conditions on the reader follow from what a name and a pipe mean to bash, not from the reader alone.
 A reader's output reaches another program through its own `|`, through a compound command around it that is piped, as in `{ cat <<'EOF' … }  | sh`, or as a coprocess, so the lexer marks each segment whose output goes to a pipe and each whose input comes from one, including through every compound around it.
 The marks also feed the shell that reads piped text, so `echo … | { true; sh; }` and `{ echo …; } | sh` are judged as `echo … | sh` is.
-A reader's name says which program runs only while nothing earlier rebinds it: a function definition, `hash -p`, `alias` once aliases expand, and `enable` each change what a later name runs, so after any of them no here-document is data and the command is not recognized, as a function definition already left it.
-`source` runs a file the hook cannot see, which may rebind names, and may equally act on its own; that is the stated limit for a script a command runs, and sourcing adds nothing to it.
+A reader's name says which program runs only while nothing rebinds it: a function definition, `hash -p`, `alias` with a value, a write to `BASH_CMDS` or `BASH_ALIASES`, and `enable` each change what a name runs, and `eval` and `trap` with code, and `source`, run text the reading cannot see, which may do the same, as may a program the reading cannot name, such as `$E` holding `eval`.
+In a command holding any of them, no here-document is data, wherever the rebinding stands: a loop runs a rebinding written after the reader before the reader's next pass, which reviews on 2026-10-23 confirmed against bash.
+All but `source` also leave the command unrecognized, as a function definition already left it, so `BASH_CMDS[cat]=/bin/rm; cat <guarded file>` is gated; `alias` and `enable` that only list, and `trap` that lists or resets, rebind nothing.
+`source` runs a file the hook cannot see; what the file does on its own is the stated limit for a script a command runs, and it counts here only because it can rebind a here-document's reader.
+The lexer decides a function definition once, as a mark on the segment, for `name()` with any name bash accepts and for `function name`; the classifier reads the mark.
 An earlier `export PATH=` stays the limit decided on 2026-10-17.
+A body a data reader writes to a file that the same command then runs, as in `cat > x.sh <<'EOF'` then `sh x.sh`, is data here, as `echo '…' > x.sh; sh x.sh` is on one line: a hook judges one tool call, so linking the write to the run in one command would miss the same script run in the next call.
+The user chose on 2026-10-23 to leave it as a stated limit of this change and to propose `script-content-judging`, which judges a script's text where a command runs it.
 The fallback meets the requirement that a body read by any other program is judged as program text: the command is not recognized, and a guarded or block path in the body is found.
 The conditions on the reader are policy and stay.
 
@@ -155,8 +160,11 @@ The body's program is not known from the header, so a placeholder value gets the
 
 **Rationale:** the lexer's reach grows, but text it cannot read still reaches the hooks, and a hook that cannot read a command must still refuse what the text names.
 
-Both fallbacks judge the same path spellings, which `shell_words.text_paths()` takes from the text: quotes group words, a quote left open ends at its line, and a backslash escapes the next character, so a path that holds a space stays one spelling.
-A relative spelling is also joined to the working directory and to each `cd` or `pushd` target the text names, since unreadable text may change directory before it names a file.
+Both fallbacks judge the same path spellings, which `shell_words.unlexable_text_paths()` takes from the text: quotes group words, a quote left open ends at its line, and a backslash escapes the next character, so a path that holds a space stays one spelling.
+It also takes every piece between quotes, operators, and braces, read without quoting rules, and judges the union.
+Quoting rules alone cost recall: an escaped or `$'…'` quote in a program body reads as an opening quote and hides every later name, which verification on 2026-10-23 found after `09e863ba` had refused those commands.
+A fallback must find every name, so it keeps both readings; a wrong extra spelling only adds text to judge.
+A relative spelling is also joined to the working directory and to every directory a chain of `cd` or `pushd` targets in the text may reach, since unreadable text may change directory before it names a file.
 Verification on 2026-10-21 and 2026-10-22 found each fallback missing a case the other caught: a quoted block path with a space, the same path with an escaped space, and `auth.json` after `cd ~/.codex`.
 The fallbacks had split text their own ways; one splitter for both keeps them from disagreeing again.
 
@@ -253,7 +261,7 @@ shell_words._lex ────────── segments with word kinds; "here-
   **Source:** `AnExpandedBodyIsUnresolvable`, and the verification report of 2026-10-21.
   **Rationale:** for `cat <<A <<B` bash delivers only the second body but expands both, so a substitution in the first runs; the requirement named only the delivered text.
   **Approved by user:** 2026-10-22
-- **Change:** `hook-tampering-blocking` `UnrecognizedCommandsAreGated`: the reader has no earlier command that rebinds its name, and does not pipe its output through a compound command around it or as a coprocess; `ANamedReaderThatMayRunItsInputFallsBack` and `TextPipedIntoAShellNamingAGuardedPath` name these forms.
+- **Change:** `hook-tampering-blocking` `UnrecognizedCommandsAreGated`: the reader shares its command with nothing that can rebind a name, before or after it, and does not pipe its output through a compound command around it or as a coprocess; `ANamedReaderThatMayRunItsInputFallsBack` and `TextPipedIntoAShellNamingAGuardedPath` name these forms.
   **Source:** `AHereDocumentIsDataOnlyForNamedReaders`, and the verification report of 2026-10-22.
-  **Rationale:** `{ cat <<'EOF' … } | sh` and `cat() { sh; }` before a `cat` here-document each turned a data body into a program, and `{ echo …; } | sh` hid piped text from the baseline scenario.
-  **Approved by user:** 2026-10-22
+  **Rationale:** `{ cat <<'EOF' … } | sh` and `cat() { sh; }` before a `cat` here-document each turned a data body into a program, and `{ echo …; } | sh` hid piped text from the baseline scenario; reviews on 2026-10-23 found a rebinding after the reader in a loop, inside `eval` or `trap`, and through `BASH_CMDS` did the same.
+  **Approved by user:** 2026-10-22, and the whole-command rule on 2026-10-23

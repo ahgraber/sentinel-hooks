@@ -92,6 +92,7 @@ Each multi-line form is tested against the verdict the same command on one line 
 - 2026-10-21: a here-document is data only where a named sink or a recognized read that takes only content from its standard input reads it; a recognized read that takes file names or a program from its input is not a data reader.
   Verification found `strings @/dev/stdin` and `jq -f /dev/stdin` after checksum `-c`, so the data readers are named, beside the audit of the recognized reads.
   Decided with the user.
-- 2026-10-22: no here-document is data after a command that rebinds a command name: a function definition, `hash -p`, `alias`, or `enable`; each of these also leaves the command unrecognized, as a function definition did.
+- 2026-10-22: no here-document is data in a command that can rebind a command name: a function definition, `hash -p`, `alias`, `enable`, a write to `BASH_CMDS` or `BASH_ALIASES`, or `eval`, `trap`, or `source`, wherever it stands; all but `source` also leave the command unrecognized, as a function definition did.
+  Reviews on 2026-10-23 found the first rule, which looked only before the reader, missed a rebinding later in a loop and one inside `eval`.
   Verification found a function named `cat` that runs `sh` turning a `cat` here-document into a program; `hash -p /bin/rm cat` did the same to a one-line read.
   Decided with the user.

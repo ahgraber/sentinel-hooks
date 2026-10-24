@@ -448,7 +448,7 @@ def _bash_refusal(command: str, cwd: str | None) -> tuple[str, bool] | None:
         # and the declared block paths. Whether a spelling is read, written,
         # or only mentioned is unknown, so a placeholder gets the write
         # verdict. The tamper hook gates unresolved guarded text.
-        for spelling in shell_words.text_paths(command, cwd):
+        for spelling in shell_words.unlexable_text_paths(command, cwd):
             if is_zero_access(spelling) or (POLICY and POLICY.verdict(spelling, "read", cwd=cwd) == "block"):
                 return spelling, False
         return None

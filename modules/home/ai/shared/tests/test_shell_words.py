@@ -876,7 +876,9 @@ DIRECTORY_CASES = [
     ("env cd sub && cat a", [START, START]),
     ("cd $DIR && cat a", [START, None]),
     ("cd - && cat a", [START, None]),
+    # `-P` sets the directory to the physical path, so a later `cd ..` climbs from a link's target.
     ("cd -P sub && cat a", [START, None]),
+    ("cd -Pe -- sub && cat a", [START, None]),
     ("popd && cat a", [START, None]),
     ("pushd && cat a", [START, None]),
     ("pushd +1 && cat a", [START, None]),
@@ -1111,6 +1113,11 @@ def test_a_bracket_expression_glob_reads_differently_is_unresolvable(lexer, shel
         ("cat a; { head b; } && sort", [("cat", ""), ("head", ""), ("sort", "")]),
         # The parentheses of a function definition do not open a subshell.
         ("f() { cat a; } ; sort", [("f", ""), ("cat", ""), ("sort", "")]),
+        # `time` before a compound command times the whole of it.
+        ("time { cat a; } | sort", [("cat", "out"), ("sort", "in")]),
+        ("time -p ( cat a ) | sort", [("cat", "out"), ("sort", "in")]),
+        # A `{ …; }` group may be the body of `for`, and its `}` ends the loop.
+        ("for x in a; { cat a; } | sort", [("for", "out"), ("cat", "out"), ("sort", "in")]),
     ],
 )
 def test_a_segment_knows_whether_its_output_and_input_are_pipes(lexer, shell_world, command, marks):
@@ -1124,8 +1131,30 @@ def test_a_segment_knows_whether_its_output_and_input_are_pipes(lexer, shell_wor
     ] == marks
 
 
-@pytest.mark.parametrize("command", ["cat a; }", "cat a; fi | sh", "{ cat a; fi", "( cat a; }"])
-def test_a_closing_word_with_no_opener_has_no_reading(lexer, shell_world, command):
+@pytest.mark.parametrize(
+    ("command", "names"),
+    [
+        ("f() { cat a; }", ["f"]),
+        ("foo-bar() { cat a; }", ["foo-bar"]),
+        ("function g { cat a; }", ["function", "g"]),
+        # `time` before `(` times a subshell; it defines no function.
+        ("time ( cat a )", []),
+    ],
+)
+def test_the_lexer_marks_a_function_definition_and_its_name_runs_no_program(lexer, shell_world, command, names):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    definitions = [segment for segment in segments if segment.defines_function]
+    assert [word.value for segment in definitions for word in segment] == names
+    assert all(word.kind == "plain word" for segment in definitions for word in segment)
+
+
+@pytest.mark.parametrize(
+    "command", ["cat a; }", "cat a; fi | sh", "{ cat a; fi", "( cat a; }", "{ echo a; }& | cat", "echo a & | cat"]
+)
+def test_text_bash_refuses_has_no_reading(lexer, shell_world, command):
     _, repository = shell_world
 
     assert lexer.lex(command, str(repository)) is None
@@ -1144,11 +1173,32 @@ def test_a_closing_word_with_no_opener_has_no_reading(lexer, shell_world, comman
         ("dd if=a/b '", ["dd", "if", "a/b"]),
     ],
 )
-def test_text_paths_keep_a_spelling_whole(lexer, command, expected):
-    assert [spelling for spelling in lexer.text_paths(command, None) if spelling != "cat"] == expected
+def test_unlexable_text_paths_keep_a_spelling_whole(lexer, command, expected):
+    # The pieces between quotes are spellings too, so the whole spelling is one among them.
+    assert set(expected) <= set(lexer.unlexable_text_paths(command, None))
+
+
+@pytest.mark.parametrize(
+    ("command", "hidden"),
+    [
+        # An escaped quote inside a program body reads as an opening quote under quoting rules.
+        ("python3 - <<'EOF'\nprint('it\\'s'); open(\".env\")\nEOF", ".env"),
+        # A `$'…'` quote does too.
+        ("cat $'.env' '", ".env"),
+        # So does a brace expansion's word.
+        ("cat {.env,x} '", ".env"),
+    ],
+)
+def test_unlexable_text_paths_find_a_name_a_stray_quote_would_hide(lexer, command, hidden):
+    assert hidden in lexer.unlexable_text_paths(command, None)
 
 
 def test_text_paths_join_a_relative_spelling_to_each_directory_the_text_may_be_in(lexer):
-    spellings = lexer.text_paths("cd /x && cat 'a/b", "/w")
+    spellings = lexer.unlexable_text_paths("cd /x && cat 'a/b", "/w")
 
     assert {"/w/a/b", "/x/a/b"} <= set(spellings)
+
+
+@pytest.mark.parametrize("change", ["cd -- /x", "cd -P /x", "cd -Pe -- /x", "pushd -n /x"])
+def test_unlexable_text_paths_take_the_target_after_the_options(lexer, change):
+    assert "/x/a/b" in lexer.unlexable_text_paths(f"{change} && cat 'a/b", "/w")

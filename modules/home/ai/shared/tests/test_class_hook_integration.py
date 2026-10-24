@@ -375,8 +375,27 @@ def test_a_pipe_reaches_every_command_of_a_compound_command(world, monkeypatch, 
         ("enable -f ./loadable.so cat; cat ~/base/file", "ask"),
         ('cat() { rm "$@"; }; cat ~/base/file', "ask"),
         ('foo-bar() { rm "$@"; }; foo-bar ~/base/file', "ask"),
-        # `hash` without `-p` does not bind a name to a new program.
+        # A loop runs a rebinding written after the reader before the reader's next pass.
+        ("for i in 1 2; do cat <<'EOF'\nrm ~/base/file\nEOF\ncat() { sh; }; done", "ask"),
+        ("while true; do cat <<'EOF'\ncat ~/base/private\nEOF\nhash -p /bin/sh cat; done", "block"),
+        # `eval` and `trap` run text the reading cannot see, which may define a function.
+        ("eval 'cat() { sh; }'; cat <<'EOF'\ncat ~/base/private\nEOF", "block"),
+        ("trap 'cat() { sh; }' DEBUG; cat <<'EOF'\ncat ~/base/private\nEOF", "block"),
+        # So may a program the reading cannot name.
+        ("E=eval; $E 'cat() { sh; }'; cat <<'EOF'\ncat ~/base/private\nEOF", "block"),
+        ("$(echo eval) 'cat() { sh; }'; cat <<'EOF'\nrm ~/base/file\nEOF", "ask"),
+        # A file sourced into the shell may define one too.
+        ("source /tmp/defs.sh; cat <<'EOF'\nrm ~/base/file\nEOF", "ask"),
+        # Bash's lookup tables rebind a name when written.
+        ("BASH_CMDS[cat]=/bin/sh; cat <<'EOF'\nrm ~/base/file\nEOF", "ask"),
+        ("BASH_CMDS[cat]=/bin/rm; cat ~/base/file", "ask"),
+        ("declare -A BASH_CMDS=([cat]=/bin/rm); cat ~/base/file", "ask"),
+        ("shopt -s expand_aliases; BASH_ALIASES[cat]=rm\ncat ~/base/file", "ask"),
+        # `hash` without `-p`, and `alias` and `enable` that only list, do not bind a name to a new program.
         ("hash -r; cat ~/base/file", "allow"),
+        ("alias -p; cat ~/base/file", "allow"),
+        ("alias ll; cat ~/base/file", "allow"),
+        ("enable -p; cat ~/base/file", "allow"),
     ],
 )
 def test_a_command_that_rebinds_a_name_leaves_later_names_unread(world, monkeypatch, capsys, command, expected):

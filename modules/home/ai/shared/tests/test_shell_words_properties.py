@@ -39,6 +39,21 @@ def commands(draw):
     return " ".join([program, *arguments])
 
 
+def _handed(segment) -> tuple[str, ...]:
+    """The words a segment hands its program, as the probe records them: no redirection or here-document."""
+    return tuple(word.value for word in segment if not word.redirection and word.kind != "here-document")
+
+
+def _standard_input(segment) -> str:
+    """The body bash delivers on standard input: the last here-document on descriptor 0, or none."""
+    bodies = [
+        word.value
+        for word in segment
+        if word.kind == "here-document" and (word.redirection or "").lstrip("0").startswith("<<")
+    ]
+    return bodies[-1] if bodies else ""
+
+
 def _reading(command, cwd):
     """Return each segment's words with their kinds and redirections, separator, and directories."""
     segments = lex(command, cwd)
@@ -90,6 +105,10 @@ def test_a_form_the_lexer_does_not_read_has_no_reading(command):
 @example(command="cat VAR=~/file")
 @example(command="cat '*.md'")
 @example(command="cat a | head b")
+# Bash hands a program no redirection target.
+@example(command="cat a 2>/dev/null | head b >/dev/null")
+# Of several bodies on standard input, bash delivers the last.
+@example(command="cat <<'A' <<'B'\none\nA\ntwo\nB")
 @example(command=r"cat $'\e' $'\cA' $'\c?' $'\101' $'\x41'")
 @example(command=r"cat $'\u0041' $'\U00000041' $'\xc3\xa9' $'\xff' $'a\0discarded'")
 @example(command="cat a\nhead \\\n  b # c \\\nsort")
@@ -102,8 +121,8 @@ def test_bash_runs_only_the_words_the_lexer_handed(probe, command):
     # piped program's input is what the stage before it printed.
     expected = [
         (
-            tuple(word.value for word in segment if word.kind != "here-document"),
-            None if segment.piped_in else "".join(word.value for word in segment if word.kind == "here-document"),
+            _handed(segment),
+            None if segment.piped_in else _standard_input(segment),
         )
         for segment in segments
     ]
@@ -199,11 +218,6 @@ def test_bash_runs_exactly_the_programs_the_reading_names(probe, command):
     assert ran == expected, command
 
 
-def _handed(segment) -> tuple[str, ...]:
-    """The words a segment hands its program, as the probe records them."""
-    return tuple(word.value for word in segment if not word.redirection and word.kind != "here-document")
-
-
 @given(command=pipeline_commands())
 @settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @example(command="{\ncat <<'EOF'\nrm a\nEOF\n} | sort notes.md")
@@ -248,7 +262,7 @@ def test_a_here_document_word_holds_the_body_bash_delivers(probe, case):
     command, body = case
     segments = lex(command, str(probe.work))
     assume(segments is not None)
-    reader = tuple(word.value for word in segments[0] if word.kind != "here-document")
+    reader = _handed(segments[0])
     bodies = [word.value for word in segments[0] if word.kind == "here-document"]
     assume(bodies)
 

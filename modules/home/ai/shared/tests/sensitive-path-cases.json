@@ -310,8 +310,43 @@
       "exists": []
     },
     {
+      "command": "python3 <<'EOF'\nprint('it\\'s'); open(\".env\")\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat $'.env' '",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo 'x\ny' && cat id_rsa \"",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat {.env,x} '",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cd ~/.pi && cd agent && cat 'auth.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
       "command": "cat project/auth.json'",
       "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cd -- ~/.codex && cat 'auth.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for i in 1 2; do cat <<'EOF'\ncat .env\nEOF\ncat() { sh; }; done",
+      "blocked": true,
       "exists": []
     },
     {

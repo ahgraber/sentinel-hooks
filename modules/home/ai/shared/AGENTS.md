@@ -117,14 +117,14 @@ A recorder comparison on 2026-09-16 found these Bash/zsh differences:
 
 Quoted globs, matching `*.md`, brace expansion, ANSI-C octal escapes, home expansion, and backslash line continuation produced the same words in that sample.
 The lexer reads a plain multi-line command into the segments bash runs: commands joined by newlines and list operators, with comments and quoted newlines.
-It reads a here-document only where a recognized read that takes only content from its input, such as `cat`, or a record sink, such as `git commit -F -`, takes it as the first word of a segment whose output reaches no pipe, directly, through a compound command around it, or as a coprocess, and whose name no earlier function definition, `hash -p`, `alias`, or `enable` rebinds.
+It reads a here-document only where a recognized read that takes only content from its input, such as `cat`, or a record sink, such as `git commit -F -`, takes it as the first word of a segment whose output reaches no pipe, directly, through a compound command around it, or as a coprocess, in a command where nothing can rebind a name: no function definition, `hash -p`, `alias`, `enable`, write to `BASH_CMDS` or `BASH_ALIASES`, `eval`, `trap`, `source`, or a program the reading cannot name.
 The lexer marks each segment whose output goes to a pipe or whose input comes from one, through every compound command around it.
 A substitution, `$(…)`, `${…}`, or a backquote, is one unresolvable word that ends where bash ends it.
 So are `((…))` and `[[ … ]]` in command position, which run no program, and an array assignment's subscript or value.
 A `for` or `select` loop header is a segment that runs no program; its values stay words, which `block-sensitive-paths.py` judges as reads.
 A line continuation joins its lines, as bash joins them outside single quotes and comments.
 A multi-line command the lexer cannot read has no reading, so both hooks judge its text as they judge any such command: an unclosed quote or here-document, syntax the lexer does not read on one line, or another program's here-document.
-Both hooks take the path spellings in such text from `shell_words.text_paths()`, which keeps a quoted or escaped space inside one spelling and joins a relative spelling to the working directory and to each `cd` target in the text.
+Both hooks take the path spellings in such text from `shell_words.unlexable_text_paths()`, which keeps a quoted or escaped space inside one spelling, also takes every piece between quotes and braces so a stray quote hides no name, and joins a relative spelling to the working directory and to each directory the text's `cd` targets may reach.
 The recorder reset `PATH` after shell startup because this host's zsh startup changes it.
 
 - `just apps test shared` — this module.

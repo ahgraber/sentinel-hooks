@@ -22,7 +22,7 @@ Each segment carries the directories it may run in; a relative path after a
 directory change is unresolvable and carries its spelling in each of them.
 Each segment also records whether its output or input is a pipe, including
 through a piped compound command around it or as a coprocess. A closing word
-with no opener refuses the whole command. `text_paths` takes the path
+with no opener refuses the whole command. `unlexable_text_paths` takes the path
 spellings from text the lexer refuses, for a hook that judges it by text.
 """
 
@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import glob
-from itertools import pairwise
 import os
 import re
 from typing import Literal, NamedTuple
@@ -75,6 +74,10 @@ class Segment(list[Word]):
     `pipes_out` holds whether the command's output goes to another program, and
     `piped_in` whether its input comes from one, directly or through a piped
     compound command around it. A coprocess's output always goes to a pipe.
+
+    A `defines_function` segment binds a name to a body, as `name()` or
+    `function name` does; the name is a plain word, since a definition does
+    not run a program.
     """
 
     def __init__(
@@ -86,6 +89,7 @@ class Segment(list[Word]):
         loop_header: bool = False,
         pipes_out: bool = False,
         piped_in: bool = False,
+        defines_function: bool = False,
     ) -> None:
         super().__init__(words)
         self.separator = separator
@@ -93,6 +97,7 @@ class Segment(list[Word]):
         self.loop_header = loop_header
         self.pipes_out = pipes_out
         self.piped_in = piped_in
+        self.defines_function = defines_function
 
 
 @dataclass(frozen=True)
@@ -897,15 +902,21 @@ def unresolved_paths(value: str) -> tuple[str, ...]:
 
 
 _TEXT_BREAKS = frozenset(" \t\n;&|()<>=`")
+# Everything that can end a file name in text read without quoting rules: the
+# breaks above, quotes, a backslash, a `$`, and brace-expansion syntax.
+_TEXT_PIECES = re.compile(r"[\s;&|()<>=`'\"\\${},]+")
 
 
-def text_paths(command: str, cwd: str | None) -> tuple[str, ...]:
+def unlexable_text_paths(command: str, cwd: str | None) -> tuple[str, ...]:
     """Spellings of the paths in text the lexer cannot read, for a hook that judges it by text.
 
-    Quotes group words, a quote left open ends at its line, and a backslash
-    escapes the next character, so a path that holds a space stays one
-    spelling. A relative spelling is also joined to `cwd` and to each `cd` or
-    `pushd` target the text names, since the text may change directory first.
+    The spellings are the words read with quoting rules, where quotes group
+    words, a quote left open ends at its line, and a backslash escapes the next
+    character, so a path that holds a space stays one spelling; and the pieces
+    between every quote, operator, and brace, read without them. A fallback
+    must find every name, so it takes both. A relative spelling is also joined
+    to `cwd` and to each directory the text's `cd` or `pushd` targets may
+    reach, since the text may change directory first.
     """
     words: list[str] = []
     current: list[str] = []
@@ -935,12 +946,28 @@ def text_paths(command: str, cwd: str | None) -> tuple[str, ...]:
     if current:
         words.append("".join(current))
     roots = [cwd] if cwd else []
-    for previous, word in pairwise(words):
-        if previous in {"cd", "pushd"} and not word.startswith("-"):
-            target = os.path.expanduser(word)
-            roots.append(os.path.join(cwd, target) if cwd and not os.path.isabs(target) else target)
+    for index, word in enumerate(words):
+        if word not in {"cd", "pushd"}:
+            continue
+        # The target is the first word after the options, which `--` ends.
+        operands = words[index + 1 :]
+        while operands and operands[0].startswith("-") and operands[0] != "-":
+            ended, operands = operands[0] == "--", operands[1:]
+            if ended:
+                break
+        if operands:
+            target = os.path.expanduser(operands[0])
+            # A relative target may follow any directory an earlier `cd` reached.
+            roots.extend(
+                [target] if os.path.isabs(target) or not roots else [os.path.join(root, target) for root in roots]
+            )
+    # A quote the reading takes for an opening one may be an escaped or a
+    # `$'…'` one, which would hide every later name; every piece between
+    # quotes, operators, and braces is a spelling too, so the union finds what
+    # either reading would.
+    pieces = [piece for piece in _TEXT_PIECES.split(command.replace("\\\n", "")) if piece]
     spellings = []
-    for word in words:
+    for word in dict.fromkeys([*words, *pieces]):
         spellings.append(word)
         if not os.path.isabs(os.path.expanduser(word)):
             spellings.extend(os.path.join(root, word) for root in roots)
@@ -1043,6 +1070,16 @@ def _reserved(word: Word | _Token, names: set[str] = _RESERVED) -> bool:
     return not word.quoted and word.value in names
 
 
+def _timed(segment: list[Word]) -> bool:
+    """Return whether `segment` holds only `time` and its options, before what it times."""
+    return (
+        bool(segment)
+        and segment[0].kind == "command"
+        and _reserved(segment[0], {"time"})
+        and all(word.kind == "option" for word in segment[1:])
+    )
+
+
 def _expands(value: str) -> bool:
     """Return whether an unresolvable word's text holds an expansion, not only a relative path."""
     return any(char in value for char in "$`{*?[")
@@ -1104,7 +1141,8 @@ def _target(words: list[Word]) -> str | object:
         if option == "--":
             break
         if "P" in option:
-            # `-P` resolves links before `..`, which these spellings do not.
+            # `-P` sets the directory to the physical path, so a later `..`
+            # climbs from a link's target, which these spellings do not show.
             return _UNKNOWN
     if name == "popd" or len(operands) > 1:
         return _UNKNOWN
@@ -1305,7 +1343,12 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
     # A `|` before the next command or compound feeds it; `coproc` sends its output to a pipe.
     fed = False
     coprocess = False
-    mismatched = False
+    # Text bash refuses: a closing word with no opener, or a `|` after no command.
+    unreadable = False
+    # A `for` or `select` header just ended, so a `{` here is the loop's body.
+    loop_body_next = False
+    # The segment being ended holds the name a `function` keyword binds.
+    naming_function = False
 
     def around() -> _Compound | None:
         return compounds[-1] if compounds else None
@@ -1325,9 +1368,9 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
 
     def close_compound(closer: str) -> None:
         """Close the innermost compound `closer` ends, or mark the text unreadable when it ends none."""
-        nonlocal closed_start, mismatched
+        nonlocal closed_start, unreadable
         if not compounds or compounds[-1].opener not in _CLOSERS[closer]:
-            mismatched = True
+            unreadable = True
             return
         closing = compounds.pop()
         if closing.opener != "()":
@@ -1345,10 +1388,18 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
 
     def end_segment(separator: str) -> None:
         nonlocal segment, keywords, has_command, header, closed_start, fed, coprocess
+        nonlocal unreadable, loop_body_next, naming_function
+        if separator == "(" and _timed(segment):
+            # `time ( … )` times a subshell; `time` is a keyword before it.
+            keywords.extend(replace(word, kind="plain word") for word in segment)
+            segment = []
         # A lone name before `(` is the name a function definition binds, which does not run a program.
-        defines = separator == "(" and len(segment) == 1 and segment[0].kind == "command"
-        if defines and _NAME.fullmatch(segment[0].value):
-            segment = [replace(segment[0], kind="plain word")]
+        defines = naming_function or (separator == "(" and len(segment) == 1 and segment[0].kind == "command")
+        if defines and segment:
+            segment = [replace(segment[0], kind="plain word"), *segment[1:]]
+        naming_function = False
+        if separator == "|" and not segment and closed_start is None:
+            unreadable = True
         # A pipe after a compound command carries the output of every command inside it.
         if closed_start is not None and separator == "|":
             for inner in segments[closed_start:]:
@@ -1364,9 +1415,13 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
                     loop_header=header is not None,
                     pipes_out=separator == "|" or coprocess or (outer is not None and outer.coprocess),
                     piped_in=fed or (outer is not None and outer.fed),
+                    defines_function=defines,
                 )
             )
             fed = coprocess = False
+        # Newlines between a loop header and its body end no command.
+        if header is not None or segment:
+            loop_body_next = header is not None
         directories.follow(keywords + segment, separator)
         segment, keywords = [], []
         has_command = False
@@ -1451,8 +1506,18 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
         if function_name:
             segment.append(Word(token.value, "plain word", (), None, token.quoted))
             function_name = False
+            naming_function = True
             end_segment(";")
             continue
+        # `time` before a compound command times it, as a keyword does.
+        if (
+            _timed(segment)
+            and redirect is None
+            and not token.quoted
+            and (token.value in _COMPOUND_OPENERS or token.value in {"case", "coproc", "function"})
+        ):
+            keywords.extend(replace(word, kind="plain word") for word in segment)
+            segment, has_command = [], False
         if not segment and redirect is None and not token.quoted:
             if token.value == "case":
                 open_compound("case")
@@ -1493,6 +1558,7 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
                 header = "values"
             else:
                 end_segment(";")
+                loop_body_next = False
                 keywords.append(Word("do", "plain word"))
             continue
         # The values of a `for` or `select` loop reach its body through the loop
@@ -1514,10 +1580,14 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
         # assignment or a redirection, `if` is the name of the program to run.
         if not segment and redirect is None and _reserved(token, _KEYWORDS):
             keywords.append(Word(token.value, "plain word"))
-            if token.value in _KEYWORD_OPENERS:
+            if token.value == "{" and loop_body_next and compounds and compounds[-1].opener in _LIST_LOOPS:
+                # Bash takes a `{ …; }` group as the body of `for` or `select`; its `}` ends the loop.
+                compounds[-1] = compounds[-1]._replace(opener="{")
+            elif token.value in _KEYWORD_OPENERS:
                 open_compound(token.value)
             elif token.value in _CLOSERS:
                 close_compound(token.value)
+            loop_body_next = False
             continue
         moved = directories.moved
         produced = _resolve(token, directories.roots(), home_known=directories.home_known)
@@ -1559,7 +1629,7 @@ def _lex(command: str, cwd: str | None) -> list[Segment] | None:  # noqa: C901
         redirect = None
     # A loop header, a `case`, or a `function` still open never closed, which bash refuses.
     # A closing word with no opener to match is text bash cannot run.
-    return None if header is not None or cases or function_name or mismatched else segments
+    return None if header is not None or cases or function_name or unreadable else segments
 
 
 def lex(command: str, cwd: str | None) -> list[Segment] | None:

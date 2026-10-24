@@ -166,3 +166,25 @@
 - [x] Record whether each recorded program's output and input are pipes, compare them with the reading in a property, and generate piped compound commands, `until`, `select`, `coproc`, function calls, and here-documents inside compound commands.
 
 - [x] Run every agent's suite after these fixes: shared 2949 passed and 1 skipped, claude 651 passed and 2 expected failures, codex 54, copilot 66, pi 37, and 315 node tests, on 2026-10-22.
+
+- [x] Apply the rebinding rule to the whole command, so a rebinding after the reader in a loop counts, and add writes to `BASH_CMDS` and `BASH_ALIASES`, `eval` and `trap` with code, and `source`; leave `alias`, `enable`, and `trap` that only list or reset out of it.
+
+- [x] Record a function definition once, as a lexer mark the classifier reads, for any name bash accepts.
+
+- [x] Take the `cd` target after its options in unreadable text, and rename that splitter `unlexable_text_paths`.
+
+- [x] Count a command whose program the reading cannot name, such as `$E` or `$(echo eval)`, as one that can rebind a name.
+
+- [x] Judge the union of the quote-aware spellings and the pieces between every quote, operator, and brace in unreadable text, and follow a chain of relative `cd` targets there.
+
+- [x] Compare a program's standard input with the last here-document body on descriptor 0 in the bash comparison.
+
+- [x] Make the directory after `cd -P` unknown again, as the baseline states: `-P` sets the directory to the physical path, so a later `cd ..` climbs from a link's target, which verification on 2026-10-23 confirmed with a real link.
+
+- [x] Read `time` before a compound command and a `{ …; }` body of `for`, and give no reading to a `|` after no command, as in `{ …; }& | cat`.
+
+- [x] Build the words a program receives with one helper in the property tests, which drops redirection targets.
+
+- [x] Run every agent's suite after these fixes: shared 2979 passed and 1 skipped, claude 651 passed and 2 expected failures, codex 54, copilot 66, pi 37, and 318 node tests, on 2026-10-23.
+
+- [x] Run every agent's suite after the `cd -P` revert, the unnamed-program rebinder, and the fallback union: shared 2987 passed and 1 skipped, claude 651 passed and 2 expected failures, codex 54, copilot 66, pi 37, and 322 node tests, on 2026-10-23.

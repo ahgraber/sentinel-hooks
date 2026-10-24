@@ -37,7 +37,7 @@ A here-document SHALL be data only where its reader is a data reader, one of the
 - `gh pr` or `gh issue` given `--body-file -` or `--body-file=-`;
 - `tee`, whose operands are judged as the writes they are.
 
-The reader SHALL be the first word of its segment, with no assignment and no wrapper before it, and no earlier command in the text that rebinds its name, such as a function definition or `hash -p`.
+The reader SHALL be the first word of its segment, with no assignment and no wrapper before it, in a command with nothing that can change which program a name runs, before or after the reader: a function definition, `hash -p`, an alias, a write to bash's command or alias tables, text run where the reading cannot see it, as `eval`, `trap`, and `source` run it, or a program the reading cannot name, as `$E` names one.
 The reader SHALL NOT pipe its output to another program, whether its own segment pipes, a compound command around it pipes, or it runs as a coprocess.
 A path inside a data body is text, names no file, and is not judged; the command's own words and redirections are judged as they are on one line.
 A here-document read by any other program SHALL be judged as program text handed to it, as text `echo` pipes into a shell is: the command is not recognized, and a guarded or block path inside the body is found.
@@ -171,6 +171,6 @@ A command with any unrecognized segment keeps the recognition reason, because it
 
 #### Scenario: ANamedReaderThatMayRunItsInputFallsBack
 
-- **GIVEN** a data reader that pipes into another program, directly or from inside a group, subshell, or loop that pipes, runs as a coprocess, follows a wrapper such as `env -S`, follows an assignment such as `GIT_EDITOR=sh`, follows an earlier definition of its name as a function or a `hash -p` of it, or is `git` with `-c` or `-e`
+- **GIVEN** a data reader that pipes into another program, directly or from inside a group, subshell, or loop that pipes, runs as a coprocess, follows a wrapper such as `env -S`, follows an assignment such as `GIT_EDITOR=sh`, shares its command with a function definition, `hash -p`, an alias, a write to `BASH_CMDS`, `eval`, `trap`, or `source`, before or after it in a loop, or is `git` with `-c` or `-e`
 - **WHEN** its here-document names a guarded path
 - **THEN** the gate applies, and a block path in the body refuses the command
