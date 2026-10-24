@@ -256,6 +256,13 @@ def test_a_multi_line_command_with_a_substitution_or_a_shell_body_asks(world, mo
         # A body bash expands is unresolvable, so the paths written in it are judged.
         ("cat <<EOF\n$X ~/base/file\nEOF", "ask"),
         ("cat <<EOF\n$X ~/base/private\nEOF", "block"),
+        # Bash delivers the last of several bodies, and expands every one under an unquoted delimiter.
+        ("cat <<'A' <<'B'\nrm ~/base/file\nA\nsafe\nB", "allow"),
+        ("cat <<A <<'B'\n$X ~/base/file\nA\nsafe\nB", "ask"),
+        ("cat <<'A' <<B\nsafe\nA\n$X ~/base/file\nB", "ask"),
+        # A numbered here-document a data reader takes is data; a shell's is its program text.
+        ("cat 3<<'EOF'\nrm ~/base/file\nEOF", "allow"),
+        ("bash /dev/fd/3 3<<'EOF'\nrm ~/base/file\nEOF", "ask"),
         # A checksum check reads every file its list names, so a block path in the list is refused.
         ("sha256sum -c <<'EOF'\n0000  ~/base/private\nEOF", "block"),
         # `|&` pipes the reader's output on, as `|` does.
@@ -326,6 +333,53 @@ def test_a_multi_line_command_reaches_its_one_line_sensitive_verdict(tmp_path, m
     ],
 )
 def test_a_here_document_piped_on_is_program_text(world, monkeypatch, capsys, command, expected):
+    assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        # A pipe after a compound command carries the output of every command inside it.
+        ("{\ncat <<'EOF'\nrm ~/base/file\nEOF\n} | sh", "ask"),
+        ("(\ncat <<'EOF'\nrm ~/base/file\nEOF\n) | sh", "ask"),
+        ("case x in x) cat <<'EOF'\nrm ~/base/file\nEOF\n;; esac | sh", "ask"),
+        ("{\ncat <<'EOF'\nrm ~/base/file\nEOF\n} 2>&1 | sh", "ask"),
+        ("{\ncat <<'EOF'\ncat ~/base/private\nEOF\n} | sh", "block"),
+        ("{ echo 'rm ~/base/file'; } | sh", "ask"),
+        ("for i in 1; do echo 'rm ~/base/file'; done | sh", "ask"),
+        ("if true; then echo 'rm ~/base/file'; fi | sh", "ask"),
+        # A pipe before a compound command feeds every command inside it.
+        ("echo 'rm ~/base/file' | { true; sh; }", "ask"),
+        ("echo 'rm ~/base/file' | while read -r l; do sh; done", "ask"),
+        # A coprocess sends its output to a pipe the shell reads.
+        ("coproc cat <<'EOF'\nrm ~/base/file\nEOF", "ask"),
+        # A reader whose output is piped does not keep its body as data, whatever program reads the pipe, as on one line.
+        ("{\ncat <<'EOF'\nrm ~/base/file\nEOF\n} | wc -l", "ask"),
+        # A read inside a piped compound command is still a read.
+        ("for f in a b; do cat ~/base/file; done | sort", "allow"),
+    ],
+)
+def test_a_pipe_reaches_every_command_of_a_compound_command(world, monkeypatch, capsys, command, expected):
+    assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        # An earlier command that rebinds a name leaves a here-document under that name unread.
+        ("cat() { sh; }\ncat <<'EOF'\nrm ~/base/file\nEOF", "ask"),
+        ("hash -p /bin/sh cat; cat <<'EOF'\nrm ~/base/file\nEOF", "ask"),
+        # And leaves the whole command unrecognized, as a function definition does.
+        ("hash -p /bin/rm cat; cat ~/base/file", "ask"),
+        ("shopt -s expand_aliases\nalias cat=rm\ncat ~/base/file", "ask"),
+        ("enable -f ./loadable.so cat; cat ~/base/file", "ask"),
+        ('cat() { rm "$@"; }; cat ~/base/file', "ask"),
+        ('foo-bar() { rm "$@"; }; foo-bar ~/base/file', "ask"),
+        # `hash` without `-p` does not bind a name to a new program.
+        ("hash -r; cat ~/base/file", "allow"),
+    ],
+)
+def test_a_command_that_rebinds_a_name_leaves_later_names_unread(world, monkeypatch, capsys, command, expected):
     assert _bash_decision(world, monkeypatch, capsys, command)[0] == expected
 
 

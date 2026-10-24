@@ -280,6 +280,9 @@ NOT_READS = [
     f"shasum -wc /tmp/list {SKILL_FILE}",
     f"cksum --check=/tmp/list {SKILL_FILE}",
     f"sha1sum --ch /tmp/list {SKILL_FILE}",
+    # `sort` writes its temporary files into the directory `-T` names.
+    f"sort -T {SKILL_DIR} {SKILL_FILE}",
+    f"sort --temporary-directory={SKILL_DIR} {SKILL_FILE}",
     # `strings` reads further arguments from a file an `@` argument names.
     f"strings @/tmp/list {SKILL_FILE}",
     # A jq program can load a file its words do not name.

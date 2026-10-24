@@ -1,4 +1,4 @@
-"""Record the words the shell passes to each program of a command.
+"""Record the words, standard input, and pipe state the shell gives each program of a command.
 
 The read classifier decides from command text, lexing it with `shell_words`.
 The shell expands words after that lexing (braces, parameters, pathnames,
@@ -21,12 +21,16 @@ import shutil
 import signal
 import subprocess
 
-# The shim writes its own argv and the standard input it received, then exits.
-# `$RANDOM` and `$$` together keep concurrent invocations inside one command from
-# overwriting each other. `read -d ''` keeps every newline of the input, which
-# a command substitution would strip from its end.
+# The shim writes its own argv, the standard input it received, and whether its
+# output and input are pipes, then exits. `$RANDOM` and `$$` together keep
+# concurrent invocations inside one command from overwriting each other.
+# `read -d ''` keeps every newline of the input, which a command substitution
+# would strip from its end.
 SHIM = """#!{bash}
 id="$$.${{RANDOM}}"
+out=0; [ -p /dev/stdout ] && out=1
+in=0; [ -p /dev/stdin ] && in=1
+printf '%s%s' "${{out}}" "${{in}}" > "${{REC_DIR}}/pipe.${{id}}"
 IFS= read -r -d '' input
 printf '%s' "${{input}}" > "${{REC_DIR}}/in.${{id}}"
 printf '%s\\0' "$0" "$@" > "${{REC_DIR}}/rec.${{id}}"
@@ -43,11 +47,16 @@ MISSING_HANDLER = """command_not_found_handle() {
 
 @dataclass(frozen=True)
 class Invocation:
-    """One program the shell started or tried to start, the words it received, and its standard input."""
+    """One program the shell started or tried to start, the words it received, and its standard input.
+
+    `pipes_out` and `piped_in` hold whether its standard output and input were pipes.
+    """
 
     program: str
     argv: tuple[str, ...]
     stdin: str = ""
+    pipes_out: bool = False
+    piped_in: bool = False
 
     @property
     def words(self) -> tuple[str, ...]:
@@ -137,5 +146,9 @@ class ShellProbe:
             decoded = [word.decode("utf-8", "surrogateescape") for word in words]
             received = record.with_name("in." + record.name.removeprefix("rec."))
             stdin = received.read_bytes().decode("utf-8", "surrogateescape") if received.exists() else ""
-            invocations.append(Invocation(os.path.basename(decoded[0]), tuple(decoded[1:]), stdin))
+            plumbing = record.with_name("pipe." + record.name.removeprefix("rec."))
+            pipes = plumbing.read_text() if plumbing.exists() else "00"
+            invocations.append(
+                Invocation(os.path.basename(decoded[0]), tuple(decoded[1:]), stdin, pipes[:1] == "1", pipes[1:] == "1")
+            )
         return invocations

@@ -14,6 +14,7 @@ from shell_strategies import (
     commands as structured_commands,
     here_document_commands,
     line_pairs,
+    pipeline_commands,
     run_once_commands,
     substitution_commands,
     unread_commands,
@@ -76,6 +77,7 @@ def test_a_form_the_lexer_does_not_read_has_no_reading(command):
         structured_commands(ATTACHED_FORMS),
         line_pairs().map(lambda pair: pair[1]),
         here_document_commands().map(lambda case: case[0]),
+        pipeline_commands(),
     )
 )
 @settings(
@@ -96,11 +98,12 @@ def test_bash_runs_only_the_words_the_lexer_handed(probe, command):
     segments = lex(command, str(probe.work))
     assume(segments is not None)
     assume(all(word.kind != "unresolvable" for segment in segments for word in segment))
-    # A here-document is the program's standard input, not one of its words.
+    # A here-document is the program's standard input, not one of its words; a
+    # piped program's input is what the stage before it printed.
     expected = [
         (
             tuple(word.value for word in segment if word.kind != "here-document"),
-            "".join(word.value for word in segment if word.kind == "here-document"),
+            None if segment.piped_in else "".join(word.value for word in segment if word.kind == "here-document"),
         )
         for segment in segments
     ]
@@ -108,7 +111,10 @@ def test_bash_runs_only_the_words_the_lexer_handed(probe, command):
     observed = [(invocation.words, invocation.stdin) for invocation in probe.run(command)]
 
     assume(observed)
-    assert all(invocation in expected for invocation in observed), (
+    assert all(
+        any(words == invocation[0] and stdin in {None, invocation[1]} for words, stdin in expected)
+        for invocation in observed
+    ), (
         command,
         expected,
         observed,
@@ -193,6 +199,43 @@ def test_bash_runs_exactly_the_programs_the_reading_names(probe, command):
     assert ran == expected, command
 
 
+def _handed(segment) -> tuple[str, ...]:
+    """The words a segment hands its program, as the probe records them."""
+    return tuple(word.value for word in segment if not word.redirection and word.kind != "here-document")
+
+
+@given(command=pipeline_commands())
+@settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@example(command="{\ncat <<'EOF'\nrm a\nEOF\n} | sort notes.md")
+@example(command="cat a | {\nhead b\nsort c\n}")
+@example(command="coproc {\ncat a\n} </dev/null\nwait")
+@example(command="for i in 1; do\ncat a\ndone 2>&1 | head b")
+def test_the_reading_pipes_what_bash_pipes(probe, command):
+    """A program bash runs with its output or input on a pipe is a command whose reading says so.
+
+    The reading may mark more than bash pipes, never less. A here-document
+    or an input redirection also reaches a program through a pipe, so only
+    output is compared where the command holds one.
+    """
+    segments = lex(command, str(probe.work))
+    assume(segments is not None)
+    checked = subprocess.run([probe.bash, "-n"], input=command, text=True, capture_output=True, check=False)
+    assume(checked.returncode == 0)
+    compare_input = "<" not in command
+    invocations = probe.run(command)
+    # A run past the probe's timeout records nothing, which would pass unchecked.
+    assume(invocations)
+
+    for invocation in invocations:
+        matches = [segment for segment in segments if _handed(segment) == invocation.words]
+        if not matches:
+            continue
+        if invocation.pipes_out:
+            assert any(segment.pipes_out for segment in matches), (command, invocation)
+        if invocation.piped_in and compare_input:
+            assert any(segment.piped_in for segment in matches), (command, invocation)
+
+
 @given(case=here_document_commands())
 @settings(
     max_examples=150,
@@ -215,6 +258,24 @@ def test_a_here_document_word_holds_the_body_bash_delivers(probe, case):
     assert bodies[0] in received, (command, bodies, received)
     if body is not None:
         assert bodies == [body]
+
+
+@pytest.mark.parametrize(
+    ("command", "delivered"),
+    [
+        ("cat <<'A' <<'B'\none\nA\ntwo\nB", "two\n"),
+        ("cat <<'A' 0<<'B'\none\nA\ntwo\nB", "two\n"),
+        ("cat 0<<'A' <<'B' <<'C'\none\nA\ntwo\nB\nthree\nC", "three\n"),
+    ],
+)
+def test_bash_delivers_the_last_of_several_bodies_on_one_descriptor(probe, command, delivered):
+    """Every body is a word of the reading; the last on standard input is the one the program reads."""
+    segments = lex(command, str(probe.work))
+    bodies = [word.value for word in segments[0] if word.kind == "here-document"]
+
+    [invocation] = probe.run(command)
+
+    assert invocation.stdin == delivered == bodies[-1]
 
 
 @given(command=st.text())

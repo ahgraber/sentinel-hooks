@@ -300,6 +300,31 @@
       "exists": []
     },
     {
+      "command": "cd ~ && cat 'Library/Application Support/Code/User/mcp.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cd ~/.codex && cat 'auth.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat project/auth.json'",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "gh pr create --body-file - <<'EOF'\nrotated id_rsa and .env\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "{\ncat <<'EOF'\ncat .env\nEOF\n} | sh",
+      "blocked": true,
+      "exists": []
+    },
+    {
       "command": "jq -n -L . -f /dev/stdin <<'EOF'\nimport \"id_rsa\" as $k; $k\nEOF",
       "blocked": true,
       "exists": []

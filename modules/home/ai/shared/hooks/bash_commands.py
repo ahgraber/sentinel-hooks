@@ -57,7 +57,7 @@ WRITE_OPTIONS = {
     ),
     "file": ("zZCf", ("--uncompress", "--uncompress-noreport", "--compile", "--files-from")),
     "rg": ("z", ("--pre", "--search-zip", "--hostname-bin")),
-    "sort": ("o", ("--output", "--compress-program", "--files0-from")),
+    "sort": ("oT", ("--output", "--temporary-directory", "--compress-program", "--files0-from")),
     "wc": ("", ("--files0-from",)),
 }  # fmt: skip
 
@@ -323,6 +323,24 @@ def defines_function(segment: Segment) -> bool:
     return words[0].value == "function"
 
 
+def rebinds_command(segment: Segment) -> bool:
+    """Return whether this segment changes which program a later command name runs.
+
+    A function definition binds a name to a body; `hash -p` binds it to a path;
+    `alias` rebinds it once aliases expand; `enable` swaps a builtin for a
+    program or for a builtin loaded from a file.
+    """
+    if defines_function(segment):
+        return True
+    words = invoked(segment)
+    if not words:
+        return False
+    name, args = words[0].value, words[1:]
+    if name == "hash":
+        return any(arg.value.startswith("-") and "p" in arg.value for arg in args)
+    return name in {"alias", "enable"}
+
+
 def _su_code(words: list[Word]) -> list[str]:
     """Return the text `su -c` or `su --command` passes to the target user's shell."""
     for index, word in enumerate(words[1:], 1):
@@ -355,15 +373,15 @@ def reads_stdin_program(segment: list[Word]) -> bool:
     )
 
 
-def _builder(segment: Segment, *, pipe_fed: bool) -> bool:
+def _builder(segment: Segment) -> bool:
     """Whether the segment builds or runs text this reading cannot see."""
-    if defines_function(segment):
+    if rebinds_command(segment):
         return True
     words = invoked(segment)
     if not words:
-        return pipe_fed
+        return segment.piped_in
     name = os.path.basename(words[0].value)
-    if pipe_fed and (words[0].value != name or name not in READ_ONLY_UTILITIES):
+    if segment.piped_in and (words[0].value != name or name not in READ_ONLY_UTILITIES):
         return True
     if name in {"xargs", "eval"} or program_text(segment):
         return True
@@ -408,9 +426,9 @@ def _keeps_here_document_as_data(segment: Segment) -> bool:
     and the sinks that keep their input as a record: `git commit` or `git tag` with `-F -`, `gh pr` or `gh issue`
     with `--body-file -`, and `tee`. The reader is the segment's first word,
     with no assignment or wrapper before it, since either may pick another
-    program; and its output goes to no other program.
+    program; and its output does not go to another program.
     """
-    if segment.separator == "|" or any(word.kind == "assignment" for word in segment):
+    if segment.pipes_out or any(word.kind == "assignment" for word in segment):
         return False
     words = [word for word in segment if not word.redirection]
     if not words or words[0].kind != "command":
@@ -433,12 +451,18 @@ def unread_here_document(segments: list[Segment]) -> bool:
     """Return whether any here-document is read by a program that may act on it.
 
     Such a command has no reading: a caller judges its whole text, the body
-    included, as text it cannot lex.
+    included, as text it cannot lex. A here-document after a command that
+    rebinds a name counts as read by such a program, since the reader's name
+    does not say which program runs.
     """
-    return any(
-        any("<<" in (word.redirection or "") for word in segment) and not _keeps_here_document_as_data(segment)
-        for segment in segments
-    )
+    rebound = False
+    for segment in segments:
+        if any("<<" in (word.redirection or "") for word in segment) and (
+            rebound or not _keeps_here_document_as_data(segment)
+        ):
+            return True
+        rebound = rebound or rebinds_command(segment)
+    return False
 
 
 def read_only(segment: list[Word]) -> bool:
@@ -721,7 +745,7 @@ class SegmentReading:
     """One pipeline segment, with what its words say it does."""
 
     words: Segment
-    defines_function: bool
+    rebinds_command: bool
     programs: tuple[str, ...]
     builder: bool
     read_only: bool
@@ -753,8 +777,8 @@ class Reading:
         """Name what kept this command from being read as a read or a run."""
         if self.unlexable is not None:
             return self.unlexable
-        if any(segment.defines_function for segment in self.segments):
-            return "a function definition, which rebinds a command name"
+        if any(segment.rebinds_command for segment in self.segments):
+            return "a function definition, `hash -p`, `alias`, or `enable`, which rebinds a command name"
         if any(segment.programs for segment in self.segments):
             return "program text to an interpreter, eval, or trap"
         if self.has_builder:
@@ -771,15 +795,21 @@ class Reading:
 
 
 def _piped_programs(segments: list[SegmentReading]) -> tuple[str, ...]:
-    """Text emitted by echo or printf into a shell's standard input."""
+    """Text emitted by echo or printf into a shell's standard input.
+
+    The producers are the commands before the shell back to the start of the
+    pipelines around it. A compound command can join pipelines, so this may
+    take in an earlier pipeline's text too, which only adds text to judge.
+    """
     programs = []
     for index, segment in enumerate(segments):
-        if segment.programs or not reads_stdin_program(segment.words):
+        if segment.programs or not segment.words.piped_in or not reads_stdin_program(segment.words):
             continue
         source = index - 1
-        while source >= 0 and segments[source].words.separator == "|":
-            producer = invoked(segments[source].words)
-            if producer and os.path.basename(producer[0].value) in {"echo", "printf"}:
+        while source >= 0 and (segments[source].words.pipes_out or segments[source].words.piped_in):
+            earlier = segments[source].words
+            producer = invoked(earlier)
+            if earlier.pipes_out and producer and os.path.basename(producer[0].value) in {"echo", "printf"}:
                 programs.append(" ".join(word.value for word in producer[1:]))
             source -= 1
     return tuple(programs)
@@ -802,7 +832,7 @@ def read(command: str, cwd: str | None = None) -> Reading:
     if unread_here_document(lexed):
         return Reading(command, (), (), UNREAD_HERE_DOCUMENT)
     segments = []
-    for index, words in enumerate(lexed):
+    for words in lexed:
         directories = (None,) if words.directories is None else words.directories
         destroyed = (
             target
@@ -812,9 +842,9 @@ def read(command: str, cwd: str | None = None) -> Reading:
         segments.append(
             SegmentReading(
                 words=words,
-                defines_function=defines_function(words),
+                rebinds_command=rebinds_command(words),
                 programs=tuple(program_text(words)),
-                builder=_builder(words, pipe_fed=index > 0 and lexed[index - 1].separator == "|"),
+                builder=_builder(words),
                 read_only=read_only(words),
                 run_targets=tuple(run_targets(words)),
                 destroyed=tuple(dict.fromkeys(destroyed)),

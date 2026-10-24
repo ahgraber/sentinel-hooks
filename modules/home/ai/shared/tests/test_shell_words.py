@@ -710,6 +710,8 @@ def test_an_unreadable_here_document_makes_the_command_unresolvable(lexer, shell
         ("cat <<'EOF'\nx\nEOF\nhead c", [["cat", "x\n"], ["head", "c"]]),
         ("cat <<'A' <<'B'\none\nA\ntwo\nB", [["cat", "one\n", "two\n"]]),
         ("cat <<'A'; cat <<'B'\none\nA\ntwo\nB", [["cat", "one\n"], ["cat", "two\n"]]),
+        # A numbered here-document is the body of that descriptor, and still a word of its command.
+        ("cat 3<<'A'\none\nA", [["cat", "one\n"]]),
         ("cat 0<<'EOF'\nx\nEOF", [["cat", "x\n"]]),
         ("cat <<'EOF' # c\nx\nEOF", [["cat", "x\n"]]),
     ],
@@ -1087,3 +1089,66 @@ def test_a_bracket_expression_glob_reads_differently_is_unresolvable(lexer, shel
     word = lexer.lex(f"cat {pattern}", str(repository))[0][1]
 
     assert word.kind == "unresolvable"
+
+
+@pytest.mark.parametrize(
+    ("command", "marks"),
+    [
+        ("cat a | sort", [("cat", "out"), ("sort", "in")]),
+        # A pipe after a compound command carries the output of every command inside it.
+        ("{ cat a; head b; } | sort", [("cat", "out"), ("head", "out"), ("sort", "in")]),
+        ("( cat a ) | sort", [("cat", "out"), ("sort", "in")]),
+        ("if true; then cat a; fi | sort", [("true", "out"), ("cat", "out"), ("sort", "in")]),
+        ("case x in x) cat a;; esac | sort", [("cat", "out"), ("sort", "in")]),
+        ("{ cat a; } 2>&1 | sort", [("cat", "out"), ("1", "out"), ("sort", "in")]),
+        # A pipe before a compound command feeds every command inside it.
+        ("cat a | { true; sort; }", [("cat", "out"), ("true", "in"), ("sort", "in")]),
+        ("cat a | while read -r l; do sort; done", [("cat", "out"), ("read", "in"), ("sort", "in")]),
+        # A coprocess sends its output to a pipe.
+        ("coproc cat a", [("cat", "out")]),
+        ("coproc { cat a; }", [("cat", "out")]),
+        # A compound command after `;` or `&&` is neither fed nor piped.
+        ("cat a; { head b; } && sort", [("cat", ""), ("head", ""), ("sort", "")]),
+        # The parentheses of a function definition do not open a subshell.
+        ("f() { cat a; } ; sort", [("f", ""), ("cat", ""), ("sort", "")]),
+    ],
+)
+def test_a_segment_knows_whether_its_output_and_input_are_pipes(lexer, shell_world, command, marks):
+    _, repository = shell_world
+
+    segments = lexer.lex(command, str(repository))
+
+    assert [
+        (segment[0].value, ("out" if segment.pipes_out else "") + ("in" if segment.piped_in else ""))
+        for segment in segments
+    ] == marks
+
+
+@pytest.mark.parametrize("command", ["cat a; }", "cat a; fi | sh", "{ cat a; fi", "( cat a; }"])
+def test_a_closing_word_with_no_opener_has_no_reading(lexer, shell_world, command):
+    _, repository = shell_world
+
+    assert lexer.lex(command, str(repository)) is None
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        # Quotes group words, so a path that holds a space stays one spelling.
+        ("cat 'a b/c", ["a b/c"]),
+        ('cat "a b/c', ["a b/c"]),
+        ("cat a\\ b/c'", ["a b/c"]),
+        # A quote left open ends at its line.
+        ("cat 'a b\nhead c", ["a b", "head", "c"]),
+        # `=` ends a spelling, as in `if=<file>`.
+        ("dd if=a/b '", ["dd", "if", "a/b"]),
+    ],
+)
+def test_text_paths_keep_a_spelling_whole(lexer, command, expected):
+    assert [spelling for spelling in lexer.text_paths(command, None) if spelling != "cat"] == expected
+
+
+def test_text_paths_join_a_relative_spelling_to_each_directory_the_text_may_be_in(lexer):
+    spellings = lexer.text_paths("cd /x && cat 'a/b", "/w")
+
+    assert {"/w/a/b", "/x/a/b"} <= set(spellings)

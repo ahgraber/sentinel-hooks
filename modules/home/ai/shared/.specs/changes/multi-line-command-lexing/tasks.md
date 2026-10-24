@@ -153,4 +153,16 @@
 
 - [x] Search unreadable text whole for the declared block paths in `block-sensitive-paths.py`, so a block path that holds a space is refused inside a shell's here-document.
 
-- [x] Run every agent's suite after these fixes.
+- [x] Run every agent's suite after these fixes: shared 2883 passed and 1 skipped, claude 651 passed and 2 expected failures, codex 54, copilot 66, pi 37, and 310 node tests, on 2026-10-22.
+
+- [x] Mark each segment whose output goes to a pipe or whose input comes from one, through every compound command around it and for a coprocess, and judge here-document readers, piped shells, and pipe-fed programs by those marks.
+
+- [x] Leave no here-document data, and the command unrecognized, after a command that rebinds a name: a function definition, `hash -p`, `alias`, or `enable`.
+
+- [x] Take the path spellings in unreadable text from one place for both hooks, keeping quoted and escaped spaces and joining relative spellings to the working directory and each `cd` target.
+
+- [x] Admit `sort` with `-T` or `--temporary-directory` as a write, after a second audit of every recognized read for options that write or run.
+
+- [x] Record whether each recorded program's output and input are pipes, compare them with the reading in a property, and generate piped compound commands, `until`, `select`, `coproc`, function calls, and here-documents inside compound commands.
+
+- [x] Run every agent's suite after these fixes: shared 2949 passed and 1 skipped, claude 651 passed and 2 expected failures, codex 54, copilot 66, pi 37, and 315 node tests, on 2026-10-22.

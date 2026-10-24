@@ -228,7 +228,11 @@ def _destroyed_ancestor(reading: bash_commands.Reading, cwd: str | None) -> str 
     """
     if reading.unlexable is not None:
         named = any(name in reading.command.split() for name in bash_commands.DESTRUCTIVE)
-        candidates = shell_words.unresolved_paths(reading.command) if named else ()
+        candidates = (
+            (*shell_words.unresolved_paths(reading.command), *shell_words.text_paths(reading.command, cwd))
+            if named
+            else ()
+        )
     else:
         candidates = [operand for segment in reading.segments for operand in segment.destroyed]
     for candidate in candidates:
@@ -285,9 +289,11 @@ def command_protected_class(command: str, cwd: str | None = None) -> str | None:
 def _reading_class(reading: bash_commands.Reading, cwd: str | None) -> str | None:
     """Return the class `reading` reaches, judging its paths and its unresolved text."""
     if reading.unlexable is not None:
-        if POLICY.classes[CREDENTIAL].mentioned_in(reading.command):
+        # The whole text, and each path spelling in it with quotes and escapes removed.
+        spellings = (reading.command, *shell_words.text_paths(reading.command, cwd))
+        if any(POLICY.classes[CREDENTIAL].mentioned_in(spelling) for spelling in spellings):
             return CREDENTIAL
-        return GATED if POLICY.guarded.mentioned_in(reading.command) else None
+        return GATED if any(POLICY.guarded.mentioned_in(spelling) for spelling in spellings) else None
     classes = []
     for program in reading.piped_programs:
         if POLICY.classes[CREDENTIAL].mentioned_in(program):

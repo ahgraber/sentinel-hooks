@@ -106,6 +106,14 @@ An interim step on 2026-10-15 admitted only `cat` and the sinks, and a later ste
 Verification twice found a recognized read that takes file names or a program from its input: checksum `-c` on 2026-10-20, and `strings @/dev/stdin` and `jq -f /dev/stdin` on 2026-10-21.
 Each was also a one-line gap in the recognized reads, closed there after an audit of every recognized read against the files its words name.
 The user chose on 2026-10-21 to name the data readers as well, so a recognized read the audit misses still does not hide a body; every other here-document reaches the fallback, which judges the whole text as before this change.
+`grep -f -` and the other pattern options take patterns from the body, which are content: a pattern selects lines and names no file.
+
+Two conditions on the reader follow from what a name and a pipe mean to bash, not from the reader alone.
+A reader's output reaches another program through its own `|`, through a compound command around it that is piped, as in `{ cat <<'EOF' … }  | sh`, or as a coprocess, so the lexer marks each segment whose output goes to a pipe and each whose input comes from one, including through every compound around it.
+The marks also feed the shell that reads piped text, so `echo … | { true; sh; }` and `{ echo …; } | sh` are judged as `echo … | sh` is.
+A reader's name says which program runs only while nothing earlier rebinds it: a function definition, `hash -p`, `alias` once aliases expand, and `enable` each change what a later name runs, so after any of them no here-document is data and the command is not recognized, as a function definition already left it.
+`source` runs a file the hook cannot see, which may rebind names, and may equally act on its own; that is the stated limit for a script a command runs, and sourcing adds nothing to it.
+An earlier `export PATH=` stays the limit decided on 2026-10-17.
 The fallback meets the requirement that a body read by any other program is judged as program text: the command is not recognized, and a guarded or block path in the body is found.
 The conditions on the reader are policy and stay.
 
@@ -146,6 +154,11 @@ The body's program is not known from the header, so a placeholder value gets the
 **Chosen:** both fallbacks stay, and apply only where the lexer still returns no reading: an unclosed quote, an unterminated here-document, a here-document no data reader reads, a multi-line form the tokenizer does not yet read, a carriage return, a null byte, or syntax the lexer cannot read on one line.
 
 **Rationale:** the lexer's reach grows, but text it cannot read still reaches the hooks, and a hook that cannot read a command must still refuse what the text names.
+
+Both fallbacks judge the same path spellings, which `shell_words.text_paths()` takes from the text: quotes group words, a quote left open ends at its line, and a backslash escapes the next character, so a path that holds a space stays one spelling.
+A relative spelling is also joined to the working directory and to each `cd` or `pushd` target the text names, since unreadable text may change directory before it names a file.
+Verification on 2026-10-21 and 2026-10-22 found each fallback missing a case the other caught: a quoted block path with a space, the same path with an escaped space, and `auth.json` after `cd ~/.codex`.
+The fallbacks had split text their own ways; one splitter for both keeps them from disagreeing again.
 
 ## Architecture
 
@@ -239,4 +252,8 @@ shell_words._lex ────────── segments with word kinds; "here-
 - **Change:** `shell-lexing` `AHereDocumentBodyIsInput`: each here-document word holds its body as bash reads it, and a body a later redirection replaces is still judged, in place of a word holding the text bash delivers.
   **Source:** `AnExpandedBodyIsUnresolvable`, and the verification report of 2026-10-21.
   **Rationale:** for `cat <<A <<B` bash delivers only the second body but expands both, so a substitution in the first runs; the requirement named only the delivered text.
+  **Approved by user:** 2026-10-22
+- **Change:** `hook-tampering-blocking` `UnrecognizedCommandsAreGated`: the reader has no earlier command that rebinds its name, and does not pipe its output through a compound command around it or as a coprocess; `ANamedReaderThatMayRunItsInputFallsBack` and `TextPipedIntoAShellNamingAGuardedPath` name these forms.
+  **Source:** `AHereDocumentIsDataOnlyForNamedReaders`, and the verification report of 2026-10-22.
+  **Rationale:** `{ cat <<'EOF' … } | sh` and `cat() { sh; }` before a `cat` here-document each turned a data body into a program, and `{ echo …; } | sh` hid piped text from the baseline scenario.
   **Approved by user:** 2026-10-22

@@ -91,9 +91,11 @@ except Exception as _exc:  # noqa: BLE001 -- preserve independent checks and rep
     _MANIFEST = {}
     MANIFEST_ERROR = str(_exc)
 
-# `(?!)` matches nothing; `main()` reports the manifest failure.
-_BLOCK_PATH = rf"(?:^|[/\\])(?:{_credential_alternation(_CREDENTIAL_PATHS)})" if _CREDENTIAL_PATHS else r"(?!)"
-AGENT_CREDENTIAL_RE = re.compile(rf"{_BLOCK_PATH}[^/\\]*$", re.IGNORECASE)
+AGENT_CREDENTIAL_RE = re.compile(
+    # `(?!)` matches nothing; `main()` reports the manifest failure.
+    rf"(?:^|[/\\])(?:{_credential_alternation(_CREDENTIAL_PATHS)})[^/\\]*$" if _CREDENTIAL_PATHS else r"(?!)",
+    re.IGNORECASE,
+)
 
 CRED_DIR_RE = re.compile(r"(?:^|[/\\])\.(?:ssh|aws|kube|gnupg|azure)(?:[/\\]|$)", re.IGNORECASE)
 
@@ -426,16 +428,6 @@ def _write_words(segment):
         yield from words[2:]
 
 
-# Shell syntax that can end a file name in text the lexer cannot read: space,
-# quotes, operators, substitution brackets, and the `=` of `if=<file>`.
-_TEXT_PIECES = re.compile(r"[\s;&|()<>`'\"=]+")
-
-# A declared block path may hold a space, which splits it across pieces, so
-# unreadable text is also searched whole, with its quotes and escapes removed.
-_BLOCK_PATH_IN_TEXT_RE = re.compile(_BLOCK_PATH, re.IGNORECASE)
-_TEXT_QUOTING = re.compile(r"['\"\\]")
-
-
 def bash_blocked_target(command: str, cwd: str | None = None) -> str | None:
     """Return the path a Bash command is refused for, or None."""
     refusal = _bash_refusal(command, cwd)
@@ -452,18 +444,13 @@ def _bash_refusal(command: str, cwd: str | None) -> tuple[str, bool] | None:
     if segments is None or bash_commands.unread_here_document(segments):
         # No shell reading exists for this command, which holds syntax the
         # lexer refuses or a here-document a program may act on. Judge every
-        # piece of the text, the body included, by the strong rules: they
-        # anchor at the end of a name, so judging the whole text would see
-        # only its last line; a declared block path, which may hold a space,
-        # is also searched in the whole text. Whether a piece is read, written, or only
-        # mentioned is unknown, so a placeholder gets the write verdict.
-        # The tamper hook gates unresolved guarded text.
-        for piece in _TEXT_PIECES.split(command):
-            if piece and is_zero_access(piece):
-                return piece, False
-        found = _BLOCK_PATH_IN_TEXT_RE.search(_TEXT_QUOTING.sub("", command))
-        if found:
-            return found.group(0).lstrip("/\\"), False
+        # path spelling in the text, the body included, by the strong rules
+        # and the declared block paths. Whether a spelling is read, written,
+        # or only mentioned is unknown, so a placeholder gets the write
+        # verdict. The tamper hook gates unresolved guarded text.
+        for spelling in shell_words.text_paths(command, cwd):
+            if is_zero_access(spelling) or (POLICY and POLICY.verdict(spelling, "read", cwd=cwd) == "block"):
+                return spelling, False
         return None
     form_only = None
     for segment in segments:

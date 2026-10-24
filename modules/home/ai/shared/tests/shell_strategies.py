@@ -228,6 +228,8 @@ def here_document_commands(draw: st.DrawFn) -> tuple[str, str | None]:
         + closing
         + following
     )
+    # A compound command around the reader leaves it the first command bash runs.
+    command = draw(st.sampled_from(["{}", "{{\n{}\n}}", "(\n{}\n)", "case x in\nx)\n{}\n;;\nesac"])).format(command)
     body = "".join((line.lstrip("\t") if dash else line) + "\n" for line in lines)
     return command, body if delimiter != "EOF" else None
 
@@ -252,7 +254,7 @@ INNER_TEXT = st.text(alphabet="ab ;#)}'\"", max_size=6)
 
 # Compound commands that run their body exactly once, so a reading of the body
 # names every program bash runs inside them.
-RUN_ONCE = [
+ONCE = [
     lambda c: c,
     lambda c: f"if true; then\n{c}\nfi",
     lambda c: f"for i in 1; do\n{c}\ndone",
@@ -260,7 +262,38 @@ RUN_ONCE = [
     lambda c: f"(\n{c}\n)",
     lambda c: f"case x in\nx)\n{c}\n;;\nesac",
     lambda c: f"while true; do\n{c}\nbreak\ndone",
+    lambda c: f"until false; do\n{c}\nbreak\ndone",
 ]
+
+# The same, and a function called once and a coprocess waited for.
+RUN_ONCE = [
+    *ONCE,
+    lambda c: f"f() {{\n{c}\n}}\nf",
+    # The shell holds a coprocess's input open, so the recorder would wait on it forever.
+    lambda c: f"coproc {{\n{c}\n}} </dev/null\nwait",
+]
+
+# Compound commands bash connects to a pipe as a unit, so a pipe before or after
+# one feeds or carries every command inside it.
+COMPOUNDS = [*ONCE, lambda c: f"{{\n{c}\n}} 2>&1"]
+
+
+# Compound commands that may run their body any number of times, including none.
+ANY_TIMES = [
+    lambda c: f"select i in 1; do\n{c}\nbreak\ndone",
+    lambda c: f"while read -r i; do\n{c}\ndone",
+]
+
+
+@st.composite
+def pipeline_commands(draw: st.DrawFn) -> str:
+    """A pipeline whose stages are plain or compound commands, perhaps run as a coprocess."""
+    stages = [
+        draw(st.sampled_from(COMPOUNDS + ANY_TIMES))(draw(st.sampled_from(draw(line_pairs()))))
+        for _ in range(draw(st.integers(min_value=1, max_value=3)))
+    ]
+    command = " | ".join(stages)
+    return f"coproc {{\n{command}\n}} </dev/null\nwait" if draw(st.booleans()) else command
 
 
 @st.composite
