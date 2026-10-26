@@ -39,6 +39,8 @@ The shell hook is also the slowest of the seven hooks a Bash call runs, at 150 m
   The rules keep their own stop instruction, which `security-posture-alignment` recorded as theirs.
 - `destructive-ops-blocking`: the pattern-file and validation contract moves to the engine; the rule catalog and modes stay.
 - `session-tool-checks`: `perl` is no longer required.
+- `bash-command-validator`: `ReviewHeredocsForBangHistory` matches here-document syntax, not a `<<` inside quotes, with a new `QuotedHereDocumentOperatorAllowed` scenario.
+  The validator also starts Perl for every rule, so `perl` stays required until its rules move to the engine or to another matcher.
 - Retiring `block-dangerous-bash.sh`, and updating every registration that names it: the Claude, Codex, and Copilot configurations, the Copilot adapter, and the Pi dispatcher.
 - Verdict cases for each rule family over the plain, quote-spliced, backslash-escaped, and ANSI-C spellings, run against the engine.
 
@@ -83,6 +85,10 @@ The shell hook is also the slowest of the seven hooks a Bash call runs, at 150 m
   Rendering each segment from `invoked` instead of from the raw words makes a rule written for a program name hold through every wrapper.
 - A probe of the live hooks on 2026-10-16 found `block-dangerous-bash.sh` allows `/usr/bin/sudo …`, `command sudo …`, `sudo …` preceded by spaces, `\sudo …`, `env sudo …`, `nohup sudo …`, `timeout 5 sudo …`, `exec sudo …`, and `doas …`; it refuses `sudo …`, `'sudo' …`, `sudo -u root -- …`, and `su -c …`.
   The same hook refused a `grep` whose pattern held `sudo -s`, because it matches the text anywhere rather than the program a segment runs.
+- `bash-command-validator.sh` matches its here-document rule, `(?<!<)<<[^<]`, against the raw command, so on 2026-10-25 it refused `grep -n "heredoc\|<<\|newline" <file>`, which holds no here-document.
+  Tasks: a failing test in `claude/tests/test_bash_command_validator.py` that a command whose only `<<` is quoted (`grep -n '<<' file`, `grep -e "<<-" file`) exits 0, and that an unquoted here-document, one after a quoted `<<` included, still exits 2; the `bash-command-validator` delta; then the fix.
+  The rendered reading resolves quotes, so a quoted `<<` renders as a bare `<<` and the same pattern would still match it.
+  The fix reads the lexer's `here-document` word kind instead; if the validator stays a shell hook, its existing `rule_command` subject, which strips quoted spans, is the smaller fix and misses `$'…'` and escaped quotes.
 - The `security-posture-alignment` audit ledger, `.simplify/ledger-2026-10-05-2343.md` (untracked), counts the blast radius of adopting the lexer in `block-destructive-ops.py`, and names the tests that pin the current rewrite: `TestNormalize`, `test_obfuscated_command_still_blocks`, `test_multiword_rule_is_not_assembled_across_arguments`, and `TestCatalogueNormalizationParity` in `claude/tests/test_block_destructive_ops.py`.
 
 ## Open Questions
