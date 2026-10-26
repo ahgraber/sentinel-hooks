@@ -54,7 +54,7 @@ North star: "degradation keeps the user in control"; a row the catalog lacks or 
 - Coverage: privilege tools, passthrough wrappers, launchers, interpreters and shells, Bash and zsh builtins that run or read, the POSIX utilities, GNU coreutils, findutils, diffutils, and util-linux, the macOS and BSD counterparts, and common tools such as `rg`, `fd`, `jq`, `git`, `curl`, and `kubectl`.
   Privilege tools include `sudo`, `doas`, `su`, `runuser`, `pkexec`, `run0`, `setpriv`, `chroot`, `systemd-run`, and macOS `osascript ... with administrator privileges`.
 - An audit that writes the rows from primary sources: man pages and `--help` output for each implementation, and the distribution manual archives for Debian, Ubuntu, Fedora, RHEL, Arch, and BusyBox.
-  Fig completion specs (MIT) seed rows; GTFOBins is a checklist of programs that run commands or touch files, not a copy source.
+  Fig completion specs (MIT) and Tracekit's wrapper and launcher tables (MIT) seed rows; GTFOBins is a checklist of programs that run commands or touch files, not a copy source.
 - One argument walker over the catalog, which replaces `invocation`, `invoked`, `_strip_privilege`, `_su_code`, `_privileged_shell`, `_inline_code`, `launched_arguments`, `watch_script`, `_after_options`, `_operands`, `_option_value`, and the per-program extractors behind `destroyed_operands`.
 - Every reader of the lexer's `option` kind moves to the walker in this change: `bash_commands.py`, `block-hook-tampering.py`, `block-sensitive-paths.py`, and `block-leaks.py`.
   The lexer keeps the kind as a hint; no consumer decides an operand from it.

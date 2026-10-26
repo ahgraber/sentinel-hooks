@@ -15,7 +15,7 @@
 
 - [ ] 2.1 Move `._scratch/program-semantics-pilot/inventory.py` to `scripts/program-inventory.py` under the repository's script conventions, with a `just` recipe, extended to record shell functions and aliases the agent's shell defines.
 - [ ] 2.2 Run the inventory for each agent on each host the hooks run on and commit the results under `modules/home/ai/shared/.specs/changes/program-semantics-table/inventory/`.
-- [ ] 2.3 Write the declared coverage list `hooks/programs/_coverage.toml`: today's recognized programs (destroyers, writers, store commands, privilege tools, admitted readers, wrappers, interpreters, launchers) and the privilege tools, wrappers, launchers, interpreters, and shells this change names.
+- [ ] 2.3 Write the declared coverage list `hooks/programs/_coverage.toml`: today's recognized programs (destroyers, writers, store commands, privilege tools, admitted readers, wrappers, interpreters, launchers) and the privilege tools, wrappers, launchers, interpreters, and shells this change names, adding each wrapper, launcher, and shell in Tracekit's tables that the list lacks (`draft-table.md`, Prior art).
 
 ## 3. Catalog schema and loader
 

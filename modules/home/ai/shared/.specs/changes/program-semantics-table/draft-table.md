@@ -13,13 +13,16 @@ The catalog holds no policy.
 
 ## Prior art
 
-No existing project holds per-argument effects for many programs; the schema combines four.
+No existing project holds per-argument effects for many programs; the schema combines the first four below, and the fifth seeds rows and bypass cases.
 
 - Fig completion specs (`withfig/autocomplete`, MIT): the option, argument, and subcommand tree, `isCommand` for an argument that is a command line, and parser directives for options that must precede operands, single-dash long options, and required separators.
   The data is shallow: `src/sudo.ts` declares two of sudo's value options.
 - Codex's removed `execpolicy-legacy` (Apache-2.0): operand types `ARG_RFILES` and `ARG_WFILE`, and per-program `should_match` and `should_not_match` cases.
 - GTFOBins (GPL-3.0): a per-program list of capabilities such as shell, command, file read, and file write, used as a checklist of programs to audit.
 - `cc-safety-net` (MIT): wrapper stripping for `sudo`, `env`, `env -S`, and `command -pv`, whose tests are a source of bypass cases for the verdict table.
+- Tracekit (`Cygnux-Labs/Tracekit`, MIT, read at `218f2bf`, 2026-10-25): `tracekit/policy2/shell.py` holds tables of about 60 passthrough wrappers and 12 launchers (`WRAPPERS`, `RUNNERS`, `PARALLEL_OPTS`, `DASH_C`, `SHELL_VALUE_OPTS`, `INTERP_VALUE_OPTS`), each with the options that take a value and the positional words before the command, plus interpreter code flags (`CODE_FLAGS`) and the shells it reads (`SHELLS`) and does not (`FOREIGN_SHELLS`).
+  It has no file effects, so it seeds the wrapper, launcher, and interpreter rows and `_coverage.toml`, and each seeded row is still audited from primary sources.
+  `docs/limits.md` lists, per rule, the spellings its parser misses (a wrapper not in its tables such as `bwrap`, `git -c alias.*`, SQL sent to `psql` by here-document, `git apply`), which are bypass cases for the verdict table.
 
 ## Schema
 
