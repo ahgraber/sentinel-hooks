@@ -1,0 +1,330 @@
+# Shared path policy. ~/ is the home; <repo>/ is any checkout containing the path;
+# <project>/ is the working directory or any directory above it, and only the
+# enforcement floor uses it. A trailing / covers descendants. * matches within one component.
+
+[guarded]
+description = "Reads proceed; writes and runs require approval unless a narrower class permits them."
+
+[[guarded.paths]]
+path = "~/.claude/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/.codex/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/.copilot/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/.pi/agent/"
+reason = "an agent home: the enforcement it loads, its settings, its skills, and its instructions"
+
+[[guarded.paths]]
+path = "~/Library/Application Support/Code/User/prompts/global.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/Library/Application Support/Code/User/prompts/shell.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/.config/Code/User/prompts/global.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "~/.config/Code/User/prompts/shell.instructions.md"
+reason = "prompt text the editor gives Copilot in every session"
+
+[[guarded.paths]]
+path = "<repo>/users/*/home-manager/pi/"
+reason = "the source of a user's Pi settings and sandbox"
+
+[[guarded.paths]]
+path = "<repo>/modules/home/ai/copilot/instructions/"
+reason = "the source of Copilot's instructions"
+
+[enforcement-floor]
+description = "Reads proceed; writes and runs require approval, and no exec-through or write-through declaration permits them."
+
+[[enforcement-floor.paths]]
+path = "~/.claude/hooks/"
+reason = "the hooks Claude Code runs"
+
+[[enforcement-floor.paths]]
+path = "~/.codex/hooks/"
+reason = "the hooks Codex runs"
+
+[[enforcement-floor.paths]]
+path = "~/.copilot/hooks/"
+reason = "the hooks Copilot runs"
+
+[[enforcement-floor.paths]]
+path = "~/.pi/agent/extensions/hooks/"
+reason = "Pi's hook runner"
+
+[[enforcement-floor.paths]]
+path = "~/.pi/agent/shared-hooks/"
+reason = "the shared hooks Pi runs"
+
+[[enforcement-floor.paths]]
+path = "~/.agents/hooks/"
+reason = "hook files the editor loads in every workspace"
+
+[[enforcement-floor.paths]]
+path = "~/.vscode/agent-plugins/"
+reason = "editor agent plugins, whose hooks the editor loads whatever its hook locations say"
+
+[[enforcement-floor.paths]]
+path = "~/.claude/settings*.json"
+reason = "Claude Code's permissions, hooks, and sandbox"
+
+[[enforcement-floor.paths]]
+path = "~/.codex/config.toml"
+reason = "Codex's approval, sandbox, and reviewer policy"
+
+[[enforcement-floor.paths]]
+path = "~/.codex/*.config.toml"
+reason = "a Codex profile layer, which can widen what the base configuration narrows"
+
+[[enforcement-floor.paths]]
+path = "~/.codex/hooks.json"
+reason = "Codex's hook registration"
+
+[[enforcement-floor.paths]]
+path = "~/.codex/rules/"
+reason = "Codex's command rules"
+
+[[enforcement-floor.paths]]
+path = "~/.pi/agent/settings.json"
+reason = "Pi's settings, which name the extensions it loads"
+
+[[enforcement-floor.paths]]
+path = "~/.pi/agent/hooks.json"
+reason = "Pi's hook registration"
+
+[[enforcement-floor.paths]]
+path = "~/Library/Application Support/Code/User/settings.json"
+reason = "the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[enforcement-floor.paths]]
+path = "~/.config/Code/User/settings.json"
+reason = "the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/shared/hooks/"
+reason = "the source of the shared hooks, this manifest, and the tool vocabulary"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/claude/hooks/"
+reason = "the source of the hooks only Claude Code runs"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/codex/hooks/"
+reason = "the source of the hooks only Codex runs"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/copilot/hooks/"
+reason = "the source of the Copilot hook adapter"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/pi/security/"
+reason = "the source of Pi's hook registration and dispatcher"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/pi/extensions/hooks/"
+reason = "the source of Pi's hook runner"
+
+[[enforcement-floor.paths]]
+path = "<repo>/users/*/home-manager/claude/settings*.json"
+reason = "the source of a user's Claude Code permissions, hooks, and sandbox"
+
+[[enforcement-floor.paths]]
+path = "<repo>/users/*/home-manager/codex/config*.toml"
+reason = "the source of a user's Codex approval, sandbox, and reviewer policy"
+
+[[enforcement-floor.paths]]
+path = "<repo>/users/*/home-manager/codex/*.config.toml"
+reason = "the source of a Codex profile layer, which can widen what the base configuration narrows"
+
+[[enforcement-floor.paths]]
+path = "<repo>/users/*/home-manager/codex/hooks.json"
+reason = "the source of a user's Codex hook registration"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/ai/codex/rules/"
+reason = "the source of Codex's command rules"
+
+[[enforcement-floor.paths]]
+path = "<repo>/users/*/home-manager/pi/settings.json"
+reason = "the source of a user's Pi settings"
+
+[[enforcement-floor.paths]]
+path = "<repo>/modules/home/apps/vscode/settings.json"
+reason = "the source of the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[enforcement-floor.paths]]
+path = "<repo>/users/*/home-manager/vscode/settings.json"
+reason = "the source of the editor settings that hold Copilot's approval, sandbox, and hook configuration"
+
+[[enforcement-floor.paths]]
+path = "<repo>/.claude/settings*.json"
+reason = "a project's own Claude Code settings, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<repo>/.codex/config.toml"
+reason = "a project's own Codex configuration, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<repo>/.codex/*.config.toml"
+reason = "a project's own Codex profile layers, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<repo>/.codex/hooks.json"
+reason = "a project's own Codex hook registration, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<repo>/.codex/rules/"
+reason = "a project's own Codex command rules, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<repo>/.vscode/settings.json"
+reason = "a project's own editor settings, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.claude/settings*.json"
+reason = "a project's own Claude Code settings, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.codex/config.toml"
+reason = "a project's own Codex configuration, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.codex/*.config.toml"
+reason = "a project's own Codex profile layers, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.codex/hooks.json"
+reason = "a project's own Codex hook registration, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.codex/rules/"
+reason = "a project's own Codex command rules, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.vscode/settings.json"
+reason = "a project's own editor settings, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/.github/hooks/"
+reason = "a project's own editor hook files, which every agent working there loads"
+
+[[enforcement-floor.paths]]
+path = "<project>/*.code-workspace"
+reason = "a project's own editor workspace, whose settings override the user's"
+
+[[enforcement-floor.paths]]
+path = "<project>/.pi/settings.json"
+reason = "a project's own Pi settings, which name the extensions Pi loads there"
+
+[[enforcement-floor.paths]]
+path = "<project>/.pi/sandbox.json"
+reason = "a project's own Pi sandbox configuration, which can turn the sandbox off"
+
+[block]
+description = "Block reads, writes, and runs without an approval prompt."
+
+[[block.paths]]
+path = "~/.claude.json"
+reason = "Claude Code's state file, which holds account state and OAuth material"
+
+[[block.paths]]
+path = "~/.claude/.credentials.json"
+reason = "Claude Code's stored credentials"
+
+[[block.paths]]
+path = "~/.codex/auth.json"
+reason = "Codex's stored credentials"
+
+[[block.paths]]
+path = "~/.pi/agent/auth.json"
+reason = "Pi's stored credentials"
+
+[[block.paths]]
+path = "~/.config/mcp-secrets.env"
+reason = "the API keys the MCP servers start with"
+
+[[block.paths]]
+path = "~/Library/Application Support/Code/User/mcp.json"
+reason = "VS Code's MCP server list, which holds the servers' API keys in plain text"
+
+[[block.paths]]
+path = "~/.config/Code/User/mcp.json"
+reason = "VS Code's MCP server list, which holds the servers' API keys in plain text"
+
+[exec-through]
+description = "Permit existing script runs; other operations retain the guarded default."
+
+[[exec-through.paths]]
+path = "~/.claude/skills/"
+reason = "a skills root; a skill's own helper scripts run without a prompt"
+
+[[exec-through.paths]]
+path = "~/.codex/skills/"
+reason = "a skills root; a skill's own helper scripts run without a prompt"
+
+[[exec-through.paths]]
+path = "~/.pi/agent/skills/"
+reason = "a skills root; a skill's own helper scripts run without a prompt"
+
+[[exec-through.paths]]
+path = "~/.agents/skills/"
+reason = "the target of the per-agent skills links, which a declaration does not follow"
+
+[[exec-through.paths]]
+path = "<repo>/modules/home/ai/shared/skills/"
+reason = "the skills this repository links into its own checkout"
+
+[write-through]
+description = "Permit writes; runs retain the guarded default."
+
+[[write-through.paths]]
+path = "~/.claude/projects/"
+reason = "Claude Code's memory, which changes no enforcement"
+
+[[exceptions]]
+surface = "sensitive-path-name-heuristic"
+pattern = "<repo>/scripts/mcp-secrets.sh"
+reason = "a tracked program named for the secret file it renders, holding none itself"
+
+# A placeholder pattern is a file name, matched in any directory and excusing reads only.
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.example"
+reason = "a committed list of a project's environment variables with placeholder values"
+
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.sample"
+reason = "a committed list of a project's environment variables with placeholder values"
+
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.template"
+reason = "a committed list of a project's environment variables with placeholder values"
+
+[[exceptions]]
+surface = "sensitive-path-dotenv-placeholder"
+pattern = ".env.op"
+reason = "a committed list of a project's environment variables whose values are 1Password secret references"
+
+[[exceptions]]
+surface = "capability-coverage"
+pattern = "copilot:refuse-unlisted-tools.py"
+reason = "the Copilot adapter refuses a tool the vocabulary does not list before any hook runs"
+
+[[exceptions]]
+surface = "capability-coverage"
+pattern = "pi:refuse-unlisted-tools.py"
+reason = "Pi's dispatcher refuses a tool the vocabulary does not list before any hook runs"

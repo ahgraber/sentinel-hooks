@@ -1,0 +1,743 @@
+# Canonical tool names and each harness's spelling of them.
+
+[groups]
+mutating = ["Bash", "Write", "Edit", "apply_patch"]
+sensitive-path = ["Bash", "Read", "Write", "Edit", "apply_patch"]
+destructive-ops = ["Bash"]
+shell = ["Bash"]
+# Tools judged by the file path their input names.
+file = ["Read", "Write", "Edit"]
+
+[ask]
+copilot = ["Bash", "Write", "Edit", "apply_patch"]
+
+[mappings.claude]
+Bash = "Bash"
+Read = "Read"
+Write = "Write"
+Edit = "Edit"
+
+[mappings.codex]
+Bash = "Bash"
+Read = "Read"
+Write = "Write"
+Edit = "Edit"
+apply_patch = "apply_patch"
+
+# Read from VS Code 1.139.1 with the Copilot extension 0.67.0.
+[mappings.copilot]
+Bash = "Bash"
+runInTerminal = "Bash"
+run_in_terminal = "Bash"
+terminal = "Bash"
+Read = "Read"
+readFile = "Read"
+read_file = "Read"
+Write = "Write"
+create_file = "Write"
+createFile = "Write"
+Edit = "Edit"
+editFiles = "Edit"
+replace_string_in_file = "Edit"
+insert_edit_into_file = "Edit"
+delete_file = "Edit"
+rename_file = "Edit"
+apply_patch = "apply_patch"
+multi_replace_string_in_file = "Edit"
+edit_notebook_file = "Edit"
+create_directory = "Write"
+# The text is typed into a running terminal, so it is judged as a command.
+send_to_terminal = "Bash"
+
+# Read from Pi 0.86.1.
+[mappings.pi]
+bash = "Bash"
+read = "Read"
+write = "Write"
+edit = "Edit"
+# Reads file contents, and nothing else in Pi refuses a credential path to it.
+# The dispatcher turns its `path` into the `file_path` a Read is judged by.
+grep = "Read"
+
+# Tools each harness emits that no hook checks. A name in neither a mapping nor
+# this table is refused: by the adapter for Copilot and Pi, and by
+# `refuse-unlisted-tools.py` for Claude Code and Codex, which have no adapter. A
+# `tool` may be an `fnmatch` pattern, which also admits every later tool it matches.
+# Claude Code's hooks receive its own spellings, so a Claude tool the hooks cannot
+# judge as it is stays here or is refused.
+# Codex runs `write_stdin` and code-mode `exec` without firing PreToolUse, so no
+# entry reaches them.
+
+[passthrough.claude]
+source = "Claude Code 2.1.293"
+
+[[passthrough.claude.tools]]
+tool = "Glob"
+reason = "lists file names; Claude applies its `Read` deny rules to it"
+
+[[passthrough.claude.tools]]
+tool = "Grep"
+reason = "searches file contents; Claude applies its `Read` deny rules to it"
+
+[[passthrough.claude.tools]]
+tool = "NotebookEdit"
+reason = "edits a notebook; Claude applies its `Edit` rules to it"
+
+[[passthrough.claude.tools]]
+tool = "LSP"
+reason = "queries a language server, which reads code and writes nothing"
+
+[[passthrough.claude.tools]]
+tool = "WebFetch"
+reason = "fetches a URL under Claude's domain permission rules"
+
+[[passthrough.claude.tools]]
+tool = "WebSearch"
+reason = "runs a web search"
+
+[[passthrough.claude.tools]]
+tool = "TaskOutput"
+reason = "reads a background task's output"
+
+[[passthrough.claude.tools]]
+tool = "TaskCreate"
+reason = "manages the session's task list"
+
+[[passthrough.claude.tools]]
+tool = "TaskGet"
+reason = "manages the session's task list"
+
+[[passthrough.claude.tools]]
+tool = "TaskUpdate"
+reason = "manages the session's task list"
+
+[[passthrough.claude.tools]]
+tool = "TaskList"
+reason = "manages the session's task list"
+
+[[passthrough.claude.tools]]
+tool = "TaskStop"
+reason = "stops a background task"
+
+[[passthrough.claude.tools]]
+tool = "TodoWrite"
+reason = "manages the session's task list"
+
+[[passthrough.claude.tools]]
+tool = "Agent"
+reason = "starts a subagent whose own tool calls reach the hooks"
+
+[[passthrough.claude.tools]]
+tool = "Workflow"
+reason = "runs subagents whose own tool calls reach the hooks"
+
+[[passthrough.claude.tools]]
+tool = "Skill"
+reason = "loads a skill's instructions"
+
+[[passthrough.claude.tools]]
+tool = "SendMessage"
+reason = "sends a message to another agent"
+
+[[passthrough.claude.tools]]
+tool = "SubagentHandback"
+reason = "returns a subagent's report to its parent"
+
+[[passthrough.claude.tools]]
+tool = "ListAgents"
+reason = "lists the agents the session can message"
+
+[[passthrough.claude.tools]]
+tool = "AskUserQuestion"
+reason = "asks the user"
+
+[[passthrough.claude.tools]]
+tool = "EnterPlanMode"
+reason = "switches the session into plan mode"
+
+[[passthrough.claude.tools]]
+tool = "ExitPlanMode"
+reason = "switches the session out of plan mode"
+
+[[passthrough.claude.tools]]
+tool = "ToolSearch"
+reason = "loads tool schemas into the session"
+
+[[passthrough.claude.tools]]
+tool = "CronList"
+reason = "lists scheduled prompts"
+
+[[passthrough.claude.tools]]
+tool = "CronDelete"
+reason = "deletes a scheduled prompt"
+
+[[passthrough.claude.tools]]
+tool = "EnterWorktree"
+reason = "creates a worktree under `.claude/worktrees/`, which does not prompt"
+
+[[passthrough.claude.tools]]
+tool = "ExitWorktree"
+reason = "with `remove` and `discard_changes`, deletes the worktree, its branch, and its uncommitted work without a prompt; no hook sees it"
+
+[[passthrough.claude.tools]]
+tool = "ScheduleWakeup"
+reason = "paces a self-paced `/loop`; the prompt it fires is an ordinary turn the hooks judge"
+
+[[passthrough.claude.tools]]
+tool = "CronCreate"
+reason = "schedules a prompt that fires as an ordinary turn; a durable task is a write to `.claude/scheduled_tasks.json` no hook sees"
+
+[[passthrough.claude.tools]]
+tool = "RemoteTrigger"
+reason = "creates claude.ai Routines, which run in the cloud on a fresh clone with no hook, sandbox, or permission prompt"
+
+[[passthrough.claude.tools]]
+tool = "ListMcpResourcesTool"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.claude.tools]]
+tool = "ReadMcpResourceTool"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.claude.tools]]
+tool = "ReadMcpResourceDirTool"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.claude.tools]]
+tool = "StructuredOutput"
+reason = "returns the session's structured result"
+
+[[passthrough.claude.tools]]
+tool = "SendUserMessage"
+reason = "sends text the model writes, as its replies already do"
+
+[[passthrough.claude.tools]]
+tool = "PushNotification"
+reason = "sends text the model writes, as its replies already do"
+
+[[passthrough.claude.tools]]
+tool = "ReportFindings"
+reason = "reports review findings to the editor"
+
+[[passthrough.claude.tools]]
+tool = "OfferChromeSetup"
+reason = "shows the user a browser setup card and asks before acting"
+
+[[passthrough.claude.tools]]
+tool = "mcp__*"
+reason = "every MCP tool, which Claude Code names `mcp__<server>__<tool>`"
+
+[passthrough.codex]
+source = "Codex 0.161.0; a namespaced tool reaches the hooks as namespace and name joined, such as `collaborationspawn_agent`, except that `spawn_agent` in the default or `multi_agent_v1` namespace reaches them bare"
+
+[[passthrough.codex.tools]]
+tool = "spawn_agent"
+reason = "starts a subagent whose own tool calls reach the hooks"
+
+[[passthrough.codex.tools]]
+tool = "get_goal"
+reason = "reads the thread's persisted goal"
+
+[[passthrough.codex.tools]]
+tool = "create_goal"
+reason = "records a goal for the thread in Codex's own state, not a repository file"
+
+[[passthrough.codex.tools]]
+tool = "update_goal"
+reason = "records a goal for the thread in Codex's own state, not a repository file"
+
+[[passthrough.codex.tools]]
+tool = "collaborationspawn_agent"
+reason = "starts a subagent whose own tool calls reach the hooks"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1spawn_agent"
+reason = "starts a subagent whose own tool calls reach the hooks"
+
+[[passthrough.codex.tools]]
+tool = "collaborationsend_input"
+reason = "sends input to a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1send_input"
+reason = "sends input to a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationsend_message"
+reason = "sends a message to a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1send_message"
+reason = "sends a message to a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationwait_agent"
+reason = "waits for a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1wait_agent"
+reason = "waits for a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationclose_agent"
+reason = "closes a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1close_agent"
+reason = "closes a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationresume_agent"
+reason = "resumes a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1resume_agent"
+reason = "resumes a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationinterrupt_agent"
+reason = "interrupts a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1interrupt_agent"
+reason = "interrupts a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationfollowup_task"
+reason = "queues a follow-up task for a subagent"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1followup_task"
+reason = "queues a follow-up task for a subagent"
+
+[[passthrough.codex.tools]]
+tool = "collaborationlist_agents"
+reason = "lists subagents"
+
+[[passthrough.codex.tools]]
+tool = "multi_agent_v1list_agents"
+reason = "lists subagents"
+
+[[passthrough.codex.tools]]
+tool = "update_plan"
+reason = "updates the session's plan"
+
+[[passthrough.codex.tools]]
+tool = "view_image"
+reason = "reads an image file into the model's context"
+
+[[passthrough.codex.tools]]
+tool = "request_user_input"
+reason = "asks the user"
+
+[[passthrough.codex.tools]]
+tool = "request_permissions"
+reason = "asks the user for more permissions"
+
+[[passthrough.codex.tools]]
+tool = "tool_search"
+reason = "loads tool schemas into the session"
+
+[[passthrough.codex.tools]]
+tool = "list_mcp_resources"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.codex.tools]]
+tool = "list_mcp_resource_templates"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.codex.tools]]
+tool = "read_mcp_resource"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.codex.tools]]
+tool = "get_context_remaining"
+reason = "reports the context left"
+
+[[passthrough.codex.tools]]
+tool = "new_context"
+reason = "starts a fresh context"
+
+[[passthrough.codex.tools]]
+tool = "clocksleep"
+reason = "waits"
+
+[[passthrough.codex.tools]]
+tool = "clockcurr_time"
+reason = "reports the time"
+
+[[passthrough.codex.tools]]
+tool = "wait_for_environment"
+reason = "waits for the environment to be ready"
+
+[[passthrough.codex.tools]]
+tool = "list_available_plugins_to_install"
+reason = "lists plugins available to install"
+
+[[passthrough.codex.tools]]
+tool = "request_plugin_install"
+reason = "shows the user a form and installs nothing unless the user accepts; the plugin's MCP tools then pass through `mcp__*`"
+
+[[passthrough.codex.tools]]
+tool = "mcp__*"
+reason = "every MCP tool, which Codex names `mcp__<server>__<tool>`"
+
+[[passthrough.codex.tools]]
+tool = "image_genimagegen"
+reason = "generates an image from a prompt; offered only on some accounts and models"
+
+[[passthrough.codex.tools]]
+tool = "request_user_input_async"
+reason = "asks the user without waiting for the answer"
+
+[[passthrough.codex.tools]]
+tool = "send_message_to_user_async"
+reason = "sends text the model writes, as its replies already do"
+
+[passthrough.copilot]
+source = "VS Code 1.139.1 with the Copilot extension 0.67.0"
+
+[[passthrough.copilot.tools]]
+tool = "read_project_structure"
+reason = "lists the workspace's files"
+
+[[passthrough.copilot.tools]]
+tool = "list_dir"
+reason = "lists a directory"
+
+[[passthrough.copilot.tools]]
+tool = "file_search"
+reason = "finds files by name"
+
+[[passthrough.copilot.tools]]
+tool = "grep_search"
+reason = "searches file contents"
+
+[[passthrough.copilot.tools]]
+tool = "semantic_search"
+reason = "searches the workspace by meaning"
+
+[[passthrough.copilot.tools]]
+tool = "search_workspace_symbols"
+reason = "searches code symbols"
+
+[[passthrough.copilot.tools]]
+tool = "get_changed_files"
+reason = "lists changed files"
+
+[[passthrough.copilot.tools]]
+tool = "get_errors"
+reason = "reads the editor's diagnostics"
+
+[[passthrough.copilot.tools]]
+tool = "get_vscode_api"
+reason = "reads VS Code API documentation"
+
+[[passthrough.copilot.tools]]
+tool = "test_search"
+reason = "finds tests"
+
+[[passthrough.copilot.tools]]
+tool = "testFailure"
+reason = "reads test failure output"
+
+[[passthrough.copilot.tools]]
+tool = "tool_search"
+reason = "loads tool schemas into the session"
+
+[[passthrough.copilot.tools]]
+tool = "view_image"
+reason = "reads an image file into the model's context"
+
+[[passthrough.copilot.tools]]
+tool = "read_notebook_cell_output"
+reason = "reads a notebook cell's output"
+
+[[passthrough.copilot.tools]]
+tool = "copilot_getNotebookSummary"
+reason = "summarizes a notebook"
+
+[[passthrough.copilot.tools]]
+tool = "fetch_webpage"
+reason = "fetches a web page"
+
+[[passthrough.copilot.tools]]
+tool = "github_repo"
+reason = "searches a GitHub repository"
+
+[[passthrough.copilot.tools]]
+tool = "github_text_search"
+reason = "searches GitHub"
+
+[[passthrough.copilot.tools]]
+tool = "get_terminal_output"
+reason = "reads terminal output"
+
+[[passthrough.copilot.tools]]
+tool = "terminal_selection"
+reason = "reads the terminal selection"
+
+[[passthrough.copilot.tools]]
+tool = "terminal_last_command"
+reason = "reads the terminal's last command"
+
+[[passthrough.copilot.tools]]
+tool = "get_task_output"
+reason = "reads a task's output"
+
+[[passthrough.copilot.tools]]
+tool = "kill_terminal"
+reason = "closes a terminal"
+
+[[passthrough.copilot.tools]]
+tool = "manage_todo_list"
+reason = "manages the session's task list"
+
+[[passthrough.copilot.tools]]
+tool = "memory"
+reason = "writes only to Copilot's own memory files"
+
+[[passthrough.copilot.tools]]
+tool = "resolve_memory_file_uri"
+reason = "locates a memory file"
+
+[[passthrough.copilot.tools]]
+tool = "session_store_sql"
+reason = "queries Copilot's session store"
+
+[[passthrough.copilot.tools]]
+tool = "skill"
+reason = "loads a skill's instructions"
+
+[[passthrough.copilot.tools]]
+tool = "switch_agent"
+reason = "switches the chat agent"
+
+[[passthrough.copilot.tools]]
+tool = "vscode_askQuestions"
+reason = "asks the user"
+
+[[passthrough.copilot.tools]]
+tool = "vscode_get_confirmation"
+reason = "asks the user"
+
+[[passthrough.copilot.tools]]
+tool = "vscode_get_confirmation_with_options"
+reason = "asks the user"
+
+[[passthrough.copilot.tools]]
+tool = "vscode_get_terminal_confirmation"
+reason = "asks the user"
+
+[[passthrough.copilot.tools]]
+tool = "vscode_reviewPlan"
+reason = "shows the user a plan to review"
+
+[[passthrough.copilot.tools]]
+tool = "runSubagent"
+reason = "starts a subagent; that its tool calls reach the hooks is unconfirmed"
+
+[[passthrough.copilot.tools]]
+tool = "search_subagent"
+reason = "starts a subagent; that its tool calls reach the hooks is unconfirmed"
+
+[[passthrough.copilot.tools]]
+tool = "explore_subagent"
+reason = "starts a subagent; that its tool calls reach the hooks is unconfirmed"
+
+[[passthrough.copilot.tools]]
+tool = "execution_subagent"
+reason = "starts a subagent; that its tool calls reach the hooks is unconfirmed"
+
+[[passthrough.copilot.tools]]
+tool = "open_browser_page"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "navigate_page"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "read_page"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "screenshot_page"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "click_element"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "hover_element"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "drag_element"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "type_in_page"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "handle_dialog"
+reason = "drives the editor's integrated browser"
+
+[[passthrough.copilot.tools]]
+tool = "run_task"
+reason = "less secure, unchecked: runs a shell command from tasks.json"
+
+[[passthrough.copilot.tools]]
+tool = "create_and_run_task"
+reason = "less secure, unchecked: writes tasks.json and runs its command"
+
+[[passthrough.copilot.tools]]
+tool = "run_notebook_cell"
+reason = "less secure, unchecked: runs cell code in a kernel"
+
+[[passthrough.copilot.tools]]
+tool = "run_playwright_code"
+reason = "less secure, unchecked: runs JavaScript against the browser"
+
+[[passthrough.copilot.tools]]
+tool = "run_vscode_command"
+reason = "less secure, unchecked: runs any editor command"
+
+[[passthrough.copilot.tools]]
+tool = "runTests"
+reason = "less secure, unchecked: runs the workspace test suite"
+
+[[passthrough.copilot.tools]]
+tool = "install_extension"
+reason = "less secure, unchecked: installs code the editor runs"
+
+[[passthrough.copilot.tools]]
+tool = "create_new_jupyter_notebook"
+reason = "less secure, unchecked: writes a file the adapter cannot locate"
+
+[[passthrough.copilot.tools]]
+tool = "create_new_workspace"
+reason = "less secure, unchecked: writes project files the adapter cannot locate"
+
+[[passthrough.copilot.tools]]
+tool = "mcp_*"
+reason = "every MCP tool, which the editor names `mcp_<server>_<tool>`"
+
+[passthrough.pi]
+source = "Pi 1.0.0 with its built-in MCP support, pi-subagents 0.75.0, and pi-intercom 0.16.0"
+
+[[passthrough.pi.tools]]
+tool = "find"
+reason = "a read-only built-in that lists names"
+
+[[passthrough.pi.tools]]
+tool = "ls"
+reason = "a read-only built-in that lists names"
+
+[[passthrough.pi.tools]]
+tool = "intercom"
+reason = "sends a message to another Pi session"
+
+[[passthrough.pi.tools]]
+tool = "contact_supervisor"
+reason = "sends a message to the supervising session"
+
+[[passthrough.pi.tools]]
+tool = "mcp__*"
+reason = "every MCP tool, which Pi names `mcp__<server>__<tool>` and sends through the tool pipeline the hooks judge"
+
+[[passthrough.pi.tools]]
+tool = "list_mcp_resources"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.pi.tools]]
+tool = "list_mcp_resource_templates"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.pi.tools]]
+tool = "read_mcp_resource"
+reason = "reads an MCP server's resource list or contents"
+
+[[passthrough.pi.tools]]
+tool = "tool_search"
+reason = "loads tool declarations into the session"
+
+[[passthrough.pi.tools]]
+tool = "codemode"
+reason = "runs a script in a QuickJS sandbox with no Node APIs; each tool it calls reaches the hooks as its own call"
+
+[[passthrough.pi.tools]]
+tool = "subagents_enable"
+reason = "activates the subagent tools in the session; `subagent` itself stays refused"
+
+[[passthrough.pi.tools]]
+tool = "bg_wait"
+reason = "waits for a background subagent; none starts while `subagent` is refused"
+
+[[passthrough.pi.tools]]
+tool = "subagent_supervisor"
+reason = "manages running subagents; none starts while `subagent` is refused"
+
+[[passthrough.pi.tools]]
+tool = "structured_output"
+reason = "returns a subagent's structured result"
+
+[refused.claude]
+
+[[refused.claude.tools]]
+tool = "PowerShell"
+reason = "the shell hooks read a command as Bash; it is opt-in off Windows and not enabled here"
+
+[[refused.claude.tools]]
+tool = "Monitor"
+reason = "runs a shell command in the background that no shell hook judges, since they register for `Bash` alone; Bash with `run_in_background` runs the same command under every hook"
+
+[[refused.claude.tools]]
+tool = "SendUserFile"
+reason = "sends a file's contents off the machine through Anthropic's servers, and no hook or sandbox checks the path"
+
+[[refused.claude.tools]]
+tool = "Artifact"
+reason = "publishes a file as a claude.ai page that a public link can share"
+
+[[refused.claude.tools]]
+tool = "ArtifactComments"
+reason = "manages a claude.ai page that `Artifact` publishes and a public link can share"
+
+[[refused.claude.tools]]
+tool = "ArtifactData"
+reason = "manages a claude.ai page that `Artifact` publishes and a public link can share"
+
+[[refused.claude.tools]]
+tool = "ArtifactCheck"
+reason = "manages a claude.ai page that `Artifact` publishes and a public link can share"
+
+[[refused.claude.tools]]
+tool = "PublishPlugin"
+reason = "uploads a local plugin folder to an organization's library on claude.ai, and no hook or sandbox checks the folder"
+
+[refused.copilot]
+
+[[refused.copilot.tools]]
+tool = "edit_files"
+reason = "a placeholder in this build whose input names no file the adapter can locate"
+
+[refused.pi]
+
+[[refused.pi.tools]]
+tool = "powershell"
+reason = "Pi's optional Windows shell; the shell hooks read a command as Bash"
+
+[[refused.pi.tools]]
+tool = "subagent"
+reason = "a foreground child runs inside the Pi process without the hooks or the sandbox, and the tool can write an agent definition that opts any child out of them"
+
+[[refused.pi.tools]]
+tool = "subagent_command"
+reason = "controls a subagent child's commands; children are refused with `subagent`"
+
+[[refused.pi.tools]]
+tool = "watchdog_diff"
+reason = "a subagent child's review tool; children are refused with `subagent`"

@@ -1,0 +1,19 @@
+# Pins the tools that run the agent hook test suites (`just apps test`).
+# The hooks are not part of this project: each one runs as a standalone
+# PEP 723 script, so a hook call does not check this lock or build `.venv`.
+# The flake checks take the same tools from nixpkgs, since the build sandbox
+# cannot download the locked versions.
+
+[project]
+name = "agent-hooks"
+version = "0"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+# hypothesis carries the property suites over the read classifier, which takes
+# arbitrary command text and cannot be covered by an example table.
+dev = ["pytest", "hypothesis"]
+
+[tool.uv]
+package = false

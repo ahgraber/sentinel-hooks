@@ -1,0 +1,197 @@
+{
+  "$comment": [
+    "Tamper-protection verdicts every surface that reaches a verdict must agree on:",
+    "block-hook-tampering.py directly, and Pi's hook runner over its registration.",
+    "Every agent carries every agent's set,",
+    "because an agent able to rewrite another's guardrails has removed a constraint",
+    "that applies to itself the moment that agent runs.",
+    "Paths are given as a tool call would supply them. `~` means the user's home."
+  ],
+  "cases": [
+    {
+      "path": "~/.claude/settings.json",
+      "blocked": true,
+      "why": "Claude harness settings"
+    },
+    {
+      "path": "~/.claude.json",
+      "blocked": true,
+      "why": "Claude project state"
+    },
+    {
+      "path": "~/.claude/hooks/block-dangerous-bash.sh",
+      "blocked": true,
+      "why": "deployed Claude hook"
+    },
+    {
+      "path": "~/.codex/config.toml",
+      "blocked": true,
+      "why": "Codex main configuration"
+    },
+    {
+      "path": "~/.codex/auth.json",
+      "blocked": true,
+      "why": "Codex credentials"
+    },
+    {
+      "path": "~/.codex/review.config.toml",
+      "blocked": true,
+      "why": "profile layer that can widen the base config"
+    },
+    {
+      "path": "~/.codex/rules/default.rules",
+      "blocked": true,
+      "why": "Codex permission rules"
+    },
+    {
+      "path": "~/.copilot/hooks/security-policy.json",
+      "blocked": true,
+      "why": "Copilot hook registration"
+    },
+    {
+      "path": "~/.pi/agent/settings.json",
+      "blocked": true,
+      "why": "pi settings"
+    },
+    {
+      "path": "~/.pi/agent/shared-hooks/hook-dispatch.py",
+      "blocked": true,
+      "why": "deployed pi hook dispatcher"
+    },
+    {
+      "path": "~/.pi/agent/hooks.json",
+      "blocked": true,
+      "why": "pi hook registration"
+    },
+    {
+      "path": "~/.pi/agent/extensions/hooks/extension.ts",
+      "blocked": true,
+      "why": "deployed pi hook runner"
+    },
+    {
+      "path": "~/.pi/agent/extensions/sandbox.json",
+      "blocked": true,
+      "why": "pi sandbox configuration"
+    },
+    {
+      "path": "modules/home/ai/claude/hooks/claudebar-notify.sh",
+      "blocked": true,
+      "why": "repository source of a Claude hook"
+    },
+    {
+      "path": "modules/home/ai/shared/hooks/block-dangerous-bash.sh",
+      "blocked": true,
+      "why": "repository source shared by every agent"
+    },
+    {
+      "path": "modules/home/ai/codex/rules/default.rules",
+      "blocked": true,
+      "why": "repository source of Codex rules"
+    },
+    {
+      "path": "modules/home/ai/copilot/hooks/security-policy.json",
+      "blocked": true,
+      "why": "repository source of Copilot enforcement"
+    },
+    {
+      "path": "modules/home/ai/pi/security/hooks.json",
+      "blocked": true,
+      "why": "repository source of the pi hook registration"
+    },
+    {
+      "path": "modules/home/ai/pi/extensions/hooks/extension.ts",
+      "blocked": true,
+      "why": "repository source of the pi hook runner"
+    },
+    {
+      "path": "users/testuser/home-manager/claude/settings.darwin.json",
+      "blocked": true,
+      "why": "repository source of Claude settings, any user"
+    },
+    {
+      "path": "users/testuser/home-manager/codex/hooks.json",
+      "blocked": true,
+      "why": "repository source of Codex hook registration"
+    },
+    {
+      "path": "users/testuser/home-manager/pi/default.nix",
+      "blocked": true,
+      "why": "repository source of pi configuration"
+    },
+    {
+      "path": "~/.claude/hooks/instructions/00-response-style.md",
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
+    },
+    {
+      "path": "modules/home/ai/shared/hooks/instructions/00-response-style.md",
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
+    },
+    {
+      "path": "modules/home/ai/copilot/instructions/shell.instructions.md",
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
+    },
+    {
+      "path": "modules/home/ai/shared/hooks/instructions/nested/note.md",
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
+    },
+    {
+      "path": "modules/home/ai/shared/hooks/instructions/helper.py",
+      "blocked": true,
+      "why": "instruction text is guarded enforcement"
+    },
+    {
+      "path": "~/.claude/skills/deploy/SKILL.md",
+      "blocked": true,
+      "why": "an agent's whole home directory is guarded, not only the files named here"
+    },
+    {
+      "path": "~/.copilot/config.json",
+      "blocked": true,
+      "why": "same, for Copilot"
+    },
+    {
+      "path": "~/.pi/agent/extensions/other/index.ts",
+      "blocked": true,
+      "why": "every pi extension is enforcement, not only the two this repository ships"
+    },
+    {
+      "path": "~/.pi/agent/npm/lib/node_modules/pkg/index.js",
+      "blocked": true,
+      "why": "all paths within the declared Pi agent home are guarded"
+    },
+    {
+      "path": "src/main.py",
+      "blocked": false,
+      "why": "ordinary source"
+    },
+    {
+      "path": "README.md",
+      "blocked": false,
+      "why": "ordinary markdown outside any instructions directory"
+    },
+    {
+      "path": "~/backups/.claude/settings.json",
+      "blocked": false,
+      "why": "an absolute path is judged by where it leads, so a copy that merely shares a guarded name is not the guarded file"
+    },
+    {
+      "path": "~/Downloads/users/testuser/home-manager/codex/hooks.json",
+      "blocked": false,
+      "why": "same, for a repository-source spelling that sits in no repository"
+    },
+    {
+      "path": "~/.pi/agent/npm/node_modules/pkg/index.js",
+      "blocked": true,
+      "why": "Pi keeps its npm packages in the agent home, and a package runs as extension code"
+    },
+    {
+      "path": "~/.claude/projects/demo/memory/note.txt",
+      "blocked": false,
+      "why": "memory is write-through"
+    }
+  ]
+}
