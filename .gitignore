@@ -1,0 +1,87 @@
+# -------------------------------------------------------
+# Dot-directories: ignore all, allowlist what we track
+# -------------------------------------------------------
+.*/
+!.claude/settings.json
+!.github/
+!.specs/
+!.renovate/
+
+# -------------------------------------------------------
+# OS
+# -------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------------------------------------
+# Secrets & environment
+# -------------------------------------------------------
+.env
+.envrc
+*.pem
+*.key
+*.pgp
+.decrypted~*
+
+# -------------------------------------------------------
+# AI tooling (local/personal files only)
+# -------------------------------------------------------
+CLAUDE.md
+CLAUDE.local.md
+.claude/settings.local.json
+docs/superpowers/
+
+# -------------------------------------------------------
+# Python
+# -------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.coverage.*
+
+# -------------------------------------------------------
+# Dependencies & build output
+# -------------------------------------------------------
+node_modules/
+build/
+dist/
+site/
+**/cache/
+
+# -------------------------------------------------------
+# Temp, logs, & working files
+# -------------------------------------------------------
+*.bak
+*.log
+.temp*
+.task/
+
+# --- repo-specific ---
+
+# Python environments, such as the one the agent hook test project builds
+.venv/
+
+# Secrets (infra)
+kubeconfig
+*kubeconfig*
+*.agekey
+*key*
+*.pub
+.config.env
+.decrypted~*.yaml
+
+# Misc
+com.googlecode.iterm2.plist
+*.profraw
+settings.local.json
+TODO.md
+
+# -------------------------------------------------------
+# Retain (must be last — negations override above)
+# -------------------------------------------------------
+!.gitkeep
+!.gitignore
+!.env.example
+!.env.sample
+!**.gitkeep
