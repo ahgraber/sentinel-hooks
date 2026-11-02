@@ -6,6 +6,10 @@ Remove an entry when its change is archived.
 
 ## Sequence
 
+`standalone-plugin-distribution` comes before every other active change.
+It moves the hooks, the tests, and this specs root, and it rewrites the paths each active change names.
+A change applied before it builds on a layout that is about to move.
+
 1. `multi-line-command-lexing`
 2. `single-command-rule-engine`
 
@@ -30,6 +34,10 @@ These changes do not depend on each other, but their delta specs modify the same
 The change that syncs second rebases its delta on the synced text.
 
 - `sensitive-path-blocking`: `multi-line-command-lexing`, `recursive-credential-read-refusal`, and `program-semantics-table`.
+- `hook-tampering-blocking` `ADestructiveOperationOnAnAncestorReachesTheUser`: `standalone-plugin-distribution` and `program-semantics-table`.
+  `standalone-plugin-distribution` syncs first; `program-semantics-table` rebases its delta on the new example paths.
+- `hook-tampering-blocking` `UnrecognizedCommandsAreGated`: `multi-line-command-lexing` and `program-semantics-table` modify it, and the `standalone-plugin-distribution` requirements `PluginMaintenanceReachesTheUser` and `SessionsWithoutTheHooksAreRefused` identify a program as it does.
+  `standalone-plugin-distribution` syncs first; `program-semantics-table` moves the harness command table into its program catalog.
 - `dangerous-bash-blocking`: `single-command-rule-engine` and `program-semantics-table`.
   `program-semantics-table` owns the privilege-escalation rule; `single-command-rule-engine` does not add its own.
   Both replace or render from the program-reading helpers in `bash_commands.py`; the change that lands second builds on what the first left.
