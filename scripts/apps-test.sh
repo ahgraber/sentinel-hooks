@@ -8,8 +8,7 @@ usage() {
   cat << 'USAGE'
 Usage: apps-test.sh <shared|claude|codex|copilot|pi>
 
-Run one agent app configuration test suite. `just apps test` composes every
-suite (and `just apps test all` is its default).
+Run one agent app configuration test suite.
 
 Targets:
   shared   Run the tests for the hook modules every agent shares
@@ -23,21 +22,21 @@ USAGE
 # The test tools are pinned in this project's lock; `--locked` fails a stale lock
 # rather than resolving new versions.
 run_pytest() {
-  uv run --project "${REPO_ROOT}/modules/home/ai" --locked pytest -q "$@"
+  uv run --project "${REPO_ROOT}" --locked pytest -q "$@"
 }
 
 run_python_suite() {
   local app="${1}"
 
   echo "==> Testing ${app}"
-  run_pytest "${REPO_ROOT}/modules/home/ai/${app}/tests"
+  run_pytest "${REPO_ROOT}/tests/${app}"
 }
 
 run_pi_suite() {
   echo "==> Testing pi"
-  run_pytest "${REPO_ROOT}/modules/home/ai/pi/tests"
+  run_pytest "${REPO_ROOT}/tests/pi"
   # Quoted so node expands the glob, which it matches against every test file.
-  node --test "${REPO_ROOT}/modules/home/ai/pi/extensions/hooks/*.test.mjs" "${REPO_ROOT}/modules/home/ai/pi/tests/*.test.mjs"
+  node --test "${REPO_ROOT}/tests/pi/*.test.mjs"
 }
 
 main() {

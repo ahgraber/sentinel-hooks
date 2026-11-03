@@ -38,8 +38,6 @@ A prompt that cannot be shown becomes a refusal.
   `shell_words.py` lexes a Bash command, `bash_commands.py` classifies what the lexed words do, and `apply_patch.py` reads the paths an `apply_patch` body names.
 - `hooks/guarded-paths.toml` — the guarded surface.
   Every implementation reads it at invocation.
-- `hooks/instructions/` — prompt text injected at session start.
-  An edit asks, as for any other file under `hooks/`: prompt text shapes what the agent does with every other guardrail.
 - `tests/` — the suites, plus `guarded-path-cases.json` and `sensitive-path-cases.json`, the verdict tables every surface that reaches a verdict is judged against.
   `tests/corpus/` holds shell inputs taken from mvdan/sh's parser tests under its BSD-3-Clause license, which bash, not mvdan/sh, judges the lexer against; `extract_mvdan_sh.py` rebuilds it.
   No test reads an agent's configuration file.

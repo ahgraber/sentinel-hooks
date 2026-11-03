@@ -9,6 +9,8 @@ extend-exclude = [
   "*.csv",
   "*.git*",
   "*.sops.yaml",
+  # Shell inputs copied verbatim from mvdan/sh's parser tests.
+  "tests/shared/corpus/",
 ]
 ignore-hidden = true   # ignore hidden files/dirs
 ignore-files = true     # respect ignore files

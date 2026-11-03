@@ -1,0 +1,74 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi ~/.pi/agent/shared-hooks/session-tool-checks.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi ~/.pi/agent/shared-hooks/git-baseline.sh init",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi ~/.pi/agent/shared-hooks/block-dangerous-bash.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi ~/.pi/agent/shared-hooks/bash-command-validator.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi uv run --script ~/.pi/agent/shared-hooks/hook-dispatch.py",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "matcher": "bash|write|edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi ~/.pi/agent/shared-hooks/git-baseline.sh check",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AI_HOOK_AGENT=pi ~/.pi/agent/shared-hooks/git-baseline.sh update",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

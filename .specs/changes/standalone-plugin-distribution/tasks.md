@@ -10,31 +10,35 @@
 
 ## 2. Hooks outside the posture
 
-- [ ] 2.1 Delete `stop-precommit.sh` and its test `test_stop_precommit.py`.
-- [ ] 2.2 Delete `session-instructions.sh` and the `instructions/` directory.
-- [ ] 2.3 Delete `reload-skills-catalog.py`.
-- [ ] 2.4 Remove the deleted hooks from the Copilot adapter's hook table, from Pi's `hooks.json`, and from the capability and tooling records the capability coverage test reads.
-- [ ] 2.5 Remove `end-of-turn-precommit` from the capability kind record.
-- [ ] 2.6 Remove every remaining reference to the deleted files, found with `git grep`.
+- [x] 2.1 Delete `stop-precommit.sh` and its test `test_stop_precommit.py`.
+- [x] 2.2 Delete `session-instructions.sh` and the `instructions/` directory.
+- [x] 2.3 Delete `reload-skills-catalog.py`.
+- [x] 2.4 Remove the deleted hooks from the Copilot adapter's hook table, from Pi's `hooks.json`, and from the capability and tooling records the capability coverage test reads.
+- [x] 2.5 Remove `end-of-turn-precommit` from the capability kind record.
+- [x] 2.6 Remove every remaining reference to the deleted files, found with `git grep`.
   The suites cannot collect until task 3.4, so task 3.8 runs them.
 
 ## 3. Plugin directory
 
-- [ ] 3.1 Move `modules/home/ai/shared/hooks/` to `plugins/sentinel/hooks/` with `git mv`.
-- [ ] 3.2 Remove the `REPO_ROOT` constant and the `repo_root` parameter from `guarded_paths.py`, resolve `<repo>/` declarations through `repo_root_of` on the supplied path, and take case folding from the home directory and the supplied path's volume.
+- [x] 3.1 Move `modules/home/ai/shared/hooks/` to `plugins/sentinel/hooks/` with `git mv`.
+- [x] 3.2 Remove the `REPO_ROOT` constant and the `repo_root` parameter from `guarded_paths.py`, resolve `<repo>/` declarations through `repo_root_of` on the supplied path, and take case folding from the home directory and the supplied path's volume.
   Rewrite each test that passes `repo_root` to build a checkout with a `.git` entry in its temporary directory.
-- [ ] 3.3 Add a test that a `<repo>/` declaration matches a path inside any checkout, with the hooks loaded from a directory that is not in a checkout and has fewer than five parent directories.
-- [ ] 3.4 Move the Copilot adapter to `plugins/sentinel/harnesses/copilot/`, and `git mv` `security-policy.json` to `plugins/sentinel/com.github.copilot/hooks/hooks.json`.
+- [x] 3.3 Add a test that a `<repo>/` declaration matches a path inside any checkout, with the hooks loaded from a directory that is not in a checkout and has fewer than five parent directories.
+- [x] 3.4 Move the Copilot adapter to `plugins/sentinel/harnesses/copilot/`, and `git mv` `security-policy.json` to `plugins/sentinel/com.github.copilot/hooks/hooks.json`.
   Move the Pi extension to `plugins/sentinel/harnesses/pi/extension/`, and `hook-dispatch.py` and `hooks.json` to `plugins/sentinel/harnesses/pi/`.
-- [ ] 3.5 Move each agent's `tests/` to `tests/<agent>/`, the shared tests to `tests/shared/`, and the extension's `*.test.mjs` files to `tests/pi/`, and move `pyproject.toml` and `uv.lock` to the repository root.
-- [ ] 3.6 Replace every path a test builds from its own file's location (`parents[N]`, `.parent.parent`, `resolve(import.meta.dirname, ...)`) and every `flake.nix` lookup with a repository root found as the nearest directory above the test file that holds `.specs/`, and the plugin directory as `<root>/plugins/sentinel/`.
+- [x] 3.5 Move each agent's `tests/` to `tests/<agent>/`, the shared tests to `tests/shared/`, and the extension's `*.test.mjs` files to `tests/pi/`, and move `pyproject.toml` and `uv.lock` to the repository root.
+- [x] 3.6 Replace every path a test builds from its own file's location (`parents[N]`, `.parent.parent`, `resolve(import.meta.dirname, ...)`) and every `flake.nix` lookup with a repository root found as the nearest directory above the test file that holds `.specs/`, and the plugin directory as `<root>/plugins/sentinel/`.
   Rewrite each fixture that recreates the `modules/home/ai/` layout in a temporary directory, such as the Copilot adapter path tests, to the plugin layout.
-- [ ] 3.7 Make the Copilot adapter and `hook-dispatch.py` find the hooks as `../../hooks` from their own files, and remove the adapter's `REPO_ROOT`.
-- [ ] 3.8 Update `scripts/apps-test.sh` and `scripts/lib/common.sh` for the new test and project paths, keeping one pytest run per test directory.
-- [ ] 3.9 Record the `harness` kind in the capability coverage test, with artifacts found under `plugins/sentinel/harnesses/`, and record `hook-events`, `hook-execution`, and `hook-registration` as that kind with the extension files that implement each.
-- [ ] 3.10 Run the full suite, and record each failing test with the requirement or declaration it covers.
+- [x] 3.7 Make the Copilot adapter and `hook-dispatch.py` find the hooks as `../../hooks` from their own files, and remove the adapter's `REPO_ROOT`.
+- [x] 3.8 Update `scripts/apps-test.sh` and `scripts/lib/common.sh` for the new test and project paths, keeping one pytest run per test directory.
+- [x] 3.9 Record the `harness` kind in the capability coverage test, with artifacts found under `plugins/sentinel/harnesses/`, and record `hook-events`, `hook-execution`, and `hook-registration` as that kind with the extension files that implement each.
+- [x] 3.10 Run the full suite, and record each failing test with the requirement or declaration it covers.
   Expected failures are the tests of the configuration-checkout declarations, which group 6 removes, and the tests of the hook-source exemption on the moved paths, which group 8 fixes; fix any other failure before continuing.
-- [ ] 3.11 Add a test for `ThePluginIsSelfContained`: copy `plugins/sentinel/` to a temporary directory outside any checkout, and check that each hook reaches the same decision there as in the checkout for a set of tool calls.
+  Recorded failures:
+  - `tests/shared/test_capability_coverage.py::test_every_capability_has_a_kind_and_existing_package_artifact`: the baseline still holds `end-of-turn-precommit`, which this change removes; `sdd-sync` deletes the baseline capability.
+  - `tests/shared/test_guarded_surface.py::test_end_of_turn_hook_source_reaches_each_agent_gate`: `RepositorySourcesAreGuarded`, over a configuration-checkout source this repository never held; task 6.4 deletes it.
+  - `tests/copilot/test_block_hook_tampering.py::TestPathResolution::test_write_through_symlink_to_repo_hook_asks`: the adapter in the checkout was covered by a `<repo>/modules/...` declaration; `RunningCopyLoadedInPlace` covers it after tasks 4.5 and 5.3.
+- [x] 3.11 Add a test for `ThePluginIsSelfContained`: copy `plugins/sentinel/` to a temporary directory outside any checkout, and check that each hook reaches the same decision there as in the checkout for a set of tool calls.
 
 ## 4. Manifests and registrations
 

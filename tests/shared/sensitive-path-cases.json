@@ -1,0 +1,611 @@
+{
+  "$comment": [
+    "Zero-access path verdicts every surface that reaches a verdict must agree on:",
+    "block-sensitive-paths.py directly, and Pi's hook runner over its registration.",
+    "Paths are given as a tool call would supply them. `~` means the user's home."
+  ],
+  "bash_cases": [
+    {
+      "command": "grep -r secret .",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "grep -r secret .",
+      "blocked": true,
+      "exists": ["secret"]
+    },
+    {
+      "command": "cat ./secret",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat ./secret",
+      "blocked": true,
+      "exists": ["secret"]
+    },
+    {
+      "command": "cat '.env'",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat $'\\056env'",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat $(cat .env)",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat id_rsa",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat apps/web/.env.example",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.op",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.*",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo x > .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cp notes.txt .env.template",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "sed -i s/a/b/ .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "wc -c < .env.example",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example 2>/dev/null",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "grep KEY .env.example > notes.txt",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example > .env",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat <> .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat .env.*",
+      "blocked": false,
+      "exists": [".env.sample"]
+    },
+    {
+      "command": "cat .env.*",
+      "blocked": true,
+      "exists": [".env.sample", ".env.local"]
+    },
+    {
+      "command": "cat .env.local\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo a\u000b#; cat .env.local",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo a\f#; cat .env.local",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo a\u00a0#; cat .env.local\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "head -n1 ./deploy/id_rsa\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "x=$(cat server.pem)\necho \"$x\"",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "dd if=.env.production of=/tmp/out\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat notes.txt\necho done",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example\necho done",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "echo start\ncat .env.local",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo start &&\nhead -n1 \\\n  ./deploy/id_rsa",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo start\ncat .env.example notes.txt",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat <<'EOF' | bash\ncat .env.production\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "tee /tmp/out <<'EOF'\nload .env.production first\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "git commit -F - <<'EOF'\nPATH=.env.production fix\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cat <<EOF\n$X\ncat .env.production\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo start\necho x > .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat <<'EOF'\nload .env.production first\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "git commit -F - <<'EOF'\nstop reading id_rsa\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "bash <<'EOF'\ncat .env.production\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "xargs cat <<'EOF'\n./deploy/id_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "sed -f - notes.txt <<'EOF'\nr .env.local\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat 'notes.txt\ncat .env.example",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat .env.example\r\necho done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for f in id_rsa; do cat \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for f in notes.md .env; do wc -l \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "select f in id_rsa; do echo \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for f in notes.md; do cat \"$f\"; done",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "for f in .env.example; do cat \"$f\"; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "sort --files0-from=- <<'EOF'\nid_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "head -n 1 <<'EOF'\nid_rsa\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "sha256sum -c <<'EOF'\n0000  id_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "strings @/dev/stdin <<'EOF'\nid_rsa\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "bash <<'EOF'\ncat ~/'Library/Application Support/Code/User/mcp.json'\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "bash <<'EOF'\ncat ~/Library/Application\\ Support/Code/User/mcp.json\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat \"/home/user/Library/Application Support/Code/User/mcp.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cd ~ && cat 'Library/Application Support/Code/User/mcp.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cd ~/.codex && cat 'auth.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "python3 <<'EOF'\nprint('it\\'s'); open(\".env\")\nEOF",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat $'.env' '",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "echo 'x\ny' && cat id_rsa \"",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat {.env,x} '",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cd ~/.pi && cd agent && cat 'auth.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "cat project/auth.json'",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "cd -- ~/.codex && cat 'auth.json",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "for i in 1 2; do cat <<'EOF'\ncat .env\nEOF\ncat() { sh; }; done",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "gh pr create --body-file - <<'EOF'\nrotated id_rsa and .env\nEOF",
+      "blocked": false,
+      "exists": []
+    },
+    {
+      "command": "{\ncat <<'EOF'\ncat .env\nEOF\n} | sh",
+      "blocked": true,
+      "exists": []
+    },
+    {
+      "command": "jq -n -L . -f /dev/stdin <<'EOF'\nimport \"id_rsa\" as $k; $k\nEOF",
+      "blocked": true,
+      "exists": []
+    }
+  ],
+  "cases": [
+    {
+      "path": "~/.ssh/id_rsa",
+      "blocked": true,
+      "why": "ssh key in a credential directory"
+    },
+    {
+      "path": "~/.ssh/id_ed25519_agent",
+      "blocked": true,
+      "why": "ssh key name with a suffix"
+    },
+    {
+      "path": "project/.ssh/id_ecdsa",
+      "blocked": true,
+      "why": "credential directory anywhere, not only under home"
+    },
+    {
+      "path": "~/.aws/credentials",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.kube/config",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.gnupg/pubring.kbx",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.azure/azureProfile.json",
+      "blocked": true,
+      "why": "credential directory"
+    },
+    {
+      "path": "~/.docker/config.json",
+      "blocked": true,
+      "why": "registry credential store"
+    },
+    {
+      "path": "~/.netrc",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "~/.npmrc",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "~/.pypirc",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "~/.git-credentials",
+      "blocked": true,
+      "why": "credential config file"
+    },
+    {
+      "path": "deploy/service-account-prod.json",
+      "blocked": true,
+      "why": "cloud service-account key"
+    },
+    {
+      "path": "app/credentials.json",
+      "blocked": true,
+      "why": "credential file name"
+    },
+    {
+      "path": "certs/server.pem",
+      "blocked": true,
+      "why": "certificate extension"
+    },
+    {
+      "path": "certs/server.key",
+      "blocked": true,
+      "why": "key extension"
+    },
+    {
+      "path": "infra/terraform.tfstate",
+      "blocked": true,
+      "why": "state file carrying provider credentials"
+    },
+    {
+      "path": ".env",
+      "blocked": true,
+      "why": "dot-env file"
+    },
+    {
+      "path": "app/.env.production",
+      "blocked": true,
+      "why": "dot-env variant"
+    },
+    {
+      "path": "app/.envrc",
+      "blocked": true,
+      "why": "direnv file"
+    },
+    {
+      "path": "~/.zsh_history",
+      "blocked": true,
+      "why": "shell history"
+    },
+    {
+      "path": "src/secret_rotation.py",
+      "blocked": true,
+      "why": "name-based signal outside any exempt directory"
+    },
+    {
+      "path": "env/secrets.py",
+      "blocked": true,
+      "why": "a directory named env is not a package directory and can hold real secrets"
+    },
+    {
+      "path": "README.md",
+      "blocked": false,
+      "why": "ordinary source"
+    },
+    {
+      "path": "src/main.py",
+      "blocked": false,
+      "why": "ordinary source"
+    },
+    {
+      "path": "project/.venv/lib/python3.11/site-packages/google/auth/credentials.py",
+      "blocked": false,
+      "why": "package directory"
+    },
+    {
+      "path": "node_modules/dotenv/lib/secret.js",
+      "blocked": false,
+      "why": "package directory"
+    },
+    {
+      "path": "modules/home/ai/shared/hooks/block-secrets.py",
+      "blocked": false,
+      "why": "a hook source tree excuses a file the name heuristic would refuse"
+    },
+    {
+      "path": "modules/home/ai/claude/hooks/block-secrets.py",
+      "blocked": false,
+      "why": "a hook source tree excuses a file the name heuristic would refuse"
+    },
+    {
+      "path": "modules/home/ai/copilot/hooks/security-policy.json",
+      "blocked": false,
+      "why": "a guardrail source named for what it guards"
+    },
+    {
+      "path": "modules/home/ai/codex/tests/test_block_secrets.py",
+      "blocked": false,
+      "why": "a hook test tree excuses a file the name heuristic would refuse"
+    },
+    {
+      "path": "~/.claude/.credentials.json",
+      "blocked": true,
+      "why": "agent credential store, and .claude/ is exempt from the name heuristic"
+    },
+    {
+      "path": "~/.codex/auth.json",
+      "blocked": true,
+      "why": "agent credential store with no generic credential name"
+    },
+    {
+      "path": "~/.pi/agent/auth.json",
+      "blocked": true,
+      "why": "agent credential store with no generic credential name"
+    },
+    {
+      "path": "~/.pi/agent/settings.json",
+      "blocked": false,
+      "why": "agent configuration, guarded for writes elsewhere, not secret material"
+    },
+    {
+      "path": "~/.pi/agent/deploy-secrets.txt",
+      "blocked": true,
+      "why": "an agent's home directory earns no blanket exemption from the name heuristic"
+    },
+    {
+      "path": "~/.claude/hooks/block-leaks.py",
+      "blocked": false,
+      "why": "a deployed guardrail hook stays readable"
+    },
+    {
+      "path": "~/.config/mcp-secrets.env",
+      "blocked": true,
+      "why": "the rendered MCP API keys, declared in [block]; a *.env suffix matches no other rule here"
+    },
+    {
+      "path": "~/.config/mcp-op-sync.env",
+      "blocked": false,
+      "why": "the same file under a name carrying no heuristic term, showing the declaration rather than the name is what blocks it"
+    },
+    {
+      "path": "~/Library/Application Support/Code/User/mcp.json",
+      "blocked": true,
+      "why": "VS Code's MCP server list on macOS, which holds API keys in plain text, declared in [block]"
+    },
+    {
+      "path": "~/.config/Code/User/mcp.json",
+      "blocked": true,
+      "why": "VS Code's MCP server list on Linux, declared in [block]"
+    },
+    {
+      "path": "users/mithras/home-manager/pi/mcp.json",
+      "blocked": false,
+      "why": "an MCP server list that names its keys by environment variable; the declaration, not the file name, blocks"
+    },
+    {
+      "path": "scripts/mcp-secrets.sh",
+      "blocked": false,
+      "why": "declared in [[exceptions]]: a program named for the secret file it renders, holding none itself"
+    },
+    {
+      "path": "scripts/other-secrets.sh",
+      "blocked": true,
+      "why": "an undeclared neighbor of an excepted path earns nothing from it"
+    },
+    {
+      "path": "apps/web/.env.example",
+      "blocked": false,
+      "why": "declared placeholder name for the dotenv surface, read in a nested directory"
+    },
+    {
+      "path": ".env.sample",
+      "blocked": false,
+      "why": "declared placeholder name for the dotenv surface"
+    },
+    {
+      "path": ".ENV.TEMPLATE",
+      "blocked": false,
+      "why": "a declared placeholder name matches without regard to case"
+    },
+    {
+      "path": ".env.example.local",
+      "blocked": true,
+      "why": "a placeholder name with a further suffix is not the declared name"
+    },
+    {
+      "path": ".env.dist",
+      "blocked": true,
+      "why": "not a declared placeholder name"
+    },
+    {
+      "path": ".env.local",
+      "blocked": true,
+      "why": "holds live values; the dotenv rule refuses it"
+    }
+  ]
+}
