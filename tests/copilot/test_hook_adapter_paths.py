@@ -4,7 +4,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
-import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -24,13 +24,18 @@ def load_adapter() -> ModuleType:
 
 
 COPILOT_REGISTRATION = REPO_ROOT / "plugins" / "sentinel" / "com.github.copilot" / "hooks" / "hooks.json"
-ADAPTER_INVOCATION_RE = re.compile(r"copilot-vscode-hook-adapter\.py\s+([A-Za-z0-9._-]+)")
+
+
+def adapter_invocations() -> set[tuple[str, ...]]:
+    """The arguments each command in the Copilot registration passes the adapter."""
+    registration = json.loads(COPILOT_REGISTRATION.read_text())
+    return {tuple(shlex.split(hook["command"])[1:]) for hooks in registration["hooks"].values() for hook in hooks}
 
 
 def test_configured_dispatch_targets_exist() -> None:
     """Each configured adapter invocation must resolve to a repository script."""
     adapter = load_adapter()
-    invoked = set(ADAPTER_INVOCATION_RE.findall(COPILOT_REGISTRATION.read_text()))
+    invoked = {arguments[0] for arguments in adapter_invocations()}
 
     assert invoked, "found no adapter invocations in the Copilot registration"
 
@@ -353,8 +358,8 @@ def test_a_scoped_hook_receives_only_the_calls_of_its_group(monkeypatch, argv, t
 def test_every_hook_scope_names_a_configured_invocation() -> None:
     """A scope keyed on an invocation the policy does not make would filter nothing."""
     adapter = load_adapter()
-    policy = COPILOT_REGISTRATION.read_text()
+    invocations = adapter_invocations()
 
     for key, group in adapter.HOOK_SCOPES.items():
-        assert f'copilot-vscode-hook-adapter.py {" ".join(key)}"' in policy, key
+        assert key in invocations, key
         assert adapter.TOOL_VOCABULARY.group(group)

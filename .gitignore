@@ -5,6 +5,10 @@
 !.claude/settings.json
 !.github/
 !.specs/
+!.claude-plugin/
+!.agents/
+.agents/*
+!.agents/plugins/
 !.renovate/
 
 # -------------------------------------------------------

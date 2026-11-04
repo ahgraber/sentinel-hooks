@@ -4,7 +4,7 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
@@ -32,17 +32,14 @@ const realHome = process.env.HOME
 let root
 let project
 
-/** Link the registration, the shared hooks, and the dispatcher into the `~/.pi/agent/` layout that `hooks.json` names. */
+// The registration names its hooks from the plugin directory, the value Pi's runner gives package hooks.
+process.env.PLUGIN_ROOT = PLUGIN_DIR
+
+/** Link the registration into Pi's agent directory. */
 async function deploy(home, { hooks = true } = {}) {
   const agentDir = join(home, ".pi", "agent")
-  const hooksDir = join(agentDir, "shared-hooks")
-  await mkdir(hooksDir, { recursive: true })
-  if (!hooks) return agentDir
-  await symlink(join(PI_HARNESS, "hooks.json"), join(agentDir, "hooks.json"))
-  await symlink(join(PI_HARNESS, "hook-dispatch.py"), join(hooksDir, "hook-dispatch.py"))
-  for (const name of await readdir(SHARED_HOOKS)) {
-    if (name !== "__pycache__") await symlink(join(SHARED_HOOKS, name), join(hooksDir, name))
-  }
+  await mkdir(agentDir, { recursive: true })
+  if (hooks) await symlink(join(PI_HARNESS, "hooks.json"), join(agentDir, "hooks.json"))
   return agentDir
 }
 

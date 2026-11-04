@@ -42,20 +42,20 @@
 
 ## 4. Manifests and registrations
 
-- [ ] 4.1 Write `plugins/sentinel/harnesses/claude/hooks.json` with the events and matchers of the Claude registration, each command in the form `"${CLAUDE_PLUGIN_ROOT}/hooks/<hook>"`.
-- [ ] 4.2 Write `plugins/sentinel/harnesses/codex/hooks.json` in the same form, with `"${PLUGIN_ROOT}/hooks/<hook>"`.
-- [ ] 4.3 Rewrite `plugins/sentinel/com.github.copilot/hooks/hooks.json`, each command running the adapter as `"${PLUGIN_ROOT}/harnesses/copilot/copilot-vscode-hook-adapter.py"`, and update the Copilot tests that read the registration.
-- [ ] 4.4 Rewrite `plugins/sentinel/harnesses/pi/hooks.json` with the dispatcher command `AI_HOOK_AGENT=pi uv run --script "${PLUGIN_ROOT}/harnesses/pi/hook-dispatch.py"` and each shell hook as `AI_HOOK_AGENT=pi "${PLUGIN_ROOT}/hooks/<hook>"`.
-- [ ] 4.5 Write `plugins/sentinel/.claude-plugin/plugin.json`, naming `./harnesses/claude/hooks.json`, and `plugins/sentinel/plugin.json` with the Agent Plugins 1.0 `$schema` and `extensions.com.openai.hooks` naming `./harnesses/codex/hooks.json`.
+- [x] 4.1 Write `plugins/sentinel/harnesses/claude/hooks.json` with the events and matchers of the Claude registration, each command in the form `"${CLAUDE_PLUGIN_ROOT}/hooks/<hook>"`.
+- [x] 4.2 Write `plugins/sentinel/harnesses/codex/hooks.json` in the same form, with `"${PLUGIN_ROOT}/hooks/<hook>"`.
+- [x] 4.3 Rewrite `plugins/sentinel/com.github.copilot/hooks/hooks.json`, each command running the adapter as `"${PLUGIN_ROOT}/harnesses/copilot/copilot-vscode-hook-adapter.py"`, and update the Copilot tests that read the registration.
+- [x] 4.4 Rewrite `plugins/sentinel/harnesses/pi/hooks.json` with the dispatcher command `AI_HOOK_AGENT=pi uv run --script "${PLUGIN_ROOT}/harnesses/pi/hook-dispatch.py"` and each shell hook as `AI_HOOK_AGENT=pi "${PLUGIN_ROOT}/hooks/<hook>"`.
+- [x] 4.5 Write `plugins/sentinel/.claude-plugin/plugin.json`, naming `./harnesses/claude/hooks.json`, and `plugins/sentinel/plugin.json` with the Agent Plugins 1.0 `$schema` and `extensions.com.openai.hooks` naming `./harnesses/codex/hooks.json`.
 - [ ] 4.6 Install the plugin in VS Code from a local marketplace, and record which format it reads, which registration it runs, and where it installs the plugin from each catalog and from a local folder.
   Install it in Codex, and record whether Codex CLI lists and runs its hooks.
   Install it in Copilot CLI, and record which registration it runs.
-- [ ] 4.7 Write the catalogs `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.github/plugin/marketplace.json`, each with one relative-path entry for `plugins/sentinel`.
-- [ ] 4.8 Write the root `package.json` with the `pi-package` keyword, a `pi` key naming the extension, and `"*"` peer dependencies on the Pi packages the extension imports.
-- [ ] 4.9 Add a test for `EachHarnessRunsOnlyItsOwnRegistration`: the plugin holds no `hooks/hooks.json`, no root `hooks.json`, and no `.codex-plugin/`; the Claude manifest names `harnesses/claude/hooks.json`; the root manifest declares the Agent Plugins `$schema` and names `harnesses/codex/hooks.json`; and `com.github.copilot/hooks/hooks.json` runs only the Copilot adapter.
-- [ ] 4.10 Add a test for `HooksRunFromTheInstalledPlugin`: for each registration, run every command with the plugin-root variable set to a temporary copy of the plugin and the working directory set to an unrelated directory and then to a checkout of this repository, and check that each command starts the hook in the copy.
-- [ ] 4.11 Add a test for `OneVersionAcrossManifests`: every manifest, `package.json`, and catalog entry carries one version, and a fixture with one differing version fails.
-- [ ] 4.12 Run `claude plugin validate` on the plugin and on the Claude catalog, and fix every error it reports.
+- [x] 4.7 Write the catalogs `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.github/plugin/marketplace.json`, each with one relative-path entry for `plugins/sentinel`.
+- [x] 4.8 Write the root `package.json` with the `pi-package` keyword, a `pi` key naming the extension, and `"*"` peer dependencies on the Pi packages the extension imports.
+- [x] 4.9 Add a test for `EachHarnessRunsOnlyItsOwnRegistration`: the plugin holds no `hooks/hooks.json`, no root `hooks.json`, and no `.codex-plugin/`; the Claude manifest names `harnesses/claude/hooks.json`; the root manifest declares the Agent Plugins `$schema` and names `harnesses/codex/hooks.json`; and `com.github.copilot/hooks/hooks.json` runs only the Copilot adapter.
+- [x] 4.10 Add a test for `HooksRunFromTheInstalledPlugin`: for each registration, run every command with the plugin-root variable set to a temporary copy of the plugin and the working directory set to an unrelated directory and then to a checkout of this repository, and check that each command starts the hook in the copy.
+- [x] 4.11 Add a test for `OneVersionAcrossManifests`: every manifest, `package.json`, and catalog entry carries one version, and a fixture with one differing version fails.
+- [x] 4.12 Run `claude plugin validate` on the plugin and on the Claude catalog, and fix every error it reports.
 
 ## 5. guarded-path-declarations
 

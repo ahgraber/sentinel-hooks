@@ -1,0 +1,6 @@
+{
+  "name": "sentinel",
+  "version": "0.1.0",
+  "description": "Defense-in-depth guardrail hooks for coding agents.",
+  "hooks": "./harnesses/claude/hooks.json"
+}

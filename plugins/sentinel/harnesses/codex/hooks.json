@@ -1,0 +1,111 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-tool-checks.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking hook dependencies"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/git-baseline.sh\" init",
+            "timeout": 10,
+            "statusMessage": "Recording git baseline"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/block-dangerous-bash.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking dangerous shell patterns"
+          },
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/block-destructive-ops.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking destructive shell patterns"
+          },
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/bash-command-validator.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking shell command conventions"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Bash|Read|Write|Edit|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/block-sensitive-paths.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking sensitive paths"
+          },
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/block-leaks.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking secret exposure"
+          },
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/block-hook-tampering.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking agent safety files"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Bash|Write|Edit|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/git-baseline.sh\" check",
+            "timeout": 10,
+            "statusMessage": "Checking git baseline"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/refuse-unlisted-tools.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking the tool is listed"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/hooks/git-baseline.sh\" update",
+            "timeout": 10,
+            "statusMessage": "Updating git baseline"
+          }
+        ]
+      }
+    ]
+  }
+}

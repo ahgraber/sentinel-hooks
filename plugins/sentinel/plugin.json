@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "sentinel",
+  "version": "0.1.0",
+  "description": "Defense-in-depth guardrail hooks for coding agents.",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./harnesses/codex/hooks.json"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "sentinel-hooks",
+  "version": "0.1.0",
+  "description": "Defense-in-depth guardrail hooks for coding agents.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./plugins/sentinel/harnesses/pi/extension/index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
