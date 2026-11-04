@@ -1,12 +1,15 @@
 """Grants permit content changes without permitting changes to enforcement."""
 
+import importlib.util
 import io
 import json
 from pathlib import Path
+import shutil
+import sys
 
 import guarded_paths
 from guarded_paths import ManifestError, PathPolicy
-from hermetic import build_world, install_policy, load_hook, policy
+from hermetic import HOOKS_DIR, REPO_ROOT, build_world, install_policy, load_hook, policy
 import pytest
 
 
@@ -245,3 +248,165 @@ def test_home_grant_keeps_each_harness_settings_gated(policy_world, monkeypatch,
     else:
         assert stopped.value.code == 0
         assert json.loads(output.out)["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+
+PLUGINS = "~/.claude/plugins/"
+INSTALLED = "~/.claude/plugins/cache/market/sentinel/0.1.0"
+PLUGIN_SKILLS = "~/.claude/plugins/cache/*/*/*/skills/"
+
+
+def installed_plugin(world) -> Path:
+    """An installed plugin directory under a plugin install location in `world`'s home."""
+    home = world[0]
+    plugin = home / INSTALLED.removeprefix("~/")
+    (plugin / "hooks").mkdir(parents=True)
+    (plugin / "hooks" / "block-leaks.py").touch()
+    (plugin / "skills" / "review" / "scripts").mkdir(parents=True)
+    (plugin / "skills" / "review" / "scripts" / "check.py").touch()
+    return plugin
+
+
+def install_location_policy(world, **declarations):
+    return policy(world, floor=[PLUGINS], plugins=[PLUGINS], **declarations)
+
+
+class TestInstallLocationsDeclareTheirLinks:
+    """Validates: the floor inside a plugin install location covers every link, every hop, and every path under a linked directory."""
+
+    def test_a_new_file_behind_a_link_below_the_top_level_is_floor(self, policy_world, tmp_path):
+        """Validates: NewFileBehindALinkInAnInstallLocation."""
+        outside = tmp_path / "outside" / "vendor"
+        outside.mkdir(parents=True)
+        (installed_plugin(policy_world) / "hooks" / "vendor").symlink_to(outside)
+        rules = install_location_policy(policy_world)
+
+        assert rules.verdict(str(outside / "created-later.py"), "write") == "guarded"
+
+    def test_a_file_link_below_the_top_level_puts_its_target_in_the_floor(self, policy_world, tmp_path):
+        target = tmp_path / "outside" / "hook.py"
+        target.parent.mkdir(parents=True)
+        target.touch()
+        (installed_plugin(policy_world) / "hooks" / "linked.py").symlink_to(target)
+        rules = install_location_policy(policy_world)
+
+        assert rules.verdict(str(target), "write") == "guarded"
+
+    def test_a_hidden_top_level_link_puts_its_target_in_the_floor(self, policy_world, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (installed_plugin(policy_world) / ".hidden").symlink_to(outside)
+        rules = install_location_policy(policy_world)
+
+        assert rules.verdict(str(outside / "hooks.json"), "write") == "guarded"
+
+    def test_the_middle_hop_of_a_link_to_a_link_is_floor(self, policy_world, tmp_path):
+        target = tmp_path / "far" / "hook.py"
+        target.parent.mkdir()
+        target.touch()
+        middle = tmp_path / "near" / "hook.py"
+        middle.parent.mkdir()
+        middle.symlink_to(target)
+        (installed_plugin(policy_world) / "hooks" / "linked.py").symlink_to(middle)
+        rules = install_location_policy(policy_world)
+
+        assert rules.verdict(str(middle), "write") == "guarded"
+        assert rules.verdict(str(target), "write") == "guarded"
+
+    def test_an_unlinked_path_outside_the_location_is_not_floor(self, policy_world, tmp_path):
+        installed_plugin(policy_world)
+        rules = install_location_policy(policy_world)
+
+        assert rules.verdict(str(tmp_path / "elsewhere.py"), "write") == "undeclared"
+
+
+class TestRunningPluginDirectory:
+    def test_a_registration_beside_the_running_hooks_is_floor(self, policy_world):
+        """Validates: RunningCopyLoadedInPlace, with the checkout's own plugin directory."""
+        plugin = HOOKS_DIR.parent
+        assert (plugin / ".claude-plugin" / "plugin.json").is_file()
+        rules = policy(policy_world, write=[str(REPO_ROOT) + "/"])
+
+        assert rules.verdict(str(plugin / "harnesses" / "claude" / "hooks.json"), "write") == "guarded"
+        assert rules.verdict(str(REPO_ROOT / "tests" / "shared" / "notes.md"), "write") == "write-through"
+
+    def test_a_hooks_directory_whose_parent_holds_no_manifest_adds_nothing(self, policy_world, tmp_path, monkeypatch):
+        copy = tmp_path / "loose"
+        shutil.copytree(HOOKS_DIR, copy / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
+        (copy / "registration.json").touch()
+        spec = importlib.util.spec_from_file_location("loose_guarded_paths", copy / "hooks" / "guarded_paths.py")
+        module = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, spec.name, module)
+        spec.loader.exec_module(module)
+        home, _, manifest = policy_world
+        data = {
+            name: {"paths": []} for name in ("guarded", "enforcement-floor", "block", "exec-through", "write-through")
+        }
+        data["write-through"]["paths"] = [str(copy) + "/"]
+        data["exceptions"] = []
+        rules = module.PathPolicy(data, home=str(home), manifest_path=manifest)
+
+        assert rules.verdict(str(copy / "registration.json"), "write") == "write-through"
+        assert rules.verdict(str(copy / "hooks" / "block-leaks.py"), "write") == "guarded"
+
+
+class TestPluginInstallLocationGrants:
+    def test_a_grant_over_an_install_location_does_not_reach_an_installed_hook(self, policy_world):
+        """Validates: CarveOutOverAnInstalledCopy."""
+        installed_plugin(policy_world)
+        rules = install_location_policy(policy_world, write=[PLUGINS])
+        hook = f"{INSTALLED}/hooks/block-leaks.py"
+
+        assert rules.verdict(hook, "write") == "guarded"
+        assert any("does not apply" in finding and "block-leaks.py" in finding for finding in rules.findings)
+
+    def test_a_plugin_skill_script_runs_inside_the_floor(self, policy_world):
+        """Validates: PluginSkillScriptRunsInsideTheFloor."""
+        installed_plugin(policy_world)
+        rules = install_location_policy(policy_world, run=[PLUGIN_SKILLS])
+
+        assert rules.verdict(f"{INSTALLED}/skills/review/scripts/check.py", "run") == "exec-through"
+
+    def test_a_write_to_a_plugin_skill_script_asks(self, policy_world):
+        """Validates: PluginSkillScriptWriteInsideTheFloor."""
+        installed_plugin(policy_world)
+        rules = install_location_policy(policy_world, run=[PLUGIN_SKILLS], write=[PLUGIN_SKILLS])
+
+        assert rules.verdict(f"{INSTALLED}/skills/review/scripts/check.py", "write") == "guarded"
+
+    def test_session_start_reports_nothing_for_plugin_skill_directories(self, policy_world):
+        installed_plugin(policy_world)
+        rules = install_location_policy(policy_world, run=[PLUGIN_SKILLS])
+
+        assert rules.validate() == []
+
+    def test_an_exec_through_over_a_non_skill_directory_has_no_effect_inside_the_floor(self, policy_world):
+        installed_plugin(policy_world)
+        rules = install_location_policy(policy_world, run=["~/.claude/plugins/cache/*/*/*/hooks/"])
+
+        assert rules.verdict(f"{INSTALLED}/hooks/block-leaks.py", "run") == "guarded"
+
+
+class TestPluginInstallLocationRecords:
+    def test_a_floor_record_marks_a_plugin_install_location(self, tmp_path):
+        manifest = tmp_path / "guarded-paths.toml"
+        manifest.write_text(
+            '[[enforcement-floor.paths]]\npath = "~/.claude/plugins/"\nreason = "plugins"\nplugins = true\n'
+            '[[enforcement-floor.paths]]\npath = "~/.claude/hooks/"\nreason = "hooks"\n'
+        )
+
+        floor = guarded_paths.load_manifest(manifest)["enforcement-floor"]
+
+        assert floor == {"paths": ["~/.claude/plugins/", "~/.claude/hooks/"], "plugins": ["~/.claude/plugins/"]}
+
+    def test_a_plugins_value_other_than_true_is_a_manifest_failure(self, tmp_path):
+        manifest = tmp_path / "guarded-paths.toml"
+        manifest.write_text(
+            '[[enforcement-floor.paths]]\npath = "~/.claude/plugins/"\nreason = "plugins"\nplugins = "yes"\n'
+        )
+
+        with pytest.raises(ManifestError, match="plugins"):
+            guarded_paths.load_manifest(manifest)
+
+    def test_a_plugin_install_location_outside_the_floor_is_a_manifest_failure(self, policy_world):
+        with pytest.raises(ManifestError, match="plugin install location"):
+            policy(policy_world, floor=[], plugins=[PLUGINS])

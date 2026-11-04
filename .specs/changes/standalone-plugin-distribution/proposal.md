@@ -71,3 +71,5 @@ The policy's self-protection names the directories where each harness installs p
   Decided with the user.
 - 2026-11-02 A command that starts a harness session with the hooks or plugins off is refused, not asked.
   Decided with the user.
+- 2026-11-03 Plugin install locations: an enforcement-floor record marks one with `plugins = true`, so the manifest stays the one list of vendor paths.
+  Decided with the user.

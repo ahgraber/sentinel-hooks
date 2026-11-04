@@ -201,6 +201,15 @@ def _require_record(entry: object, keys: set[str], where: str) -> dict:
 _TABLES = ("guarded", "enforcement-floor", "block", "exec-through", "write-through")
 
 
+def _record_path(record: object, name: str) -> str:
+    """Return a record's path; an enforcement-floor record may also carry `plugins = true`."""
+    if name == "enforcement-floor" and isinstance(record, dict) and "plugins" in record:
+        if record["plugins"] is not True:
+            raise ManifestError("an enforcement-floor record's `plugins` must be `true`")
+        record = {key: value for key, value in record.items() if key != "plugins"}
+    return _require_record(record, {"path", "reason"}, f"{name}.paths")["path"]
+
+
 def _from_records(raw: dict) -> dict:
     """Reduce each class's `[[<class>.paths]]` records to its paths, checking every record states a reason."""
     manifest = dict(raw)
@@ -213,7 +222,9 @@ def _from_records(raw: dict) -> dict:
         records = table.get("paths", [])
         if not isinstance(records, list):
             raise ManifestError(f"{name}.paths must be a list of records")
-        manifest[name] = {"paths": [_require_record(r, {"path", "reason"}, f"{name}.paths")["path"] for r in records]}
+        manifest[name] = {"paths": [_record_path(r, name) for r in records]}
+        if name == "enforcement-floor":
+            manifest[name]["plugins"] = [r["path"] for r in records if "plugins" in r]
     if isinstance(raw.get("exceptions"), list):
         for exception in raw["exceptions"]:
             _require_record(exception, {"surface", "pattern", "reason"}, "exceptions")
@@ -620,6 +631,32 @@ def _enforcement_files(directory: Path) -> Iterable[str]:
     yield from visit(directory)
 
 
+def _link_declarations(directory: Path) -> Iterable[str]:
+    """Declare each link under a plugin install location, as a tree when it leads to a directory.
+
+    A directory link is followed once, so a link inside a linked directory is declared too.
+    """
+    seen = set()
+
+    def visit(folder: Path) -> Iterable[str]:
+        metadata = folder.stat()
+        identity = metadata.st_dev, metadata.st_ino
+        if identity in seen:
+            return
+        seen.add(identity)
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if entry.is_symlink():
+                    leads_to_directory = entry.is_dir()
+                    yield entry.path + "/" if leads_to_directory else entry.path
+                    if leads_to_directory:
+                        yield from visit(Path(entry.path))
+                elif entry.is_dir(follow_symlinks=False):
+                    yield from visit(Path(entry.path))
+
+    yield from visit(directory)
+
+
 def _validate_manifest_shape(manifest: dict, names: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
     """Return each class's path tuple, or raise TypeError if the manifest is malformed."""
     required = {*names, "exceptions"}
@@ -691,6 +728,18 @@ class PathPolicy:
         self._floor_declarations = tuple(p for p in floor if not p.startswith(_PROJECT_PREFIX))
         self._floor_trees = tuple(p for p in self._floor_declarations if p.endswith("/"))
         self._floor_files = tuple(p for p in self._floor_declarations if not p.endswith("/"))
+        plugin_locations = manifest["enforcement-floor"].get("plugins", [])
+        if not isinstance(plugin_locations, list) or any(p not in self._floor_trees for p in plugin_locations):
+            raise ManifestError("each plugin install location must be an enforcement-floor directory")
+        self._plugin_locations = tuple(plugin_locations)
+        # An exec-through declaration of the `skills/` directories inside a plugin
+        # install location keeps its effect on runs inside the floor.
+        self._plugin_skills = frozenset(
+            declaration
+            for declaration in entries["exec-through"]
+            if declaration.endswith("/skills/")
+            and any(declaration.startswith(location) for location in self._plugin_locations)
+        )
         self.home = home
         self.error = error
         self._manifest_path = manifest_path
@@ -713,11 +762,19 @@ class PathPolicy:
 
     @functools.cached_property
     def _floor_directories(self) -> tuple[Path, ...]:
-        """Directories whose files are enforcement: the manifest's, this module's, the launcher's, and each floor tree."""
-        directories = {self._manifest_path.parent, Path(__file__).resolve().parent}
+        """Directories whose files are enforcement.
+
+        They are the manifest's, this module's, the launcher's, the plugin directory
+        holding this module, and each floor tree that is not a plugin install location.
+        """
+        module_directory = Path(__file__).resolve().parent
+        directories = {self._manifest_path.parent, module_directory}
+        if (module_directory.parent / ".claude-plugin" / "plugin.json").is_file():
+            directories.add(module_directory.parent)
         if self._invocation_path:
             directories.add(Path(os.path.abspath(self._invocation_path)).parent)
-        for chain in self._locations(self._floor_trees).chains.values():
+        hook_trees = (tree for tree in self._floor_trees if tree not in self._plugin_locations)
+        for chain in self._locations(hook_trees).chains.values():
             directories.update(Path(path) for form in chain[:1] for path in glob.glob(form) if os.path.isdir(path))
         return tuple(sorted(directories))
 
@@ -739,9 +796,17 @@ class PathPolicy:
                 ),
             ]
         )
+        links = (
+            link
+            for chain in self._locations(self._plugin_locations).chains.values()
+            for form in chain[:1]
+            for location in glob.glob(form)
+            if os.path.isdir(location)
+            for link in _link_declarations(Path(location))
+        )
         trees = tuple(str(directory) + "/" for directory in self._floor_directories)
         return EnforcementFloor(
-            (*self._floor_declarations, *enforcement, *trees),
+            (*self._floor_declarations, *enforcement, *links, *trees),
             hook_directories=(*self._floor_trees, *trees),
             home=self.home,
             resolve_chain=self._resolve_chain,
@@ -763,6 +828,7 @@ class PathPolicy:
             Restriction(name, declaration, hop)
             for name in GRANT_CLASSES.values()
             for declaration, chain in self.classes[name].chains.items()
+            if declaration not in self._plugin_skills
             for hop in sorted({hop for hop in chain if self.floor.matches_hop(hop)})
         ]
 
@@ -792,7 +858,10 @@ class PathPolicy:
             return "undeclared"
         grant_class = GRANT_CLASSES[operation]
         if self.floor.matches_hop(path) or (project_floor and project_floor.matches_hop(path)):
-            for match in self.classes[grant_class].matches_hop(path):
+            grants = self.classes[grant_class].matches_hop(path)
+            if operation == "run" and any(match.declaration in self._plugin_skills for match in grants):
+                return grant_class
+            for match in grants:
                 self._restrictions[Restriction(grant_class, match.declaration, path)] = None
             return "guarded"
         candidates = [

@@ -59,12 +59,12 @@
 
 ## 5. guarded-path-declarations
 
-- [ ] 5.1 For each plugin install location in the floor, replace the file listing with a walk that declares each link it finds, as a tree when the target is a directory, following directory links once under the inode guard; keep the file listing for the hook-source trees.
-- [ ] 5.2 Add tests for `NewFileBehindALinkInAnInstallLocation`, a link below a plugin's top level, a hidden top-level link, and a link to a link whose middle hop is written.
-- [ ] 5.3 Add to the floor's fixed directories the parent of the module's own directory when it holds `.claude-plugin/plugin.json`, with tests for `RunningCopyLoadedInPlace` and for a hooks directory whose parent holds no manifest.
-- [ ] 5.4 Apply an exec-through declaration to runs inside the floor where it names a `skills/` directory under a plugin install location, and to nothing else inside the floor, and leave those declarations out of `restricted_grants`.
-- [ ] 5.5 Add tests for `CarveOutOverAnInstalledCopy`, `PluginSkillScriptRunsInsideTheFloor`, and `PluginSkillScriptWriteInsideTheFloor`, and a test that session-start validation reports no finding for a plugin skill exec-through declaration.
-- [ ] 5.6 Add a test that an exec-through declaration naming a non-skill directory under a plugin install location has no effect on a run there.
+- [x] 5.1 For each plugin install location in the floor, replace the file listing with a walk that declares each link it finds, as a tree when the target is a directory, following directory links once under the inode guard; keep the file listing for the hook-source trees.
+- [x] 5.2 Add tests for `NewFileBehindALinkInAnInstallLocation`, a link below a plugin's top level, a hidden top-level link, and a link to a link whose middle hop is written.
+- [x] 5.3 Add to the floor's fixed directories the parent of the module's own directory when it holds `.claude-plugin/plugin.json`, with tests for `RunningCopyLoadedInPlace` and for a hooks directory whose parent holds no manifest.
+- [x] 5.4 Apply an exec-through declaration to runs inside the floor where it names a `skills/` directory under a plugin install location, and to nothing else inside the floor, and leave those declarations out of `restricted_grants`.
+- [x] 5.5 Add tests for `CarveOutOverAnInstalledCopy`, `PluginSkillScriptRunsInsideTheFloor`, and `PluginSkillScriptWriteInsideTheFloor`, and a test that session-start validation reports no finding for a plugin skill exec-through declaration.
+- [x] 5.6 Add a test that an exec-through declaration naming a non-skill directory under a plugin install location has no effect on a run there.
 
 ## 6. guarded-surface
 

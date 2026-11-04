@@ -178,6 +178,21 @@ Building those declarations is the cost: on 2026-11-02, with the real `~/.claude
 - Prefix match alone: a write to a link's target proceeds, and Claude Code's link-mode plugins run from those targets.
 - Only the top-level entries of each plugin directory: Claude Code forbids only top-level links that point outside the plugin, a `*` glob skips hidden entries, and the VS Code layout has no fixed depth.
 
+### Decision: InstallLocationsAreMarkedInTheManifest
+
+**Chosen:** an enforcement-floor record marks a plugin install location with `plugins = true`.
+The guard walks a marked location for links instead of listing its files, and applies an exec-through declaration ending in `skills/` under it to runs inside the floor.
+The flag is valid only on an enforcement-floor directory.
+Decided with the user on 2026-11-03.
+
+**Rationale:** the install locations are vendor paths, so they stay in the manifest beside the other per-harness declarations, in one list.
+A location that loses its flag stays in the floor; its files are listed again, and its plugin skill scripts ask before each run.
+
+**Alternatives considered:**
+
+- A separate manifest table: a sixth declaration class, which every requirement that lists the classes would have to name.
+- A list in `guarded_paths.py`: a second copy of the vendor paths, which can drift from the manifest.
+
 ### Decision: InPlaceCopiesComeFromHarnessRecords
 
 **Chosen:** the floor covers the plugin directories the supported harnesses' user-level records name as loaded in place:

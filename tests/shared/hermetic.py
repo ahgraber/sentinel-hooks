@@ -63,17 +63,21 @@ def manifest_floor() -> list[str]:
     return list(guarded_paths.load_manifest()["enforcement-floor"]["paths"])
 
 
-def policy(world, guarded=(), block=(), run=(), write=(), floor=None):
+def policy(world, guarded=(), block=(), run=(), write=(), floor=None, plugins=()):
     """A policy over `world` declaring the given paths in each class, with no exceptions.
 
-    The floor defaults to the one the repository's manifest declares.
+    The floor defaults to the one the repository's manifest declares; `plugins`
+    marks floor directories as plugin install locations.
     """
     import guarded_paths
 
     home, _, manifest = world
     data = {
         "guarded": {"paths": list(guarded)},
-        "enforcement-floor": {"paths": manifest_floor() if floor is None else list(floor)},
+        "enforcement-floor": {
+            "paths": manifest_floor() if floor is None else list(floor),
+            "plugins": list(plugins),
+        },
         "block": {"paths": list(block)},
         "exec-through": {"paths": list(run)},
         "write-through": {"paths": list(write)},
