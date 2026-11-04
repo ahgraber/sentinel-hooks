@@ -3,7 +3,7 @@
 import json
 import os
 
-from conftest import REPO_ROOT, assert_allowed, assert_ask, assert_block_contract, assert_blocked, run_hook
+from conftest import assert_allowed, assert_ask, assert_block_contract, assert_blocked, run_hook
 import pytest
 
 HOOK = "block-sensitive-paths.py"
@@ -401,9 +401,6 @@ class TestDeclaredReadsReachNoAsk:
 
     def test_a_dotenv_placeholder_is_readable(self):
         assert_allowed(read("/project/apps/web/.env.example"))
-
-    def test_a_declared_name_exception_is_readable(self):
-        assert_allowed(read(f"{REPO_ROOT}/scripts/mcp-secrets.sh"))
 
 
 class TestLinkedFilesInCredentialDirectories:

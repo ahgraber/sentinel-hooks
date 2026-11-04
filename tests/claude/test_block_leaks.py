@@ -438,9 +438,6 @@ class TestFilePathsAreJudgedElsewhere:
     def test_a_dotenv_placeholder_read_proceeds(self):
         assert_allowed(run_hook(HOOK, "Read", {"file_path": "/home/u/project/apps/web/.env.example"}))
 
-    def test_a_declared_name_exception_read_proceeds(self):
-        assert_allowed(run_hook(HOOK, "Read", {"file_path": "/repo/scripts/mcp-secrets.sh"}))
-
     def test_a_suggestive_name_is_not_judged_here(self):
         assert_allowed(run_hook(HOOK, "Read", {"file_path": "/project/auth_token.json"}))
 

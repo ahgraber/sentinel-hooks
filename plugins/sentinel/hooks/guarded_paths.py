@@ -28,6 +28,8 @@ import re
 import tomllib
 from types import MappingProxyType
 
+from in_place_plugins import in_place_plugins
+
 HOME = os.path.expanduser("~")
 
 _HOME_PREFIX = "~/"
@@ -761,14 +763,25 @@ class PathPolicy:
         )
 
     @functools.cached_property
+    def _in_place_plugins(self) -> tuple[Path, ...]:
+        """Plugin directories the harnesses' records under this policy's home name as loaded in place."""
+        return in_place_plugins(self.home)
+
+    @functools.cached_property
+    def _in_place_skills(self) -> GuardedLocations:
+        """The `skills/` directory of each in-place plugin, which opens runs inside the floor."""
+        return self._locations(str(plugin / "skills") + "/" for plugin in self._in_place_plugins)
+
+    @functools.cached_property
     def _floor_directories(self) -> tuple[Path, ...]:
         """Directories whose files are enforcement.
 
         They are the manifest's, this module's, the launcher's, the plugin directory
-        holding this module, and each floor tree that is not a plugin install location.
+        holding this module, each plugin directory a harness loads in place, and
+        each floor tree that is not a plugin install location.
         """
         module_directory = Path(__file__).resolve().parent
-        directories = {self._manifest_path.parent, module_directory}
+        directories = {self._manifest_path.parent, module_directory, *self._in_place_plugins}
         if (module_directory.parent / ".claude-plugin" / "plugin.json").is_file():
             directories.add(module_directory.parent)
         if self._invocation_path:
@@ -859,7 +872,10 @@ class PathPolicy:
         grant_class = GRANT_CLASSES[operation]
         if self.floor.matches_hop(path) or (project_floor and project_floor.matches_hop(path)):
             grants = self.classes[grant_class].matches_hop(path)
-            if operation == "run" and any(match.declaration in self._plugin_skills for match in grants):
+            if operation == "run" and (
+                any(match.declaration in self._plugin_skills for match in grants)
+                or self._in_place_skills.matches_hop(path)
+            ):
                 return grant_class
             for match in grants:
                 self._restrictions[Restriction(grant_class, match.declaration, path)] = None

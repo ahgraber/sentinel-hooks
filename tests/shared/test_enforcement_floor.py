@@ -3,6 +3,7 @@
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -31,7 +32,6 @@ def policy_world(tmp_path, monkeypatch):
         "~/.copilot/hooks/security-policy.json",
         "~/.pi/agent/settings.json",
         "~/.pi/agent/hooks.json",
-        "~/.pi/agent/shared-hooks/hook-dispatch.py",
         "~/.pi/agent/extensions/hooks/extension.ts",
         "~/.agents/hooks/session.json",
         "~/.vscode/agent-plugins/example/hooks/hooks.json",
@@ -55,6 +55,14 @@ def test_broad_grant_preserves_content_but_not_enforcement(policy_world):
     assert any("does not apply" in finding and "hooks/local.py" in finding for finding in rules.findings)
 
 
+@pytest.mark.parametrize("target", ["~/.copilot/settings.json", "~/.copilot/config.json"])
+def test_copilot_plugin_switches_hold_against_a_broad_grant(policy_world, target):
+    """Validates: CopilotSettingsDisableTheHooks."""
+    rules = policy(policy_world, write=["~/.copilot/"])
+    assert rules.verdict(target, "write") == "guarded"
+    assert rules.verdict("~/.copilot/notes", "write") == "write-through"
+
+
 def test_grant_inside_the_floor_is_reported(policy_world):
     rules = policy(policy_world, write=["~/.claude/hooks/"])
     assert rules.verdict("~/.claude/hooks/local.py", "write") == "guarded"
@@ -70,9 +78,17 @@ def test_block_still_outranks_floor(policy_world):
 
 @pytest.mark.parametrize(
     "relative",
-    [".claude/settings.local.json", ".codex/config.toml", ".vscode/settings.json", ".github/hooks/policy.json"],
+    [
+        ".claude/settings.local.json",
+        ".codex/config.toml",
+        ".vscode/settings.json",
+        ".github/hooks/policy.json",
+        ".github/copilot/settings.json",
+        ".github/copilot/settings.local.json",
+    ],
 )
 def test_project_permission_settings_are_floor_without_git(policy_world, relative):
+    """Validates: ProjectCopilotSettingsAreWritten, among the other project settings files."""
     home, _, _ = policy_world
     project = home / "project"
     rules = policy(policy_world, write=[str(project) + "/"])
@@ -410,3 +426,99 @@ class TestPluginInstallLocationRecords:
     def test_a_plugin_install_location_outside_the_floor_is_a_manifest_failure(self, policy_world):
         with pytest.raises(ManifestError, match="plugin install location"):
             policy(policy_world, floor=[], plugins=[PLUGINS])
+
+
+def sentinel_checkout(root: Path) -> Path:
+    """A checkout whose catalog names its one plugin by relative path."""
+    checkout = root / "checkout"
+    plugin = checkout / "plugins" / "sentinel"
+    for relative in (".claude-plugin/plugin.json", "hooks/block-leaks.py", "skills/review/scripts/check.py"):
+        (plugin / relative).parent.mkdir(parents=True, exist_ok=True)
+        (plugin / relative).touch()
+    (checkout / "tests").mkdir()
+    (checkout / "tests" / "test_hooks.py").touch()
+    (checkout / ".claude-plugin").mkdir()
+    (checkout / ".claude-plugin" / "marketplace.json").write_text(
+        json.dumps({"name": "local", "plugins": [{"name": "sentinel", "source": "./plugins/sentinel"}]})
+    )
+    return checkout
+
+
+def write_record(home: Path, harness: str, checkout: Path) -> None:
+    """Record `checkout` as loaded in place in `harness`'s user-level record."""
+    directory = {"source": {"source": "directory", "path": str(checkout)}}
+    records = {
+        "claude": (
+            ".claude/plugins/known_marketplaces.json",
+            json.dumps({"local": {**directory, "installLocation": str(checkout)}}),
+        ),
+        "copilot": (".copilot/settings.json", json.dumps({"extraKnownMarketplaces": {"local": directory}})),
+        # Relative to the settings file's directory, as Pi resolves it.
+        "pi": (
+            ".pi/agent/settings.json",
+            json.dumps({"packages": [os.path.relpath(checkout, home / ".pi" / "agent")]}),
+        ),
+        # The plugin directory itself, with the comments and trailing commas VS Code accepts.
+        "vscode": (
+            ".config/Code/User/settings.json",
+            '{\n  // local plugins\n  "chat.pluginLocations": {\n    "%s": true, /* sentinel */\n  },\n}\n'
+            % (checkout / "plugins" / "sentinel"),
+        ),
+    }
+    relative, text = records[harness]
+    (home / relative).parent.mkdir(parents=True, exist_ok=True)
+    (home / relative).write_text(text)
+
+
+class TestInPlaceCopies:
+    """Validates: InstalledEnforcementIsInTheFloor, for a copy a harness's records name as loaded in place."""
+
+    @pytest.mark.parametrize("harness", ["claude", "copilot", "pi", "vscode"])
+    def test_a_recorded_in_place_copy_is_floor(self, policy_world, tmp_path, harness):
+        """Validates: AnotherHarnessesInPlaceCopyIsWritten."""
+        home = policy_world[0]
+        checkout = sentinel_checkout(tmp_path)
+        write_record(home, harness, checkout)
+        rules = policy(policy_world)
+
+        assert rules.verdict(str(checkout / "plugins/sentinel/hooks/block-leaks.py"), "write") == "guarded"
+
+    @pytest.mark.parametrize("harness", ["claude", "copilot", "pi", "vscode"])
+    def test_the_rest_of_the_checkout_is_not_floor(self, policy_world, tmp_path, harness):
+        """Validates: CheckoutOutsideThePluginDirectory."""
+        home = policy_world[0]
+        checkout = sentinel_checkout(tmp_path)
+        write_record(home, harness, checkout)
+        rules = policy(policy_world)
+
+        assert rules.verdict(str(checkout / "tests/test_hooks.py"), "write") == "undeclared"
+
+    def test_an_in_place_skill_script_runs_and_its_write_asks(self, policy_world, tmp_path):
+        home = policy_world[0]
+        checkout = sentinel_checkout(tmp_path)
+        write_record(home, "claude", checkout)
+        rules = policy(policy_world)
+        script = str(checkout / "plugins/sentinel/skills/review/scripts/check.py")
+
+        assert rules.verdict(script, "run") == "exec-through"
+        assert rules.verdict(script, "write") == "guarded"
+
+    @pytest.mark.parametrize("record", ["", "{not json"], ids=["missing", "unparsable"])
+    def test_a_missing_or_unparsable_record_adds_nothing(self, policy_world, tmp_path, record):
+        home = policy_world[0]
+        checkout = sentinel_checkout(tmp_path)
+        if record:
+            (home / ".copilot").mkdir(parents=True, exist_ok=True)
+            (home / ".copilot" / "settings.json").write_text(record)
+        rules = policy(policy_world)
+
+        assert rules.verdict(str(checkout / "plugins/sentinel/hooks/block-leaks.py"), "write") == "undeclared"
+
+    def test_a_location_with_no_manifest_or_catalog_is_covered_whole(self, policy_world, tmp_path):
+        home = policy_world[0]
+        location = tmp_path / "loose"
+        (location / "hooks").mkdir(parents=True)
+        write_record(home, "copilot", location)
+        rules = policy(policy_world)
+
+        assert rules.verdict(str(location / "hooks" / "run.py"), "write") == "guarded"

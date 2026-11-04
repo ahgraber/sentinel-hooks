@@ -170,7 +170,10 @@ The hook-source trees keep the file listing.
 
 **Rationale:** a floor tree's declaration already matches every path under it.
 The listing adds a declaration for each file, and each declaration's link chain is what puts a link's target in the floor; nothing else depends on it.
-Building those declarations is the cost: on 2026-11-02, with the real `~/.claude/plugins/cache/` (672 files, no links) declared, a hook call that writes took 201 ms with the listing and 26 ms without the cache declared, while the walk alone took 8 to 15 ms. Declaring each link keeps every hop of its chain in the floor, and a tree declaration over a linked directory also covers a file created there later, which the listing misses.
+Building those declarations is the cost: on 2026-11-02, with the real `~/.claude/plugins/cache/` (672 files, no links) declared, a hook call that writes took 201 ms with the listing and 26 ms without the cache declared, while the walk alone took 8 to 15 ms. On 2026-11-04, with the walk implemented, all six install locations declared, and the in-place records read, a floor build on the same machine took 88 ms at the median, against 33 ms with the install locations left out.
+The install locations then held about 2,000 entries under `~/.claude/plugins/` alone, plus Codex, VS Code, and Pi npm plugins, and no in-place record; the walk scanned about 980 directories per build and accounts for most of the difference.
+Only a write or a run builds the floor; a read does not.
+Declaring each link keeps every hop of its chain in the floor, and a tree declaration over a linked directory also covers a file created there later, which the listing misses.
 
 **Alternatives considered:**
 
@@ -216,6 +219,22 @@ The guard reads VS Code's `settings.json` as JSON with comments and trailing com
 **Alternatives considered:**
 
 - A README note to load Sentinel in place in at most one harness: it leaves the gap to the user.
+
+### Decision: FoundLocationsAreNotAncestors
+
+**Chosen:** the destructive-operation ancestor check stays on the manifest's declarations.
+The directories the guard finds at runtime (the running plugin directory, each plugin directory a harness loads in place, and each link target in an install location) are in the floor as themselves, but a directory that encloses one is not an ancestor for that reason.
+Decided with the user on 2026-11-04.
+
+**Rationale:** a marketplace install puts the plugin under a declared install location, so each harness's configuration directory above it is already an ancestor.
+The gap is limited to a plugin loaded in place, which is a checkout by definition, and to the directories above a link target.
+Every enclosing directory up to the home directory would become an ancestor, including the directory that holds a user's checkouts; the gate already reads a filtered `find -delete`, an archive extraction, and a recursive `chmod` there as a destruction of that directory.
+
+**Alternatives considered:**
+
+- Every enclosing directory up to the home directory or the repository root, as for declarations: it closes the gap, at the friction above.
+  It fits a later change that also narrows `find -delete` to the files it can reach.
+- Enclosing directories up to the repository root that holds the found directory: it leaves the removal of the directory that holds the checkout ungated.
 
 ### Decision: TheFloorIsBuiltOncePerHookCall
 
@@ -292,6 +311,8 @@ harness event
   A task records a payload for each of Copilot CLI's tools before the vocabulary and the adapter change.
 - **A session-start report may not reach the user**: each harness shows a session hook's standard error differently.
   The install evidence records where each harness shows it.
+- **Removing a directory above a found plugin location does not ask**: `rm -rf plugins` in a checkout loaded in place, or above a link target, is not an ancestor removal.
+  The found location itself stays in the floor; a marketplace install sits under a declared location and is not affected.
 - **A program name the command text hides**: `$X plugin disable` names no program the gate can find, so it passes the plugin command gate; the path gates still judge it.
 - **In-place loads with no user-level record**: a `--plugin-dir` session, `CLAUDE_CODE_PLUGIN_DIRS`, a Pi project's `.pi/settings.json`, and VS Code workspace settings name an in-place plugin only for one session or one project.
   Another harness's session cannot see them, so a copy loaded only that way is covered only by its own running sessions.

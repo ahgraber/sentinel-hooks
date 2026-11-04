@@ -31,9 +31,9 @@ HOOK = load_hook()
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A second checkout, judged by the repository that contains it."""
+    """A second checkout, whose declared Codex rules directory is judged by the repository that contains it."""
     (tmp_path / ".git").mkdir()
-    hooks = tmp_path / "modules" / "home" / "ai" / "shared" / "hooks"
+    hooks = hooks_of(tmp_path)
     (hooks / "instructions").mkdir(parents=True)
     (hooks / "block-destructive-ops.py").write_text("original\n")
     (hooks / "instructions" / "00-style.md").write_text("prompt text\n")
@@ -41,20 +41,20 @@ def repo(tmp_path: Path) -> Path:
 
 
 def hooks_of(repo: Path) -> Path:
-    return repo / "modules" / "home" / "ai" / "shared" / "hooks"
+    return repo / ".codex" / "rules"
 
 
 def test_ancestor_uses_payload_working_directory(repo):
-    assert HOOK.destroys_a_guarded_ancestor("rm -rf modules/home/ai", cwd=str(repo)) == "modules/home/ai"
+    assert HOOK.destroys_a_guarded_ancestor("rm -rf .codex", cwd=str(repo)) == ".codex"
 
 
 def test_relative_ancestor_without_cwd_does_not_use_process_directory(repo, monkeypatch):
     monkeypatch.chdir(repo)
-    assert HOOK.destroys_a_guarded_ancestor("rm -rf modules/home/ai") is None
+    assert HOOK.destroys_a_guarded_ancestor("rm -rf .") is None
 
 
 def test_newline_does_not_hide_a_destroyed_ancestor(repo):
-    ancestor = str(repo / "modules/home/ai")
+    ancestor = str(repo / ".codex")
     command = f"cat ordinary\nrm -rf {ancestor}"
     assert HOOK.destroys_a_guarded_ancestor(command, cwd=str(repo)) == ancestor
 
@@ -88,7 +88,7 @@ class TestLetterCase:
     expected verdict follows the volume, not the platform."""
 
     def test_case_variant_of_a_guarded_source(self, repo: Path) -> None:
-        target = repo / "Modules/Home/AI/Shared/Hooks/block-destructive-ops.py"
+        target = repo / ".Codex/Rules/block-destructive-ops.py"
 
         assert HOOK.is_protected_path(str(target)) is folds_case(str(repo))
 

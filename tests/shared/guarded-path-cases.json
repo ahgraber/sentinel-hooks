@@ -54,9 +54,9 @@
       "why": "pi settings"
     },
     {
-      "path": "~/.pi/agent/shared-hooks/hook-dispatch.py",
+      "path": "~/.pi/agent/git/github.com/ahgraber/sentinel-hooks/plugins/sentinel/harnesses/pi/hook-dispatch.py",
       "blocked": true,
-      "why": "deployed pi hook dispatcher"
+      "why": "the pi hook dispatcher in an installed copy"
     },
     {
       "path": "~/.pi/agent/hooks.json",
@@ -74,49 +74,44 @@
       "why": "pi sandbox configuration"
     },
     {
-      "path": "modules/home/ai/claude/hooks/claudebar-notify.sh",
+      "path": "~/.claude/plugins/cache/sentinel-hooks/sentinel/0.1.0/harnesses/claude/hooks.json",
       "blocked": true,
-      "why": "repository source of a Claude hook"
+      "why": "the Claude registration in an installed copy"
     },
     {
-      "path": "modules/home/ai/shared/hooks/block-dangerous-bash.sh",
+      "path": "~/.codex/plugins/cache/sentinel-hooks/sentinel/0.1.0/hooks/block-dangerous-bash.sh",
       "blocked": true,
-      "why": "repository source shared by every agent"
+      "why": "a hook in an installed copy, shared by every agent"
     },
     {
-      "path": "modules/home/ai/codex/rules/default.rules",
+      "path": ".codex/rules/default.rules",
       "blocked": true,
-      "why": "repository source of Codex rules"
+      "why": "the project's Codex rules"
     },
     {
-      "path": "modules/home/ai/copilot/hooks/security-policy.json",
+      "path": "~/.copilot/installed-plugins/sentinel-hooks/sentinel/com.github.copilot/hooks/hooks.json",
       "blocked": true,
-      "why": "repository source of Copilot enforcement"
+      "why": "the Copilot registration in an installed copy"
     },
     {
-      "path": "modules/home/ai/pi/security/hooks.json",
+      "path": "~/.pi/agent/git/github.com/ahgraber/sentinel-hooks/plugins/sentinel/harnesses/pi/hooks.json",
       "blocked": true,
-      "why": "repository source of the pi hook registration"
+      "why": "the pi hook registration in an installed copy"
     },
     {
-      "path": "modules/home/ai/pi/extensions/hooks/extension.ts",
+      "path": "~/.pi/agent/git/github.com/ahgraber/sentinel-hooks/plugins/sentinel/harnesses/pi/extension/extension.ts",
       "blocked": true,
-      "why": "repository source of the pi hook runner"
+      "why": "the pi hook runner in an installed copy"
     },
     {
-      "path": "users/testuser/home-manager/claude/settings.darwin.json",
+      "path": ".claude/settings.local.json",
       "blocked": true,
-      "why": "repository source of Claude settings, any user"
+      "why": "the project's Claude settings"
     },
     {
-      "path": "users/testuser/home-manager/codex/hooks.json",
+      "path": ".codex/hooks.json",
       "blocked": true,
-      "why": "repository source of Codex hook registration"
-    },
-    {
-      "path": "users/testuser/home-manager/pi/default.nix",
-      "blocked": true,
-      "why": "repository source of pi configuration"
+      "why": "the project's Codex hook registration"
     },
     {
       "path": "~/.claude/hooks/instructions/00-response-style.md",
@@ -124,22 +119,17 @@
       "why": "instruction text is guarded enforcement"
     },
     {
-      "path": "modules/home/ai/shared/hooks/instructions/00-response-style.md",
+      "path": "~/.claude/plugins/cache/sentinel-hooks/sentinel/0.1.0/hooks/instructions/00-response-style.md",
       "blocked": true,
       "why": "instruction text is guarded enforcement"
     },
     {
-      "path": "modules/home/ai/copilot/instructions/shell.instructions.md",
+      "path": "~/.claude/plugins/cache/sentinel-hooks/sentinel/0.1.0/hooks/instructions/nested/note.md",
       "blocked": true,
       "why": "instruction text is guarded enforcement"
     },
     {
-      "path": "modules/home/ai/shared/hooks/instructions/nested/note.md",
-      "blocked": true,
-      "why": "instruction text is guarded enforcement"
-    },
-    {
-      "path": "modules/home/ai/shared/hooks/instructions/helper.py",
+      "path": "~/.claude/plugins/cache/sentinel-hooks/sentinel/0.1.0/hooks/instructions/helper.py",
       "blocked": true,
       "why": "instruction text is guarded enforcement"
     },
@@ -179,9 +169,9 @@
       "why": "an absolute path is judged by where it leads, so a copy that merely shares a guarded name is not the guarded file"
     },
     {
-      "path": "~/Downloads/users/testuser/home-manager/codex/hooks.json",
+      "path": "~/Downloads/.codex/hooks.json",
       "blocked": false,
-      "why": "same, for a repository-source spelling that sits in no repository"
+      "why": "same, for a project-file spelling that sits in no repository"
     },
     {
       "path": "~/.pi/agent/npm/node_modules/pkg/index.js",

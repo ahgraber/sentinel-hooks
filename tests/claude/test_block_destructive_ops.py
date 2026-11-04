@@ -16,7 +16,13 @@ HOOK_SOURCE = HOOKS_DIR / "block-destructive-ops.py"
 RULES_NAME = "block-destructive-ops-patterns.toml"
 # The hook reads rules from its own directory, so tests run a copy beside
 # synthetic ones; its sibling imports have to travel with the copy.
-SIBLING_MODULES = ("hook_response.py", "guarded_paths.py", "guarded-paths.toml", "tool-vocabulary.toml")
+SIBLING_MODULES = (
+    "hook_response.py",
+    "guarded_paths.py",
+    "in_place_plugins.py",
+    "guarded-paths.toml",
+    "tool-vocabulary.toml",
+)
 RULES = r"""
 [[rules]]
 pattern = "synthetic-block"

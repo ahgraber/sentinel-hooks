@@ -52,33 +52,33 @@ class TestAgentIdentification:
         assert invoking_agent(path) == expected
 
     def test_repository_path_names_no_agent(self) -> None:
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == UNKNOWN
+        assert invoking_agent("/repo/plugins/sentinel/hooks/x.py") == UNKNOWN
 
     def test_an_adapter_may_declare_itself(self, monkeypatch) -> None:
         """Copilot reaches these scripts through its adapter, not its hook directory."""
         monkeypatch.setenv("AI_HOOK_AGENT", "copilot")
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == COPILOT
+        assert invoking_agent("/repo/plugins/sentinel/hooks/x.py") == COPILOT
 
     def test_pi_is_named_only_by_its_adapter(self, monkeypatch) -> None:
         """Validates: AdapterNamesARecognizedAgent."""
         monkeypatch.setenv("AI_HOOK_AGENT", "pi")
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == PI
+        assert invoking_agent("/repo/plugins/sentinel/hooks/x.py") == PI
 
     @pytest.mark.parametrize(("declared", "expected"), [("copilot", COPILOT), ("pi", PI)])
     def test_a_declaration_outranks_another_agents_payload_field(self, monkeypatch, declared, expected) -> None:
         """VS Code sends `transcript_path` too, so the field cannot name the agent over its adapter."""
         monkeypatch.setenv("AI_HOOK_AGENT", declared)
         payload = {"transcript_path": "/tmp/transcript.jsonl"}
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py", payload) == expected
+        assert invoking_agent("/repo/plugins/sentinel/hooks/x.py", payload) == expected
 
     def test_an_unrecognized_declaration_is_ignored(self, monkeypatch) -> None:
         monkeypatch.setenv("AI_HOOK_AGENT", "something-else")
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py") == UNKNOWN
+        assert invoking_agent("/repo/plugins/sentinel/hooks/x.py") == UNKNOWN
 
     def test_a_transcript_path_names_claude(self) -> None:
         """Claude Code is the only agent that sends one."""
         payload = {"tool_name": "Read", "transcript_path": "/tmp/transcript.jsonl"}
-        assert invoking_agent("/repo/modules/home/ai/shared/hooks/x.py", payload) == (CLAUDE)
+        assert invoking_agent("/repo/plugins/sentinel/hooks/x.py", payload) == (CLAUDE)
 
     def test_the_invocation_path_outranks_the_payload(self) -> None:
         payload = {"transcript_path": "/tmp/transcript.jsonl"}
@@ -158,7 +158,7 @@ class TestAsk:
     @pytest.mark.parametrize("declared", [None, "something-else"])
     def test_ask_refuses_where_the_adapter_names_no_known_agent(self, capsys, monkeypatch, declared) -> None:
         """Validates: AdapterNamesNothingOrSomethingUnknown."""
-        monkeypatch.setattr("sys.argv", ["/repo/modules/home/ai/shared/hooks/x.py"])
+        monkeypatch.setattr("sys.argv", ["/repo/plugins/sentinel/hooks/x.py"])
         if declared is None:
             monkeypatch.delenv("AI_HOOK_AGENT", raising=False)
         else:

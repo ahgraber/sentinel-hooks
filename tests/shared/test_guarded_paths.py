@@ -21,7 +21,7 @@ import pytest
 def make_repo(root: Path) -> Path:
     """A repository-shaped tree, recognized by its `.git` entry."""
     (root / ".git").mkdir(parents=True)
-    guarded = root / "modules" / "home" / "ai" / "shared" / "hooks"
+    guarded = root / "plugins" / "sentinel" / "hooks"
     guarded.mkdir(parents=True)
     (guarded / "block-dangerous-bash.sh").write_text("#!/usr/bin/env bash\n")
     return root
@@ -37,22 +37,22 @@ def tree(tmp_path: Path) -> Path:
 @pytest.fixture
 def guarded(tree: Path) -> GuardedLocations:
     return GuardedLocations(
-        ["<repo>/modules/home/ai/shared/hooks/", "~/.codex/rules/"],
+        ["<repo>/plugins/sentinel/hooks/", "~/.codex/rules/"],
         home=str(tree / "home"),
     )
 
 
 class TestSingleDeclaration:
     def test_fragment_derives_from_declaration(self, guarded: GuardedLocations) -> None:
-        assert guarded.fragments == ("modules/home/ai/shared/hooks/", ".codex/rules/")
+        assert guarded.fragments == ("plugins/sentinel/hooks/", ".codex/rules/")
 
     def test_wildcard_segment_needs_no_directory_listing(self, tree: Path) -> None:
         """The user directory need not exist: the pattern is matched, not enumerated."""
         locations = GuardedLocations(
-            ["<repo>/users/*/home-manager/codex/config.toml"],
+            ["<repo>/projects/*/.codex/config.toml"],
             home=str(tree / "home"),
         )
-        absent = tree / "repo" / "users" / "testuser" / "home-manager" / "codex"
+        absent = tree / "repo" / "projects" / "example" / ".codex"
         assert bool(locations.contains(str(absent / "config.toml"))) is True
 
     def test_wildcard_within_a_segment_matches_under_home(self, tree: Path) -> None:
@@ -76,16 +76,16 @@ class TestSingleDeclaration:
 
 class TestSpellingIndependence:
     def test_plain_path_is_guarded(self, guarded: GuardedLocations, tree: Path) -> None:
-        target = tree / "repo" / "modules" / "home" / "ai" / "shared" / "hooks" / "x.py"
+        target = tree / "repo" / "plugins" / "sentinel" / "hooks" / "x.py"
         assert bool(guarded.contains(str(target))) is True
 
     def test_traversal_components_do_not_defeat_it(self, guarded: GuardedLocations, tree: Path) -> None:
-        target = tree / "repo" / "modules" / ".." / "modules" / "home" / "ai"
-        assert bool(guarded.contains(str(target / "shared" / "hooks" / "x.py"))) is True
+        target = tree / "repo" / "plugins" / ".." / "plugins" / "sentinel"
+        assert bool(guarded.contains(str(target / "hooks" / "x.py"))) is True
 
     def test_symbolic_link_alias_does_not_defeat_it(self, guarded: GuardedLocations, tree: Path) -> None:
         alias = tree / "alias"
-        alias.symlink_to(tree / "repo" / "modules" / "home" / "ai" / "shared" / "hooks")
+        alias.symlink_to(tree / "repo" / "plugins" / "sentinel" / "hooks")
         assert bool(guarded.contains(str(alias / "x.py"))) is True
 
     def test_home_notation_does_not_defeat_it(self, tree: Path) -> None:
@@ -139,15 +139,15 @@ class TestRepositoryContainment:
 
     def test_a_second_checkout_is_guarded(self, guarded: GuardedLocations, tmp_path: Path) -> None:
         other = make_repo(tmp_path / "elsewhere")
-        target = other / "modules" / "home" / "ai" / "shared" / "hooks" / "x.py"
+        target = other / "plugins" / "sentinel" / "hooks" / "x.py"
         assert bool(guarded.contains(str(target))) is True
 
     def test_a_worktree_is_guarded(self, guarded: GuardedLocations, tmp_path: Path) -> None:
         """A worktree marks its root with a `.git` file rather than a directory."""
         worktree = tmp_path / "worktree"
-        (worktree / "modules" / "home" / "ai" / "shared" / "hooks").mkdir(parents=True)
+        (worktree / "plugins" / "sentinel" / "hooks").mkdir(parents=True)
         (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n")
-        target = worktree / "modules" / "home" / "ai" / "shared" / "hooks" / "x.py"
+        target = worktree / "plugins" / "sentinel" / "hooks" / "x.py"
         assert repo_root_of(str(target)) == str(worktree)
         assert bool(guarded.contains(str(target))) is True
 
@@ -155,13 +155,13 @@ class TestRepositoryContainment:
         self, guarded: GuardedLocations, tmp_path: Path
     ) -> None:
         """A copy of the tree is not the tree: shape alone does not guard it."""
-        backup = tmp_path / "backups" / "modules" / "home" / "ai" / "shared" / "hooks"
+        backup = tmp_path / "backups" / "plugins" / "sentinel" / "hooks"
         backup.mkdir(parents=True)
         assert bool(guarded.contains(str(backup / "x.py"))) is False
 
     def test_a_relative_path_of_that_shape_is_guarded(self, guarded: GuardedLocations) -> None:
         """It means whatever the working directory makes it mean, so it is refused."""
-        assert bool(guarded.contains("modules/home/ai/shared/hooks/x.py")) is True
+        assert bool(guarded.contains("plugins/sentinel/hooks/x.py")) is True
 
     def test_hooks_loaded_outside_any_checkout_guard_every_checkout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -224,7 +224,7 @@ class TestLetterCase:
     ) -> None:
         if not folds_case(str(tree)):
             pytest.skip("filesystem under test is case-sensitive")
-        target = tree / "repo" / "Modules" / "Home" / "AI" / "Shared" / "Hooks" / "x.py"
+        target = tree / "repo" / "Plugins" / "Sentinel" / "Hooks" / "x.py"
         assert bool(guarded.contains(str(target))) is True
 
     def test_case_variant_is_a_different_file_where_the_filesystem_does_not(
@@ -232,13 +232,13 @@ class TestLetterCase:
     ) -> None:
         if folds_case(str(tree)):
             pytest.skip("filesystem under test is case-insensitive")
-        target = tree / "repo" / "Modules" / "Home" / "AI" / "Shared" / "Hooks" / "x.py"
+        target = tree / "repo" / "Plugins" / "Sentinel" / "Hooks" / "x.py"
         assert bool(guarded.contains(str(target))) is False
 
 
 class TestUnresolvablePath:
     def test_written_form_still_decides(self, guarded: GuardedLocations, tree: Path) -> None:
-        unresolvable = f"{tree}/repo/modules/home/ai/shared/hooks/x\x00.py"
+        unresolvable = f"{tree}/repo/plugins/sentinel/hooks/x\x00.py"
         assert bool(guarded.contains(unresolvable)) is True
 
     def test_resolution_failure_does_not_escape(self, guarded: GuardedLocations) -> None:
@@ -251,7 +251,7 @@ class TestUnresolvablePath:
 
 class TestArbitraryText:
     def test_command_naming_a_guarded_location(self, guarded: GuardedLocations) -> None:
-        command = "cp /dev/null modules/home/ai/shared/hooks/block-dangerous-bash.sh"
+        command = "cp /dev/null plugins/sentinel/hooks/block-dangerous-bash.sh"
         assert guarded.mentioned_in(command) is True
 
     def test_command_naming_nothing_guarded(self, guarded: GuardedLocations) -> None:
@@ -260,10 +260,10 @@ class TestArbitraryText:
     @pytest.mark.parametrize(
         "command",
         [
-            pytest.param("rm -rf modules/home/ai/shared/hooks", id="bare-directory"),
-            pytest.param("ls modules/home/ai/shared/hooks/", id="trailing-separator"),
-            pytest.param("cd modules/home/ai/shared/hooks && ls", id="before-operator"),
-            pytest.param("cat 'modules/home/ai/shared/hooks/x.py'", id="quoted"),
+            pytest.param("rm -rf plugins/sentinel/hooks", id="bare-directory"),
+            pytest.param("ls plugins/sentinel/hooks/", id="trailing-separator"),
+            pytest.param("cd plugins/sentinel/hooks && ls", id="before-operator"),
+            pytest.param("cat 'plugins/sentinel/hooks/x.py'", id="quoted"),
         ],
     )
     def test_a_directory_is_named_with_or_without_its_separator(self, guarded: GuardedLocations, command: str) -> None:
@@ -273,9 +273,9 @@ class TestArbitraryText:
     @pytest.mark.parametrize(
         "command",
         [
-            pytest.param("cat my-modules/home/ai/shared/hooks/x", id="longer-prefix"),
-            pytest.param("cat modules/home/ai/shared/hooks-old/x", id="longer-suffix"),
-            pytest.param("cat vendor/x-modules/home/ai/shared/hooks", id="both"),
+            pytest.param("cat my-plugins/sentinel/hooks/x", id="longer-prefix"),
+            pytest.param("cat plugins/sentinel/hooks-old/x", id="longer-suffix"),
+            pytest.param("cat vendor/x-plugins/sentinel/hooks", id="both"),
         ],
     )
     def test_a_longer_name_holding_the_fragment_is_not_guarded(self, guarded: GuardedLocations, command: str) -> None:
@@ -303,7 +303,7 @@ class TestDeclarationChains:
         outside = tree / "outside"
         outside.mkdir()
 
-        matches = guarded.contains("modules/home/ai/shared/hooks/file", cwd=str(outside))
+        matches = guarded.contains("plugins/sentinel/hooks/file", cwd=str(outside))
 
         assert not matches
 

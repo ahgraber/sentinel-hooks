@@ -196,20 +196,6 @@ def test_link_with_matching_target_carve_out_is_silent(policy_world):
     assert rules.verdict("~/skills/link", "run") == "exec-through"
 
 
-@pytest.mark.parametrize("agent", ["claude", "codex", "copilot"])
-def test_each_declared_hook_tree_is_enforcement(policy_world, agent):
-    _, repo, _ = policy_world
-    relative = f"modules/home/ai/{agent}/hooks/"
-    folder = repo / relative
-    folder.mkdir(parents=True)
-    target = folder / "hook.py"
-    target.touch()
-    declaration = "<repo>/" + relative
-    rules = policy(policy_world, guarded=[declaration], write=[declaration])
-    assert rules.verdict(str(target), "write") == "guarded"
-    assert any("does not apply" in finding and declaration in finding for finding in rules.findings)
-
-
 def test_enforcement_follows_directory_links_without_cycles(policy_world):
     _, repo, manifest = policy_world
     source = repo / "source"

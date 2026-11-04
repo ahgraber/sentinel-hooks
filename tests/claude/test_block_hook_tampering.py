@@ -20,12 +20,14 @@ from conftest import (
 HOOK = "block-hook-tampering.py"
 
 
-def repo_path(*parts: str) -> str:
-    return str(Path("modules") / "home" / "ai" / "claude" / Path(*parts))
+def plugin_path(*parts: str) -> str:
+    """A path in the checkout's plugin directory, which the running hooks put in the floor."""
+    return str(Path("plugins") / "sentinel" / Path(*parts))
 
 
-def user_path(*parts: str) -> str:
-    return str(Path("users") / "testuser" / "home-manager" / Path(*parts))
+def project_path(agent: str, *parts: str) -> str:
+    """A path in the project's own configuration directory for `agent`."""
+    return str(Path(f".{agent}") / Path(*parts))
 
 
 def bash(command: str):
@@ -57,11 +59,11 @@ class TestReadAccess:
         assert_allowed(read("~/.claude/settings.json"))
 
     def test_repo_hooks_are_readable(self):
-        assert_allowed(read(repo_path("hooks", "block-leaks.py")))
+        assert_allowed(read(plugin_path("hooks", "block-leaks.py")))
 
-    def test_user_settings_are_readable(self):
+    def test_project_settings_are_readable(self):
         for platform in ("darwin", "linux"):
-            assert_allowed(read(user_path("claude", f"settings.{platform}.json")))
+            assert_allowed(read(project_path("claude", f"settings.{platform}.json")))
 
     def test_read_through_symlink_to_repo_hook_is_allowed(self, tmp_path: Path):
         alias = tmp_path / "notes.py"
@@ -80,11 +82,11 @@ class TestMutationGate:
         assert_blocked(write("~/.claude.json"), ".claude.json")
 
     def test_repo_hook_edit_asks(self):
-        assert_ask(edit(repo_path("hooks", "block-leaks.py")), "hooks")
+        assert_ask(edit(plugin_path("hooks", "block-leaks.py")), "hooks")
 
-    def test_user_settings_write_asks(self):
+    def test_project_settings_write_asks(self):
         assert_ask(
-            write(user_path("claude", "settings.linux.json")),
+            write(project_path("claude", "settings.linux.json")),
             "settings.linux.json",
         )
 
@@ -104,13 +106,13 @@ class TestBashCommandProtection:
     def test_bash_reading_repo_hook_proceeds(self):
         # The agent module tree is read-through, so a recognized read of a hook
         # source runs unprompted. Reviewing a guardrail is not changing it.
-        assert_allowed(bash(f"cat {repo_path('hooks', 'block-leaks.py')}"))
+        assert_allowed(bash(f"cat {plugin_path('hooks', 'block-leaks.py')}"))
 
     def test_bash_touching_repo_hook_asks(self):
         # Outside a recognized read the Bash branch still matches on mention,
         # not intent: a command's effect cannot be read off its text.
         assert_ask(
-            bash(f"sed -i 's/a/b/' {repo_path('hooks', 'block-leaks.py')}"),
+            bash(f"sed -i 's/a/b/' {plugin_path('hooks', 'block-leaks.py')}"),
             "hooks",
         )
 
@@ -121,12 +123,12 @@ class TestBashCommandProtection:
         assert_block_contract(bash("cat ~/.codex/auth.json"), "auth.json")
 
     def test_bash_referencing_only_instruction_markdown_allowed(self):
-        instruction = repo_path("hooks", "instructions", "00-response-style.md")
+        instruction = plugin_path("hooks", "instructions", "00-response-style.md")
 
         assert_allowed(bash(f"cat {instruction}"))
 
     def test_bash_mixing_instruction_markdown_and_protected_path_asks(self):
-        instruction = repo_path("hooks", "instructions", "00-response-style.md")
+        instruction = plugin_path("hooks", "instructions", "00-response-style.md")
 
         assert_allowed(bash(f"cat {instruction} ~/.claude/settings.json"))
 
@@ -138,20 +140,20 @@ class TestInstructionMarkdownGuard:
     """Instruction text is guarded enforcement."""
 
     def test_repo_instruction_markdown_write_asks(self):
-        assert_ask(write(repo_path("hooks", "instructions", "00-response-style.md")))
+        assert_ask(write(plugin_path("hooks", "instructions", "00-response-style.md")))
 
     def test_deployed_instruction_markdown_write_asks(self):
         assert_ask(write("~/.claude/hooks/instructions/00-response-style.md"))
 
     def test_nested_instruction_path_asks(self):
         assert_ask(
-            write(repo_path("hooks", "instructions", "nested", "note.md")),
+            write(plugin_path("hooks", "instructions", "nested", "note.md")),
             "hooks",
         )
 
     def test_non_markdown_in_instructions_asks(self):
         assert_ask(
-            write(repo_path("hooks", "instructions", "helper.py")),
+            write(plugin_path("hooks", "instructions", "helper.py")),
             "hooks",
         )
 
@@ -164,16 +166,16 @@ class TestPathResolution:
         assert_ask(write(str(alias)), "notes.py")
 
     def test_traversal_normalized_repo_hook_write_asks(self):
-        claude_dir = REPO_ROOT / "modules" / "home" / "ai" / "claude"
-        obfuscated = f"{claude_dir}/../claude/hooks/block-leaks.py"
-        assert "modules/home/ai/claude/hooks/" not in obfuscated
+        claude_dir = REPO_ROOT / "plugins" / "sentinel" / "harnesses" / "claude"
+        obfuscated = f"{claude_dir}/../claude/hooks.json"
+        assert "harnesses/claude/hooks.json" not in obfuscated
 
         assert_ask(write(obfuscated), "claude")
 
 
 class TestPayloadHandling:
     def test_unhandled_tool_defers(self):
-        assert_allowed(run_hook(HOOK, "Grep", {"path": repo_path("hooks")}))
+        assert_allowed(run_hook(HOOK, "Grep", {"path": plugin_path("hooks")}))
 
     def test_unparsable_payload_defers(self):
         # An unparsable payload carries no transcript path, so the agent is

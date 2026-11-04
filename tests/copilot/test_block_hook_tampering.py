@@ -13,12 +13,14 @@ from conftest import ADAPTER_PATH, REPO_ROOT, assert_allowed, assert_ask, assert
 HOOK = "block-hook-tampering.py"
 
 
-def repo_path(app: str, *parts: str) -> str:
-    return str(Path("modules") / "home" / "ai" / app / Path(*parts))
+def plugin_path(*parts: str) -> str:
+    """A path in the checkout's plugin directory, which the running hooks put in the floor."""
+    return str(Path("plugins") / "sentinel" / Path(*parts))
 
 
-def user_path(*parts: str) -> str:
-    return str(Path("users") / "testuser" / "home-manager" / Path(*parts))
+def project_path(agent: str, *parts: str) -> str:
+    """A path in the project's own configuration directory for `agent`."""
+    return str(Path(f".{agent}") / Path(*parts))
 
 
 def bash(command: str):
@@ -63,10 +65,10 @@ class TestReadAccess:
 
     def test_each_agents_repository_config_is_readable(self):
         for path in (
-            repo_path("claude", "hooks", "block-leaks.py"),
-            repo_path("codex", "rules", "default.rules"),
-            repo_path("copilot", "hooks", "security-policy.json"),
-            user_path("codex", "config.linux.toml"),
+            plugin_path("hooks", "block-leaks.py"),
+            project_path("codex", "rules", "default.rules"),
+            plugin_path("com.github.copilot", "hooks", "hooks.json"),
+            project_path("codex", "linux.config.toml"),
         ):
             assert_allowed(read(path))
 
@@ -97,10 +99,10 @@ class TestMutationGate:
 
     def test_each_agents_repository_config_write_asks(self):
         for path in (
-            repo_path("claude", "hooks", "block-leaks.py"),
-            repo_path("codex", "rules", "default.rules"),
-            repo_path("copilot", "hooks", "security-policy.json"),
-            user_path("codex", "config.linux.toml"),
+            plugin_path("hooks", "block-leaks.py"),
+            project_path("codex", "rules", "default.rules"),
+            plugin_path("com.github.copilot", "hooks", "hooks.json"),
+            project_path("codex", "linux.config.toml"),
         ):
             assert_ask(write(path), Path(path).name)
 
@@ -112,12 +114,12 @@ class TestMutationGate:
         ):
             assert_block_contract(write(path), Path(path).name)
 
-    def test_vscode_settings_source_write_asks(self):
-        assert_ask(write(user_path("vscode", "settings.json")), "settings.json")
+    def test_project_vscode_settings_write_asks(self):
+        assert_ask(write(project_path("vscode", "settings.json")), "settings.json")
 
     def test_repo_hook_edit_asks(self):
         assert_ask(
-            edit(repo_path("claude", "hooks", "block-leaks.py")),
+            edit(plugin_path("hooks", "block-leaks.py")),
             "hooks",
         )
 
@@ -132,18 +134,17 @@ class TestBashCommandProtection:
     def test_bash_reading_repo_hook_proceeds(self):
         # The agent module tree is read-through, so a recognized read runs
         # unprompted on the agent whose gate is a refusal rather than a prompt.
-        assert_allowed(bash(f"cat {repo_path('claude', 'hooks', 'block-leaks.py')}"))
+        assert_allowed(bash(f"cat {plugin_path('hooks', 'block-leaks.py')}"))
 
     def test_bash_touching_repo_hook_asks(self):
         # Outside a recognized read the Bash branch matches on mention, not
         # intent: a command's effect is not readable from its text.
         assert_ask(
-            bash(f"sed -i 's/a/b/' {repo_path('claude', 'hooks', 'block-leaks.py')}"),
+            bash(f"sed -i 's/a/b/' {plugin_path('hooks', 'block-leaks.py')}"),
             "hooks",
         )
 
     def test_bash_touching_each_agents_deployed_configuration_blocks(self):
-        # These resolve into users/*/home-manager/, which no carve-out covers.
         for command, _ in (
             ("cat ~/.claude/settings.json", "settings.json"),
             ("cat ~/.codex/config.toml", "config.toml"),
@@ -159,12 +160,12 @@ class TestBashCommandProtection:
         assert_block_contract(bash("cat ~/.codex/auth.json"), "auth.json")
 
     def test_bash_referencing_only_instruction_markdown_allowed(self):
-        instruction = repo_path("copilot", "instructions", "shell.instructions.md")
+        instruction = plugin_path("hooks", "instructions", "shell.instructions.md")
 
         assert_allowed(bash(f"cat {instruction}"))
 
     def test_bash_mixing_instruction_markdown_and_protected_path_blocks(self):
-        instruction = repo_path("copilot", "instructions", "shell.instructions.md")
+        instruction = plugin_path("hooks", "instructions", "shell.instructions.md")
 
         assert_allowed(bash(f"cat {instruction} ~/.codex/config.toml"))
 
@@ -177,19 +178,19 @@ class TestApplyPatchProtection:
 
     def test_apply_patch_repo_hook_asks(self):
         assert_ask(
-            apply_patch(repo_path("copilot", "hooks", "security-policy.json")),
-            "security-policy.json",
+            apply_patch(plugin_path("com.github.copilot", "hooks", "hooks.json")),
+            "hooks.json",
         )
 
-    def test_apply_patch_user_config_asks(self):
+    def test_apply_patch_project_config_asks(self):
         assert_ask(
-            apply_patch(user_path("codex", "config.linux.toml")),
-            "config.linux.toml",
+            apply_patch(project_path("codex", "linux.config.toml")),
+            "linux.config.toml",
         )
 
     def test_apply_patch_instruction_markdown_asks(self):
         assert_ask(
-            apply_patch(repo_path("copilot", "instructions", "shell.instructions.md")),
+            apply_patch(plugin_path("hooks", "instructions", "shell.instructions.md")),
             "shell.instructions.md",
         )
 
@@ -202,9 +203,8 @@ class TestInstructionMarkdownGuard:
 
     def test_each_agents_instruction_markdown_write_asks(self):
         for path in (
-            repo_path("claude", "hooks", "instructions", "00-response-style.md"),
-            repo_path("codex", "hooks", "instructions", "00-response-style.md"),
-            repo_path("copilot", "instructions", "shell.instructions.md"),
+            plugin_path("hooks", "instructions", "00-response-style.md"),
+            plugin_path("hooks", "instructions", "shell.instructions.md"),
             "~/.claude/hooks/instructions/00-response-style.md",
             "~/.codex/hooks/instructions/00-response-style.md",
             "~/.copilot/instructions/shell.instructions.md",
@@ -213,13 +213,13 @@ class TestInstructionMarkdownGuard:
 
     def test_nested_instruction_path_asks(self):
         assert_ask(
-            write(repo_path("copilot", "instructions", "nested", "note.md")),
+            write(plugin_path("hooks", "instructions", "nested", "note.md")),
             "instructions",
         )
 
     def test_non_markdown_in_instructions_asks(self):
         assert_ask(
-            write(repo_path("copilot", "instructions", "helper.py")),
+            write(plugin_path("hooks", "instructions", "helper.py")),
             "instructions",
         )
 
@@ -233,17 +233,17 @@ class TestPathResolution:
 
         assert_ask(write(str(alias)), "notes.py")
 
-    def test_traversal_normalized_repo_rules_write_asks(self):
-        copilot_dir = REPO_ROOT / "modules" / "home" / "ai" / "copilot"
-        obfuscated = f"{copilot_dir}/../codex/rules/default.rules"
-        assert "modules/home/ai/codex/rules/" not in obfuscated
+    def test_traversal_normalized_registration_write_asks(self):
+        copilot_dir = REPO_ROOT / "plugins" / "sentinel" / "harnesses" / "copilot"
+        obfuscated = f"{copilot_dir}/../codex/hooks.json"
+        assert "harnesses/codex/hooks.json" not in obfuscated
 
-        assert_ask(write(obfuscated), "rules")
+        assert_ask(write(obfuscated), "hooks.json")
 
 
 class TestPayloadHandling:
     def test_unhandled_tool_defers(self):
-        assert_allowed(run_hook(HOOK, "Grep", {"path": repo_path("copilot", "hooks")}))
+        assert_allowed(run_hook(HOOK, "Grep", {"path": plugin_path("harnesses", "copilot")}))
 
     def test_unparsable_payload_defers(self):
         assert_allowed(run_hook(HOOK, stdin_text="not json"))

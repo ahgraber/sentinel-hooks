@@ -68,16 +68,16 @@
 
 ## 6. guarded-surface
 
-- [ ] 6.1 Remove the `<repo>/modules/...`, `<repo>/users/...`, and `<repo>/modules/home/apps/...` declarations, the `<repo>/scripts/mcp-secrets.sh` exception, and the `~/.pi/agent/shared-hooks/` floor entry from `guarded-paths.toml`.
-- [ ] 6.2 Declare `~/.claude/plugins/`, `~/.codex/plugins/`, `~/.copilot/installed-plugins/`, `~/.pi/agent/git/`, and `~/.pi/agent/npm/` in the enforcement floor, beside the existing `~/.vscode/agent-plugins/` entry.
-- [ ] 6.3 Declare exec-through the plugin skill directories listed in `design.md` `TheFloorCoversWholeInstallLocations`, and remove `<repo>/modules/home/ai/shared/skills/`.
-- [ ] 6.4 Delete the tests that cover `RepositorySourcesAreGuarded` and the removed declarations, from the list task 3.10 recorded, and rewrite each remaining test fixture that names a `modules/home/ai/` or `users/*/home-manager/` path to a path the manifest still declares.
-- [ ] 6.5 Add tests for `AnotherHarnessesCopyIsWritten`, `AnotherPluginsFileIsWritten`, `PluginSkillScriptRuns`, and `InstalledCopyIsRead`.
-- [ ] 6.6 Add a test for `SkillsRootsAreRunnable` `SkillScriptRun` with a script under a plugin skill directory in each harness layout.
-- [ ] 6.7 Add to the floor the plugin directories the records in `design.md` `InPlaceCopiesComeFromHarnessRecords` name, with each one's `skills/` directory run-only, reading VS Code's `settings.json` as JSON with comments and trailing commas.
-- [ ] 6.8 Add tests for `AnotherHarnessesInPlaceCopyIsWritten` and `CheckoutOutsideThePluginDirectory` with a record of each harness, a Pi record with a relative path, a VS Code record with comments and a trailing comma, and a missing record.
-- [ ] 6.9 Measure the floor build time per hook call with the real plugin cache and the in-place records declared, and record it in `design.md` `InstallLocationsDeclareTheirLinks`.
-- [ ] 6.10 Declare in the enforcement floor `~/.copilot/settings.json`, `~/.copilot/config.json`, and `<project>/.github/copilot/settings*.json`, and add tests for `CopilotSettingsDisableTheHooks` and `ProjectCopilotSettingsAreWritten`.
+- [x] 6.1 Remove the `<repo>/modules/...`, `<repo>/users/...`, and `<repo>/modules/home/apps/...` declarations, the `<repo>/scripts/mcp-secrets.sh` exception, and the `~/.pi/agent/shared-hooks/` floor entry from `guarded-paths.toml`.
+- [x] 6.2 Declare `~/.claude/plugins/`, `~/.codex/plugins/`, `~/.copilot/installed-plugins/`, `~/.pi/agent/git/`, and `~/.pi/agent/npm/` in the enforcement floor, beside the existing `~/.vscode/agent-plugins/` entry.
+- [x] 6.3 Declare exec-through the plugin skill directories listed in `design.md` `TheFloorCoversWholeInstallLocations`, and remove `<repo>/modules/home/ai/shared/skills/`.
+- [x] 6.4 Delete the tests that cover `RepositorySourcesAreGuarded` and the removed declarations, from the list task 3.10 recorded, and rewrite each remaining test fixture that names a `modules/home/ai/` or `users/*/home-manager/` path to a path the manifest still declares.
+- [x] 6.5 Add tests for `AnotherHarnessesCopyIsWritten`, `AnotherPluginsFileIsWritten`, `PluginSkillScriptRuns`, and `InstalledCopyIsRead`.
+- [x] 6.6 Add a test for `SkillsRootsAreRunnable` `SkillScriptRun` with a script under a plugin skill directory in each harness layout.
+- [x] 6.7 Add to the floor the plugin directories the records in `design.md` `InPlaceCopiesComeFromHarnessRecords` name, with each one's `skills/` directory run-only, reading VS Code's `settings.json` as JSON with comments and trailing commas.
+- [x] 6.8 Add tests for `AnotherHarnessesInPlaceCopyIsWritten` and `CheckoutOutsideThePluginDirectory` with a record of each harness, a Pi record with a relative path, a VS Code record with comments and a trailing comma, and a missing record.
+- [x] 6.9 Measure the floor build time per hook call with the real plugin cache and the in-place records declared, and record it in `design.md` `InstallLocationsDeclareTheirLinks`.
+- [x] 6.10 Declare in the enforcement floor `~/.copilot/settings.json`, `~/.copilot/config.json`, and `<project>/.github/copilot/settings*.json`, and add tests for `CopilotSettingsDisableTheHooks` and `ProjectCopilotSettingsAreWritten`.
 
 ## 7. hook-tampering-blocking
 

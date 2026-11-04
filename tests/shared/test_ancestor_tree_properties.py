@@ -18,14 +18,13 @@ import bash_commands
 from hermetic import HOOKS_DIR
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-DECLARED = "modules/home/ai/shared/hooks/guard.py"
+DECLARED = ".codex/rules/default.rules"
 TARGETS = [
     ".",
-    "modules",
-    "modules/home/ai",
-    "modules/home/ai/shared/hooks",
+    ".codex",
+    ".codex/rules",
     DECLARED,
-    "modules/home/ai/notes.md",
+    ".codex/notes.md",
     "scratch",
 ]
 COMMANDS = [
@@ -70,12 +69,12 @@ def allows(command: str, cwd: str) -> bool:
 def _build(root: Path, target: str) -> dict[str, Path]:
     repo = root / "repo"
     (repo / ".git").mkdir(parents=True)
-    for name in (DECLARED, "modules/home/ai/notes.md", "scratch/a.txt"):
+    for name in (DECLARED, ".codex/notes.md", "scratch/a.txt"):
         (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text(name)
     src = root / "src"
-    (src / "shared/hooks").mkdir(parents=True)
-    (src / "shared/hooks/guard.py").write_text("replaced")
+    (src / "rules").mkdir(parents=True)
+    (src / "rules/default.rules").write_text("replaced")
     archive = root / "archive.tar"
     member = os.path.relpath(repo / DECLARED, repo / target) if not target.startswith(DECLARED) else "x"
     payload = root / "payload"

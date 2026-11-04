@@ -35,7 +35,7 @@ def _declared_path(declaration: str) -> str:
 
 def test_credential_and_enforcement_paths_report_distinct_classes() -> None:
     assert HOOK.protected_class("~/.codex/auth.json") == HOOK.CREDENTIAL
-    assert HOOK.protected_class(f"{REPO_ROOT}/modules/home/ai/shared/hooks/guarded_paths.py") == HOOK.GATED
+    assert HOOK.protected_class(str(HOOKS_DIR / "guarded_paths.py")) == HOOK.GATED
 
 
 @pytest.mark.parametrize("declaration", sorted(HOOK.POLICY.classes["block"].declarations))

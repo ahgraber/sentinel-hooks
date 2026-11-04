@@ -25,7 +25,7 @@ CODEX = "codex"
 COPILOT = "copilot"
 UNKNOWN = "unknown"
 
-REPO_SOURCE = "modules/home/ai/codex/rules/default.rules"
+REPO_SOURCE = ".codex/rules/default.rules"
 CREDENTIAL_PATHS = (
     "~/.claude.json",
     "~/.config/mcp-secrets.env",
@@ -130,8 +130,8 @@ class TestGatedClassesByAgent:
         assert (spaced.exit_code, attached.exit_code) == (0, 0)
         assert ask_reason(attached)
 
-    def test_edit_of_another_users_configuration_asks_under_claude(self) -> None:
-        target = "users/testuser/home-manager/claude/settings.json"
+    def test_edit_of_the_projects_configuration_asks_under_claude(self) -> None:
+        target = ".claude/settings.json"
         reason = ask_reason(edit(target, CLAUDE))
         assert "settings.json" in reason
 
@@ -162,29 +162,26 @@ class TestSpellingReachesTheGate:
 
     def test_unresolvable_protected_path_reaches_the_gate(self) -> None:
         """A path resolution cannot follow is judged from the path as written."""
-        target = f"{REPO_ROOT}/modules/home/ai/shared/hooks/x\x00.py"
+        target = f"{REPO_ROOT}/plugins/sentinel/hooks/x\x00.py"
         assert ask_reason(write(target, CLAUDE))
 
 
 class TestInstructionMarkdownIsGuarded:
     def test_direct_instruction_markdown_asks(self) -> None:
-        result = write("modules/home/ai/claude/hooks/instructions/00-response-style.md", CLAUDE)
+        result = write("plugins/sentinel/hooks/instructions/00-response-style.md", CLAUDE)
         assert ask_reason(result)
 
     def test_nested_path_under_instructions_is_gated(self) -> None:
-        assert ask_reason(write("modules/home/ai/claude/hooks/instructions/nested/note.md", CLAUDE))
+        assert ask_reason(write("plugins/sentinel/hooks/instructions/nested/note.md", CLAUDE))
 
     def test_non_markdown_in_instructions_is_gated(self) -> None:
-        assert ask_reason(write("modules/home/ai/claude/hooks/instructions/helper.py", CLAUDE))
+        assert ask_reason(write("plugins/sentinel/hooks/instructions/helper.py", CLAUDE))
 
     def test_markdown_name_leading_to_enforcement_is_gated(self, tmp_path: Path):
         """A write to a link is a write to what the link leads to."""
-        (tmp_path / ".git").mkdir()
-        hooks = tmp_path / "modules" / "home" / "ai" / "shared" / "hooks"
-        (hooks / "instructions").mkdir(parents=True)
-        (hooks / "block-destructive-ops.py").write_text("original\n")
-        alias = hooks / "instructions" / "notes.md"
-        alias.symlink_to("../block-destructive-ops.py")
+        alias = tmp_path / "instructions" / "notes.md"
+        alias.parent.mkdir()
+        alias.symlink_to(HOOKS_DIR / "block-destructive-ops.py")
 
         assert ask_reason(write(str(alias), CLAUDE))
 
@@ -590,7 +587,7 @@ class TestTheInstructionFormFollowsWhatTheRefusalOffers:
     @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
     def test_an_ancestor_refusal_names_none_and_says_to_stop(self, agent: str) -> None:
         # An ancestor matches no declaration, so this reaches the ancestor gate.
-        stderr = bash(f"rm -rf {REPO_ROOT}/modules/home/ai/pi", agent).stderr.lower()
+        stderr = bash(f"rm -rf {ANCESTOR}/User", agent).stderr.lower()
         assert "recognized reads use:" not in stderr
         assert _STOP in stderr
         assert _RETRY not in stderr
@@ -649,54 +646,56 @@ class TestInstallingDeferredCodeTakesNoReadCarveOut:
 
 
 # Absolute, unlike the named-path cases above. An ancestor carries no
-# declaration fragment, so it is found by resolving it inside its repository,
-# and a relative spelling resolves against the directory the payload supplies.
-AI_MODULE = f"{REPO_ROOT}/modules/home/ai"
+# declaration fragment, so it is found by resolving it against the home or its
+# repository, and a relative spelling resolves against the directory the payload
+# supplies. This one holds the declared `User/settings.json`.
+HOME_CONFIG = os.path.expanduser("~/.config")
+ANCESTOR = f"{HOME_CONFIG}/Code"
 
 DESTROYS_AN_ANCESTOR = [
-    f"rm -rf {AI_MODULE}/pi",
-    f"rm -rf {AI_MODULE}",
-    f"rm -rf {REPO_ROOT}/modules",
-    f"mv {AI_MODULE}/pi /tmp/elsewhere",
-    f"mv /tmp/replacement {AI_MODULE}/pi",
-    f"cp -r /tmp/replacement {AI_MODULE}/pi",
-    f"ln -sfn /tmp/replacement {AI_MODULE}/pi",
-    f"truncate -s 0 {AI_MODULE}/pi",
-    f"ls && rm -rf {AI_MODULE}/pi",
-    f"chmod 000 {AI_MODULE}",
-    f"chmod -R o+w {AI_MODULE}",
-    f'chmod +a "everyone deny read" {AI_MODULE}',
-    f"chown -R nobody {AI_MODULE}",
-    f"chgrp -R staff {AI_MODULE}",
-    f"chflags -R uchg {AI_MODULE}",
-    f"xattr -rc {AI_MODULE}",
-    f"find {AI_MODULE} -delete",
-    f"find {AI_MODULE} -type f -exec rm {{}} +",
-    f"trash {AI_MODULE}/pi",
-    f"tar -xf /tmp/archive.tar -C {AI_MODULE}",
-    f"unzip -o /tmp/archive.zip -d {AI_MODULE}",
-    f"ditto /tmp/replacement {AI_MODULE}",
-    f"cp -r -t {AI_MODULE} /tmp/payload",
-    f"cp -r --target-directory={AI_MODULE} /tmp/payload",
-    f"cp -rt{AI_MODULE} /tmp/payload",
-    f"rsync -a --delete /tmp/replacement/ {AI_MODULE}",
-    f"git checkout HEAD~5 -- {AI_MODULE}",
-    f"git restore --source=HEAD~5 {AI_MODULE}",
-    f"git stash push -- {AI_MODULE}",
-    f"git -C {REPO_ROOT} checkout HEAD~5 -- modules",
+    f"rm -rf {ANCESTOR}/User",
+    f"rm -rf {ANCESTOR}",
+    f"rm -rf {HOME_CONFIG}",
+    f"mv {ANCESTOR}/User /tmp/elsewhere",
+    f"mv /tmp/replacement {ANCESTOR}/User",
+    f"cp -r /tmp/replacement {ANCESTOR}/User",
+    f"ln -sfn /tmp/replacement {ANCESTOR}/User",
+    f"truncate -s 0 {ANCESTOR}/User",
+    f"ls && rm -rf {ANCESTOR}/User",
+    f"chmod 000 {ANCESTOR}",
+    f"chmod -R o+w {ANCESTOR}",
+    f'chmod +a "everyone deny read" {ANCESTOR}',
+    f"chown -R nobody {ANCESTOR}",
+    f"chgrp -R staff {ANCESTOR}",
+    f"chflags -R uchg {ANCESTOR}",
+    f"xattr -rc {ANCESTOR}",
+    f"find {ANCESTOR} -delete",
+    f"find {ANCESTOR} -type f -exec rm {{}} +",
+    f"trash {ANCESTOR}/User",
+    f"tar -xf /tmp/archive.tar -C {ANCESTOR}",
+    f"unzip -o /tmp/archive.zip -d {ANCESTOR}",
+    f"ditto /tmp/replacement {ANCESTOR}",
+    f"cp -r -t {ANCESTOR} /tmp/payload",
+    f"cp -r --target-directory={ANCESTOR} /tmp/payload",
+    f"cp -rt{ANCESTOR} /tmp/payload",
+    f"rsync -a --delete /tmp/replacement/ {ANCESTOR}",
+    f"git checkout HEAD~5 -- {ANCESTOR}",
+    f"git restore --source=HEAD~5 {ANCESTOR}",
+    f"git stash push -- {ANCESTOR}",
+    f"git -C {HOME_CONFIG} checkout HEAD~5 -- Code",
     "git checkout HEAD~5 -- .",
     "tar -xf /tmp/archive.tar",
-    f"sudo rm -rf {AI_MODULE}",
-    f"env FOO=1 rm -rf {AI_MODULE}",
-    f"/bin/rm -rf {AI_MODULE}",
-    f"FOO=1 rm -rf {AI_MODULE}",
-    f"env -C {REPO_ROOT} rm -rf modules",
-    "cd modules/home && rm -rf ai",
-    "cd modules && cd home && rm -rf ai",
-    "cd modules/home/ai && tar -xf /tmp/archive.tar",
-    "cd modules/home/ai && rm -rf shared",
-    "cd /tmp; rm -rf modules",
-    "cd /tmp | rm -rf modules",
+    f"sudo rm -rf {ANCESTOR}",
+    f"env FOO=1 rm -rf {ANCESTOR}",
+    f"/bin/rm -rf {ANCESTOR}",
+    f"FOO=1 rm -rf {ANCESTOR}",
+    f"env -C {HOME_CONFIG} rm -rf Code",
+    "cd ~/.config && rm -rf Code",
+    "cd ~/.config && cd Code && rm -rf User",
+    "cd ~/.config/Code && tar -xf /tmp/archive.tar",
+    "cd ~/.config/Code && rm -rf User",
+    "cd /tmp; rm -rf .",
+    "cd /tmp | rm -rf .",
     # `~/.claude/` is a declaration in its own right, so removing it is judged
     # by the naming rule and carries that rule's wording. The home above it is
     # an ancestor and nothing else.
@@ -704,16 +703,16 @@ DESTROYS_AN_ANCESTOR = [
 ]
 
 LEAVES_THE_ANCESTOR_ALONE = [
-    f"cat {AI_MODULE}/pi/default.nix",
-    f"ls {AI_MODULE}/pi",
-    f"grep -rn foo {AI_MODULE}",
-    f"cp /tmp/new.nix {AI_MODULE}/pi/new.nix",
-    f"rm -rf {AI_MODULE}-backup",
-    f"rm -rf {REPO_ROOT}/modules-old",
+    f"cat {ANCESTOR}/User/keybindings.json",
+    f"ls {ANCESTOR}/User",
+    f"grep -rn foo {ANCESTOR}",
+    f"cp /tmp/new.json {ANCESTOR}/User/new.json",
+    f"rm -rf {ANCESTOR}-backup",
+    f"rm -rf {HOME_CONFIG}-old",
     "rm -rf /tmp/scratch",
-    f"grep -rn 'rm -rf' {AI_MODULE}",
-    f"chmod +x {AI_MODULE}/pi/new.sh",
-    f"find {AI_MODULE} -name '*.nix'",
+    f"grep -rn 'rm -rf' {ANCESTOR}",
+    f"chmod +x {ANCESTOR}/User/new.sh",
+    f"find {ANCESTOR} -name '*.json'",
     "tar -tf /tmp/archive.tar",
     "tar -xf /tmp/archive.tar -C /tmp/out",
     "cd /tmp && tar -xf /tmp/archive.tar",
@@ -722,7 +721,7 @@ LEAVES_THE_ANCESTOR_ALONE = [
     "git checkout main",
     "git status",
     "git stash",
-    f"git restore {AI_MODULE}/pi/default.nix",
+    f"git restore {ANCESTOR}/User/keybindings.json",
 ]
 
 
@@ -753,7 +752,7 @@ class TestDestructiveOperationsOnAnAncestor:
 # With no working directory in the payload, a relative operand may name any
 # directory, an ancestor of a declaration included.
 DESTROYS_A_RELATIVE_OPERAND = [
-    "rm -r modules/home/ai/pi",
+    "rm -r plugins/sentinel",
     "rm -rf build",
     "mv modules /tmp/elsewhere",
     "mv /tmp/replacement modules",
@@ -764,8 +763,8 @@ DESTROYS_A_RELATIVE_OPERAND = [
 NAMES_EVERY_DESTROYED_OPERAND_ABSOLUTELY = [
     "rm -rf /tmp/scratch",
     "rm -rf ~/scratch",
-    "cat modules/home/ai/pi/default.nix",
-    "cp modules/home/ai/pi/default.nix /tmp/copy.nix",
+    "cat plugins/sentinel/plugin.json",
+    "cp plugins/sentinel/plugin.json /tmp/copy.json",
     "chmod 755 /tmp/scratch",
     "chown nobody:staff /tmp/scratch",
     "git checkout HEAD~5",
@@ -799,13 +798,13 @@ class TestRelativeOperandWithoutAWorkingDirectory:
         assert_refused(bash(command, agent), "an earlier `cd` names one")
 
     def test_an_absolute_ancestor_is_still_judged(self) -> None:
-        reason = ask_reason(bash(f"rm -rf {AI_MODULE}/pi", CLAUDE, cwd=None))
+        reason = ask_reason(bash(f"rm -rf {ANCESTOR}/User", CLAUDE, cwd=None))
         assert "remove, rename, replace, or change the permissions of" in reason
 
     @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
     def test_a_supplied_directory_decides_where_it_leads(self, agent: str) -> None:
         """Resolved against a directory outside the repository, the same spelling is not an ancestor."""
-        result = bash("rm -r modules/home/ai/pi", agent, cwd="/tmp")
+        result = bash("rm -r plugins/sentinel", agent, cwd="/tmp")
         assert result.exit_code == 0
         assert result.stdout == ""
         assert result.stderr == ""
@@ -867,15 +866,15 @@ class TestAgentHomeReadsProceed:
         assert_allowed(bash(command, CLAUDE))
 
 
-PI_SOURCE = "modules/home/ai/pi/extensions/hooks/extension.ts"
-HOOK_SOURCE = "modules/home/ai/shared/hooks/block-leaks.py"
+PI_SOURCE = "plugins/sentinel/harnesses/pi/extension/extension.ts"
+HOOK_SOURCE = "plugins/sentinel/hooks/block-leaks.py"
 
 MODULE_TREE_READS = [
     f"cat {PI_SOURCE}",
     f"head -40 {HOOK_SOURCE}",
     f"grep -rn registerHooks {PI_SOURCE}",
-    "ls modules/home/ai/codex/rules/",
-    "find modules/home/ai/copilot/hooks -name '*.md'",
+    "ls plugins/sentinel/harnesses/codex/",
+    "find plugins/sentinel/harnesses/copilot -name '*.md'",
     f"cat {PI_SOURCE} && echo --- && cat {HOOK_SOURCE}",
 ]
 
@@ -884,9 +883,9 @@ MODULE_TREE_WRITES = [
     f"cp /tmp/replacement.ts {PI_SOURCE}",
     f"sed -i 's/a/b/' {HOOK_SOURCE}",
     # Spelled with the trailing separator: a bare directory name carries no
-    # declaration fragment, so it is judged by repository resolution alone.
-    "rm -rf modules/home/ai/shared/hooks/",
-    f"cat {PI_SOURCE} && rm modules/home/ai/codex/rules/default.rules",
+    # declaration fragment, so it is judged by resolving the path alone.
+    "rm -rf plugins/sentinel/hooks/",
+    f"cat {PI_SOURCE} && rm plugins/sentinel/harnesses/codex/hooks.json",
     # Read-through is not exec-through: a script held here stays unrunnable.
     f"uv run {HOOK_SOURCE}",
 ]
@@ -947,7 +946,7 @@ class TestAgentModuleTreeReadsProceed:
         assert_allowed(bash(command, CLAUDE))
 
 
-INSTRUCTION_MARKDOWN = "modules/home/ai/shared/hooks/instructions/00-response-style.md"
+INSTRUCTION_MARKDOWN = "plugins/sentinel/hooks/instructions/00-response-style.md"
 
 # Prose an agent has ordinary reason to write: it names guarded paths and
 # changes none of them.
