@@ -493,22 +493,22 @@
       "why": "package directory"
     },
     {
-      "path": "modules/home/ai/shared/hooks/block-secrets.py",
+      "path": "plugins/sentinel/hooks/block-secrets.py",
       "blocked": false,
       "why": "a hook source tree excuses a file the name heuristic would refuse"
     },
     {
-      "path": "modules/home/ai/claude/hooks/block-secrets.py",
-      "blocked": false,
-      "why": "a hook source tree excuses a file the name heuristic would refuse"
+      "path": "claude/hooks/block-secrets.py",
+      "blocked": true,
+      "why": "a directory named for a harness holds no Sentinel hook sources, so it earns no exemption"
     },
     {
-      "path": "modules/home/ai/copilot/hooks/security-policy.json",
+      "path": "plugins/sentinel/hooks/security-policy.json",
       "blocked": false,
       "why": "a guardrail source named for what it guards"
     },
     {
-      "path": "modules/home/ai/codex/tests/test_block_secrets.py",
+      "path": "tests/shared/test_block_secrets.py",
       "blocked": false,
       "why": "a hook test tree excuses a file the name heuristic would refuse"
     },
@@ -563,9 +563,9 @@
       "why": "VS Code's MCP server list on Linux, declared in [block]"
     },
     {
-      "path": "users/mithras/home-manager/pi/mcp.json",
+      "path": ".vscode/mcp.json",
       "blocked": false,
-      "why": "an MCP server list that names its keys by environment variable; the declaration, not the file name, blocks"
+      "why": "a workspace MCP server list that names its keys by input variable; the declaration, not the file name, blocks"
     },
     {
       "path": "scripts/other-secrets.sh",

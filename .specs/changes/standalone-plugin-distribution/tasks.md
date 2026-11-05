@@ -91,9 +91,9 @@
 
 ## 8. sensitive-path-blocking
 
-- [ ] 8.1 Extend the hook-source exemption to the Sentinel plugin directory in a checkout and in every installed copy, and to the checkout's `tests/` directory.
-- [ ] 8.2 Rewrite the entries in `sensitive-path-cases.json` that name `modules/home/ai/` or `users/*/home-manager/` paths.
-- [ ] 8.3 Add tests for `GuardrailSourceInACheckout`, with a hook source and a test file, and `GuardrailSourceInAnInstalledCopy`.
+- [x] 8.1 Extend the hook-source exemption to the Sentinel plugin directory in a checkout and in every installed copy, and to the checkout's `tests/` directory.
+- [x] 8.2 Rewrite the entries in `sensitive-path-cases.json` that name `modules/home/ai/` or `users/*/home-manager/` paths.
+- [x] 8.3 Add tests for `GuardrailSourceInACheckout`, with a hook source and a test file, and `GuardrailSourceInAnInstalledCopy`.
 
 ## 9. cross-agent-capability-parity
 

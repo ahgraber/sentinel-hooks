@@ -282,6 +282,20 @@ Order is not tracked, and an assignment that is not exported still counts: the o
 
 - Assignments on the harness's own segment only: it leaves the `export` form open.
 
+### Decision: SentinelSourcesAreFoundByTheirContents
+
+**Chosen:** the name-heuristic exemption covers a directory whose `hooks/` holds `guarded_paths.py`, and the `tests/` directory of a directory whose `plugins/*/hooks/` holds it.
+The harness-named directory pattern is removed.
+
+**Rationale:** the plugin runs from an installed copy, not from the checkout, so the running hook's own location does not find the checkout, and each harness installs copies at a different path.
+A file the plugin ships is present in every copy and moves with the plugin, so no edit follows a new harness or a move.
+The check reads the file system only after a file name matches the heuristic.
+
+**Alternatives considered:**
+
+- A path pattern per install layout: it needs an edit for each harness and each layout change, which the requirement rules out.
+- The running plugin directory from the floor: it misses the checkout and every other harness's copy.
+
 ### Decision: TheSessionCheckReadsAllHarnessSettings
 
 **Chosen:** `session-policy-checks.py` reads, at each session start, the user, project, and managed settings files of every supported harness, and reports each forbidden value, each unset setting whose current default is forbidden, each file it cannot parse, and each difference between the harnesses' allowed hosts.
@@ -326,6 +340,8 @@ harness event
   The install evidence records where each harness shows it.
 - **Removing a directory above a found plugin location does not ask**: `rm -rf plugins` in a checkout loaded in place, or above a link target, is not an ancestor removal.
   The found location itself stays in the floor; a marketplace install sits under a declared location and is not affected.
+- **A planted hook source**: a file named `hooks/guarded_paths.py` exempts its directory from the name heuristic, so an agent can create one to read a file named `secrets.txt` beside it.
+  Path-based patterns and declarations still refuse, and the harness-named pattern this replaces could be planted the same way.
 - **A program name the command text hides**: `$X plugin disable` names no program the gate can find, so it passes the plugin command gate; the path gates still judge it.
 - **A variable the command text does not set**: `source ./env.sh; claude` sets `CLAUDE_CODE_SIMPLE` in a file the session check does not read, and program text nested more than four levels deep is not read.
 - **In-place loads with no user-level record**: a `--plugin-dir` session, `CLAUDE_CODE_PLUGIN_DIRS`, a Pi project's `.pi/settings.json`, and VS Code workspace settings name an in-place plugin only for one session or one project.

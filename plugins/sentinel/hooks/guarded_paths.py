@@ -1047,12 +1047,31 @@ def validate(manifest: Path | str = MANIFEST_PATH) -> list[str]:
     return PathPolicy(load_manifest(path), manifest_path=path).validate()
 
 
-# Exempt package and hook trees from name-only credential checks. Do not exempt
-# bare `env` directories because they can contain credentials.
+# Exempt package trees from name-only credential checks. Do not exempt bare
+# `env` directories because they can contain credentials.
 NAME_HEURISTIC_EXEMPT_RE = re.compile(
-    r"(?:^|[/\\])"
-    r"(?:\.venv|venv|site-packages|node_modules|\.claude"
-    r"|(?:claude|codex|copilot|pi|shared)[/\\](?:hooks|security|tests))"
-    r"(?:[/\\]|$)",
+    r"(?:^|[/\\])(?:\.venv|venv|site-packages|node_modules|\.claude)(?:[/\\]|$)",
     re.IGNORECASE,
 )
+# A directory whose `hooks/` holds this module is a Sentinel plugin, in a checkout or an installed copy.
+_HOOK_SOURCE_MARKER = Path("hooks") / Path(__file__).name
+
+
+def exempt_from_name_heuristic(path: str) -> bool:
+    """Return whether `path` is in a package tree, a Sentinel plugin, or the tests of a checkout holding one.
+
+    Sentinel's sources are named for what they guard against. A plugin is found by
+    the hook sources it holds, so every harness's copy is covered wherever it is
+    installed or moved. A relative path is judged by its text alone.
+    """
+    if NAME_HEURISTIC_EXEMPT_RE.search(path):
+        return True
+    target = Path(os.path.expanduser(path))
+    if not target.is_absolute():
+        return False
+    for directory in target.parents:
+        if (directory / _HOOK_SOURCE_MARKER).is_file():
+            return True
+        if target.is_relative_to(directory / "tests") and any(directory.glob(f"plugins/*/{_HOOK_SOURCE_MARKER}")):
+            return True
+    return False

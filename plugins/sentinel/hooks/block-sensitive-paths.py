@@ -21,11 +21,11 @@ from typing import NoReturn
 import apply_patch
 import bash_commands
 from guarded_paths import (
-    NAME_HEURISTIC_EXEMPT_RE,
     TOOL_VOCABULARY,
     GuardedLocations,
     ManifestError,
     PathPolicy,
+    exempt_from_name_heuristic,
     load_manifest,
     spellings,
 )
@@ -149,7 +149,7 @@ def is_named_for_secrets(path: str) -> bool:
     """Return whether only the unexempted file name signals a secret."""
     return bool(
         NAME_PATTERN_RE.search(os.path.basename(path))
-        and not NAME_HEURISTIC_EXEMPT_RE.search(path)
+        and not exempt_from_name_heuristic(path)
         and not NAME_HEURISTIC_EXCEPTIONS.matches_hop(path)
     )
 
@@ -185,7 +185,7 @@ def ask_reason(path: str, cwd: str | None = None) -> str | None:
         )
         if (
             suggestive
-            and not NAME_HEURISTIC_EXEMPT_RE.search(candidate)
+            and not exempt_from_name_heuristic(candidate)
             and not NAME_HEURISTIC_EXCEPTIONS.matches_hop(candidate)
         ):
             return f"This operation targets '{path}', whose name suggests credentials, tokens, or key material."
