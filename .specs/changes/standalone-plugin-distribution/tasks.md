@@ -97,9 +97,9 @@
 
 ## 9. cross-agent-capability-parity
 
-- [ ] 9.1 Extend the capability coverage test to read each registration the plugin ships, `harnesses/*/hooks.json` and `com.github.copilot/hooks/hooks.json`, and fail when one does not run a hook of the enforcement kind, directly or through an adapter.
-- [ ] 9.2 Add a fixture registration that omits one enforcement hook, and check that the test fails on it.
-- [ ] 9.3 Remove the `configuration` kind from the capability coverage test, and record `agent-configuration-floor` as the enforcement kind with `session-policy-checks.py` and `configuration-floor.toml`.
+- [x] 9.1 Extend the capability coverage test to read each registration the plugin ships, `harnesses/*/hooks.json` and `com.github.copilot/hooks/hooks.json`, and fail when one does not run a hook of the enforcement kind, directly or through an adapter.
+- [x] 9.2 Add a fixture registration that omits one enforcement hook, and check that the test fails on it.
+- [x] 9.3 Remove the `configuration` kind from the capability coverage test, and record `agent-configuration-floor` as the enforcement kind with `session-policy-checks.py`.
 
 ## 10. Copilot CLI
 
@@ -111,6 +111,7 @@
 ## 11. agent-configuration-floor
 
 - [ ] 11.1 Write `configuration-floor.toml` with each supported harness's settings files, forbidden values, unsafe defaults with the version they were read from, and host-list settings, and find from the Copilot CLI documentation the values that approve every tool call without a prompt.
+  Add `configuration-floor.toml` to the `agent-configuration-floor` record and to the hook data files in the capability coverage test.
 - [ ] 11.2 Make `session-policy-checks.py` read every supported harness's settings, report as `BypassModesAreReported` and `NetworkReachIsUniformPerUser` require, write no file, and report a `CLAUDE_CODE_SHELL` that is not a bash without naming an install path.
 - [ ] 11.3 Add tests for each scenario of `BypassModesAreReported`, with a fixture settings file per harness, a VS Code file with comments and a trailing comma, a file that does not parse, and a check that no file changes.
 - [ ] 11.4 Add tests for each scenario of `NetworkReachIsUniformPerUser`.
