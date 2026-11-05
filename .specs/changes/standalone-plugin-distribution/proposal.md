@@ -73,3 +73,5 @@ The policy's self-protection names the directories where each harness installs p
   Decided with the user.
 - 2026-11-03 Plugin install locations: an enforcement-floor record marks one with `plugins = true`, so the manifest stays the one list of vendor paths.
   Decided with the user.
+- 2026-11-04 Harness commands: the plugin command gate and the session check also read program text passed to a shell or `eval`, and the session check counts a listed variable assigned anywhere in the command, such as through `export`.
+  Decided with the user.

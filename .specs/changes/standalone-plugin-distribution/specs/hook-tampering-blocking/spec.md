@@ -13,7 +13,7 @@ Updating and removing a plugin is ordinary maintenance, so the user decides it i
 The commands are identifiers the harnesses publish, so they are named here: `claude plugin` `disable`, `uninstall`, `remove`, `rm`, `update`, `prune`, and `autoremove`, and `claude plugin marketplace` `remove`, `rm`, and `update`; `codex plugin remove` and `codex plugin marketplace` `remove` and `upgrade`; `copilot plugin` `disable`, `uninstall`, `remove`, `rm`, and `update`, and `copilot plugin marketplace` `remove` and `update`, and `copilot config` given a value to set, which writes a settings file that can set `disableAllHooks`; and `pi` `remove`, `uninstall`, `update`, and `config`.
 The harness's legacy aliases for `plugin`, `plugins` in Claude Code and Copilot CLI, are the same command.
 
-The program is identified as `UnrecognizedCommandsAreGated` identifies it, through a wrapper known to run its operands unchanged, and in every segment of the command.
+The program is identified as `UnrecognizedCommandsAreGated` identifies it, through a wrapper known to run its operands unchanged, in every segment of the command, and in program text the command passes to a shell, to `eval`, or to an interpreter's inline code option.
 A command whose program word does not resolve, such as a variable, is not recognized as one of these and is judged by the other gates alone.
 
 Serves: protect-installed-copy
@@ -42,6 +42,12 @@ Serves: protect-installed-copy
 - **WHEN** the command is intercepted
 - **THEN** the gate applies
 
+#### Scenario: PluginCommandInProgramText
+
+- **GIVEN** a Bash command `bash -c 'claude plugin disable sentinel'`
+- **WHEN** the command is intercepted
+- **THEN** the gate applies
+
 #### Scenario: PluginIsListed
 
 - **GIVEN** a Bash command that lists or inspects plugins, such as `claude plugin list`
@@ -57,7 +63,8 @@ One approval would grant that for every call the session makes, so the decision 
 
 The switches are identifiers the harnesses publish, so they are named here: Claude Code's `--bare`, `--safe-mode`, `--restricted`, `--plugin-dir`, `--plugin-url`, a `--settings` value that sets `disableAllHooks`, and the environment variables `CLAUDE_CODE_SIMPLE` and `CLAUDE_CODE_PLUGIN_DIRS`; Codex's `--disable hooks`, `--disable plugins`, and a `-c` override of `features.hooks`, `features.plugins`, or a plugin's `enabled`; Copilot CLI's `--plugin-dir`, `--config-dir`, and the environment variable `COPILOT_HOME`; and Pi's `--no-extensions`, `-ne`, `--extension`, and `-e`.
 
-The program is identified as `PluginMaintenanceReachesTheUser` identifies it, and an environment assignment before the program is part of the command.
+The program is identified as `PluginMaintenanceReachesTheUser` identifies it.
+An assignment of one of these variables anywhere in the command, before the program, as an operand of `export`, `declare`, or `typeset`, or on its own in an earlier segment, is part of the command; the harness's own arguments are not.
 
 Serves: protect-installed-copy
 
@@ -76,6 +83,18 @@ Serves: protect-installed-copy
 #### Scenario: NestedSessionThroughAnEnvironmentAssignment
 
 - **GIVEN** a Bash command `CLAUDE_CODE_SIMPLE=1 claude -p "fix the tests"`
+- **WHEN** the command is intercepted
+- **THEN** the hook refuses it on every agent
+
+#### Scenario: NestedSessionThroughAnExport
+
+- **GIVEN** a Bash command `export CLAUDE_CODE_SIMPLE=1; claude -p "fix the tests"`
+- **WHEN** the command is intercepted
+- **THEN** the hook refuses it on every agent
+
+#### Scenario: NestedSessionInProgramText
+
+- **GIVEN** a Bash command `bash -c 'claude --bare -p "fix the tests"'`
 - **WHEN** the command is intercepted
 - **THEN** the hook refuses it on every agent
 

@@ -81,11 +81,13 @@
 
 ## 7. hook-tampering-blocking
 
-- [ ] 7.1 Add a test for `ADestructiveOperationOnAnAncestorReachesTheUser` with `rm -rf ~/.pi`, which removes the declared `~/.pi/agent/`.
-- [ ] 7.2 Add the harness command table `design.md` `HarnessCommandsAreATable` describes to `tool-vocabulary.toml`, with the commands and switches the two new requirements name, and a source and date for each harness.
-- [ ] 7.3 Gate a plugin maintenance command and refuse a session switch in `block-hook-tampering.py`, finding the program in every segment through the known wrappers and reading an environment assignment before it.
-- [ ] 7.4 Add tests for `PluginIsDisabled`, `PluginIsRemovedInAnotherHarness`, `MarketplaceIsRemoved`, `PluginCommandBehindAWrapper`, and `PluginIsListed`, and a test that each subcommand in the table is gated.
-- [ ] 7.5 Add tests for `NestedSessionWithHooksOff`, `NestedSessionThroughAnOverride`, `NestedSessionThroughAnEnvironmentAssignment`, `ExtensionReplacedInPi`, and `NestedSessionWithHooksOn`, and a test that each switch in the table is refused.
+- [x] 7.1 Add a test for `ADestructiveOperationOnAnAncestorReachesTheUser` with `rm -rf ~/.pi`, which removes the declared `~/.pi/agent/`.
+- [x] 7.2 Add the harness command table `design.md` `HarnessCommandsAreATable` describes to `tool-vocabulary.toml`, with the commands and switches the two new requirements name, and a source and date for each harness.
+- [x] 7.3 Gate a plugin maintenance command and refuse a session switch in `block-hook-tampering.py`, finding the program in every segment through the known wrappers and reading an environment assignment before it.
+- [x] 7.4 Add tests for `PluginIsDisabled`, `PluginIsRemovedInAnotherHarness`, `MarketplaceIsRemoved`, `PluginCommandBehindAWrapper`, and `PluginIsListed`, and a test that each subcommand in the table is gated.
+- [x] 7.5 Add tests for `NestedSessionWithHooksOff`, `NestedSessionThroughAnOverride`, `NestedSessionThroughAnEnvironmentAssignment`, `ExtensionReplacedInPi`, and `NestedSessionWithHooksOn`, and a test that each switch in the table is refused.
+- [x] 7.6 Read harness commands in program text and listed variables assigned anywhere in the command, as `design.md` `HarnessCommandsAreFoundInProgramTextAndEarlierSegments` describes, and add tests for `PluginCommandInProgramText`, `NestedSessionThroughAnExport`, and `NestedSessionInProgramText`.
+- [x] 7.7 Find a harness that `xargs`, `find -exec`, or `watch` runs, and a short switch with its value attached, such as `pi -e./runner.ts`, with tests for both.
 
 ## 8. sensitive-path-blocking
 

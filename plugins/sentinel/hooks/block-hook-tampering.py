@@ -20,6 +20,7 @@ import apply_patch
 import bash_commands
 from bash_commands import offers_accepted_forms
 from guarded_paths import TOOL_VOCABULARY, ManifestError, load_policy, spellings
+import harness_commands
 from hook_response import Decision, Instruction, invoking_agent, respond, supports_ask
 import shell_words
 from shell_words import Word
@@ -81,6 +82,29 @@ def _ancestor_refusal(target: str, tool_name: str) -> str:
         f"Blocked: {tool_name} would remove, rename, replace, or change the permissions of '{target}', "
         "which holds agent enforcement. This agent cannot ask for the required "
         "approval."
+    )
+
+
+def _maintenance_reason(command: str, tool_name: str) -> str:
+    """Build the prompt for a harness command that can switch a plugin off."""
+    return (
+        f"This {tool_name} call runs `{command}`, which can switch off, remove, or replace an installed "
+        "plugin and its hooks, Sentinel included. Approve only if you intend this plugin change."
+    )
+
+
+def _maintenance_refusal(command: str, tool_name: str) -> str:
+    return (
+        f"Blocked: {tool_name} runs `{command}`, which can switch off, remove, or replace an installed "
+        "plugin and its hooks, Sentinel included. This agent cannot ask for the required approval."
+    )
+
+
+def _session_refusal(switch: str, tool_name: str) -> str:
+    return (
+        f"Blocked: this {tool_name} call starts an agent session with `{switch}`, which runs it without "
+        "Sentinel's hooks or with a plugin loaded in place of the installed one. One approval would cover "
+        "every call that session makes, so it cannot be approved here; the user can start it in their own terminal."
     )
 
 
@@ -349,6 +373,29 @@ def gate(
     _block(refusal or _degraded_refusal(target, tool_name), agent, instruction)
 
 
+def _refuse_a_session_without_hooks(
+    reading: bash_commands.Reading, cwd: str | None, tool_name: str, agent: str
+) -> None:
+    """Refuse a command that starts a harness session without its hooks, on every agent."""
+    switch = harness_commands.session_switch(reading, cwd)
+    if switch is not None:
+        _block(_session_refusal(switch, tool_name), agent)
+
+
+def _gate_plugin_maintenance(reading: bash_commands.Reading, tool_name: str, agent: str) -> None:
+    """Gate a harness command that can switch off, remove, or replace a plugin."""
+    maintenance = harness_commands.plugin_maintenance(reading)
+    if maintenance is not None:
+        gate(
+            maintenance,
+            tool_name,
+            GATED,
+            agent,
+            prompt=_maintenance_reason(maintenance, tool_name),
+            refusal=_maintenance_refusal(maintenance, tool_name),
+        )
+
+
 def _written_paths(tool_input: dict) -> list[str]:
     paths = []
     for key in ("file_path", "path"):
@@ -449,6 +496,7 @@ def main() -> None:
             # One reading answers both what the command reaches and why
             # recognition stopped, so the refusal names the reason it reached.
             reading = bash_commands.read(command, cwd)
+            _refuse_a_session_without_hooks(reading, cwd, tool_name, agent)
             cls = _reading_class(reading, cwd)
             if cls is not None:
                 # A recognized command writing a gated file meets the write gate, not a recognition stop.
@@ -482,6 +530,8 @@ def main() -> None:
             unanchored = _unanchored_operand(reading, cwd)
             if unanchored is not None:
                 _block(_unanchored_refusal(unanchored, tool_name), agent, instruction=Instruction.ABSOLUTE_PATH)
+
+            _gate_plugin_maintenance(reading, tool_name, agent)
 
     if POLICY and POLICY.findings:
         respond(Decision.WARN, "\n".join(POLICY.findings), agent=agent)

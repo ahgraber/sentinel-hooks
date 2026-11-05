@@ -108,7 +108,8 @@ class TestUnreadableVocabularyRefusesEveryCall:
     def test_an_invalid_vocabulary_names_the_error(self, hooks_copy: Path) -> None:
         (hooks_copy / "tool-vocabulary.toml").write_text("[groups]\n")
         assert_refused(
-            run_hook("Read", "claude", hooks_copy), "expected groups, ask, mappings, passthrough, and refused"
+            run_hook("Read", "claude", hooks_copy),
+            "expected groups, ask, mappings, passthrough, refused, and harness-commands",
         )
 
 

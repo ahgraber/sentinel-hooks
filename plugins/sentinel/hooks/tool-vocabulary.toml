@@ -741,3 +741,76 @@ reason = "controls a subagent child's commands; children are refused with `subag
 [[refused.pi.tools]]
 tool = "watchdog_diff"
 reason = "a subagent child's review tool; children are refused with `subagent`"
+
+# Each supported harness's own command line. A harness switches a plugin off
+# through its own records, so these commands name no path a declaration covers.
+# `harness_commands.py` finds `program` in each segment of a Bash command and
+# in program text the command passes to a shell.
+# - `maintenance`: word sequences that disable, remove, update, or prune a
+#   plugin or the marketplace it came from, or write the settings. The hook asks.
+#   A `*` stands for any one word.
+# - `switches`: options that start a session without the hooks, or with a plugin
+#   loaded in place of the installed one. The hook refuses them on every agent.
+# - `value-switches`: options refused when their value, or the text of the file
+#   the value names, matches the regular expression.
+# - `environment`: variables refused when assigned anywhere in the command.
+# - `aliases`: words the harness reads as another word.
+
+[harness-commands.claude]
+source = "`claude --help` and `claude plugin [marketplace] --help`, Claude Code 2.1.310"
+checked = 2026-11-04
+program = "claude"
+aliases = { plugins = "plugin" }
+maintenance = [
+  "plugin disable",
+  "plugin uninstall",
+  "plugin remove",
+  "plugin rm",
+  "plugin update",
+  "plugin prune",
+  "plugin autoremove",
+  "plugin marketplace remove",
+  "plugin marketplace rm",
+  "plugin marketplace update",
+]
+switches = ["--bare", "--safe-mode", "--restricted", "--plugin-dir", "--plugin-url"]
+value-switches = { "--settings" = "disableAllHooks" }
+environment = ["CLAUDE_CODE_SIMPLE", "CLAUDE_CODE_PLUGIN_DIRS"]
+
+[harness-commands.codex]
+source = "`codex --help` and `codex plugin [marketplace] --help`, codex-cli 0.165.0"
+checked = 2026-11-04
+program = "codex"
+maintenance = ["plugin remove", "plugin marketplace remove", "plugin marketplace upgrade"]
+switches = []
+value-switches = { "--disable" = '^(hooks|plugins)$', "-c" = '^\s*(features\.(hooks|plugins)|plugins\..+\.enabled)\s*=', "--config" = '^\s*(features\.(hooks|plugins)|plugins\..+\.enabled)\s*=' }
+environment = []
+
+[harness-commands.copilot]
+source = "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+checked = 2026-11-04
+program = "copilot"
+aliases = { plugins = "plugin" }
+maintenance = [
+  "plugin disable",
+  "plugin uninstall",
+  "plugin remove",
+  "plugin rm",
+  "plugin update",
+  "plugin marketplace remove",
+  "plugin marketplace update",
+  # `copilot config KEY VALUE` writes the settings file, which can set `disableAllHooks`.
+  "config * *",
+]
+switches = ["--plugin-dir", "--config-dir"]
+value-switches = {}
+environment = ["COPILOT_HOME"]
+
+[harness-commands.pi]
+source = "`pi --help`, Pi 1.4.0"
+checked = 2026-11-04
+program = "pi"
+maintenance = ["remove", "uninstall", "update", "config"]
+switches = ["--no-extensions", "-ne", "--extension", "-e"]
+value-switches = {}
+environment = []

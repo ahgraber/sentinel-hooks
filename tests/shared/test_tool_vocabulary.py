@@ -19,7 +19,7 @@ def test_vocabulary_declares_each_harness_mapping() -> None:
     with open(VOCABULARY, "rb") as handle:
         vocabulary = tomllib.load(handle)
 
-    assert set(vocabulary) == {"groups", "ask", "mappings", "passthrough", "refused"}
+    assert set(vocabulary) == {"groups", "ask", "mappings", "passthrough", "refused", "harness-commands"}
     assert vocabulary["mappings"]["claude"] == {
         "Bash": "Bash",
         "Read": "Read",
@@ -164,6 +164,8 @@ tool = "lookup"
 reason = "test"
 
 [refused]
+
+[harness-commands]
 """
     )
     vocabulary = guarded_paths.load_tool_vocabulary(vocabulary_path)
@@ -199,6 +201,8 @@ copilot = ["Write"]
 
 [mappings.copilot]
 create_file = "Write"
+
+[harness-commands]
 """
 
 
@@ -235,6 +239,37 @@ def test_a_contradictory_or_unexplained_entry_is_refused(tmp_path, tables, messa
     passthrough = "" if "[passthrough." in tables else "\n[passthrough]\n"
     refused = "" if "[refused." in tables else "\n[refused]\n"
     path.write_text(_PASSTHROUGH_BASE + passthrough + refused + tables)
+
+    with pytest.raises(guarded_paths.ToolVocabularyError, match=message):
+        guarded_paths.load_tool_vocabulary(path)
+
+
+_HARNESS_COMMANDS = """
+[harness-commands.example]
+source = "example --help"
+checked = 2026-11-04
+program = "example"
+maintenance = ["plugin remove"]
+switches = ["--bare"]
+value-switches = {}
+environment = []
+"""
+
+
+@pytest.mark.parametrize(
+    ("table", "message"),
+    [
+        (_HARNESS_COMMANDS.replace("checked = 2026-11-04\n", ""), "missing or does not know: checked"),
+        (_HARNESS_COMMANDS + "extra = 1\n", "missing or does not know: extra"),
+        (_HARNESS_COMMANDS.replace("checked = 2026-11-04", 'checked = "recently"'), "invalid checked"),
+        (_HARNESS_COMMANDS.replace('switches = ["--bare"]', 'switches = [""]'), "invalid switches"),
+        (_HARNESS_COMMANDS.replace("value-switches = {}", 'value-switches = { "-c" = "(" }'), "value-switches"),
+    ],
+)
+def test_a_harness_command_table_without_its_source_or_with_a_bad_entry_is_refused(tmp_path, table, message) -> None:
+    """Validates: each harness's command table states its source and check date, and holds only valid entries."""
+    path = tmp_path / "tool-vocabulary.toml"
+    path.write_text(_PASSTHROUGH_BASE + "\n[passthrough]\n\n[refused]\n" + table)
 
     with pytest.raises(guarded_paths.ToolVocabularyError, match=message):
         guarded_paths.load_tool_vocabulary(path)

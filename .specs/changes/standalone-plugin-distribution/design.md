@@ -269,6 +269,19 @@ Each test directory runs as its own pytest run, as `scripts/apps-test.sh` runs t
 **Rationale:** the commands name no path, so they need a rule of their own, and they are vendor identifiers that change between releases, so they live in data beside the other per-harness names, with a source and a date.
 The `program-semantics-table` change builds a catalog of programs; when it lands, these rows move into it.
 
+### Decision: HarnessCommandsAreFoundInProgramTextAndEarlierSegments
+
+**Chosen:** the harness command checks also read the program text a command passes to a shell, to `eval`, or to an interpreter's inline code option, and the text it pipes into a shell, nested up to four levels.
+The session check counts an assignment of a listed variable anywhere in the command, including the program text, except in the harness's own arguments.
+Decided with the user on 2026-11-04.
+
+**Rationale:** `bash -c 'claude --bare'` and `export CLAUDE_CODE_SIMPLE=1; claude` start the same session as the forms the requirements named, and the lexer already extracts the text and the words both need.
+Order is not tracked, and an assignment that is not exported still counts: the over-refusal is limited to a variable named in the same command as a harness.
+
+**Alternatives considered:**
+
+- Assignments on the harness's own segment only: it leaves the `export` form open.
+
 ### Decision: TheSessionCheckReadsAllHarnessSettings
 
 **Chosen:** `session-policy-checks.py` reads, at each session start, the user, project, and managed settings files of every supported harness, and reports each forbidden value, each unset setting whose current default is forbidden, each file it cannot parse, and each difference between the harnesses' allowed hosts.
@@ -314,6 +327,7 @@ harness event
 - **Removing a directory above a found plugin location does not ask**: `rm -rf plugins` in a checkout loaded in place, or above a link target, is not an ancestor removal.
   The found location itself stays in the floor; a marketplace install sits under a declared location and is not affected.
 - **A program name the command text hides**: `$X plugin disable` names no program the gate can find, so it passes the plugin command gate; the path gates still judge it.
+- **A variable the command text does not set**: `source ./env.sh; claude` sets `CLAUDE_CODE_SIMPLE` in a file the session check does not read, and program text nested more than four levels deep is not read.
 - **In-place loads with no user-level record**: a `--plugin-dir` session, `CLAUDE_CODE_PLUGIN_DIRS`, a Pi project's `.pi/settings.json`, and VS Code workspace settings name an in-place plugin only for one session or one project.
   Another harness's session cannot see them, so a copy loaded only that way is covered only by its own running sessions.
 - **VS Code's install from a local folder**: whether it copies the folder or loads it in place is not documented; task 4.6 records it.

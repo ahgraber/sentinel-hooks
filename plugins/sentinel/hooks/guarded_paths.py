@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+import datetime
 import fnmatch
 import functools
 import glob
@@ -64,14 +65,32 @@ class ToolVocabularyError(Exception):
 
 
 @dataclass(frozen=True)
+class HarnessCommands:
+    """One harness's command line.
+
+    Its plugin maintenance commands, and the switches, switch values, and
+    variables that start a session without the hooks.
+    """
+
+    program: str
+    aliases: Mapping[str, str]
+    # Word sequences; `*` stands for any one word.
+    maintenance: tuple[tuple[str, ...], ...]
+    switches: frozenset[str]
+    value_switches: Mapping[str, re.Pattern[str]]
+    environment: frozenset[str]
+
+
+@dataclass(frozen=True)
 class ToolVocabulary:
-    """Canonical tool groups and harness-specific spellings."""
+    """Canonical tool groups, harness-specific spellings, and each harness's own command line."""
 
     groups: Mapping[str, frozenset[str]]
     ask: Mapping[str, frozenset[str]]
     mappings: Mapping[str, Mapping[str, str]]
     passthrough: Mapping[str, frozenset[str]]
     refused: Mapping[str, frozenset[str]]
+    harness_commands: Mapping[str, HarnessCommands]
 
     def group(self, name: str) -> frozenset[str]:
         """Return the canonical tools in `name`."""
@@ -126,6 +145,52 @@ def _tool_records(table: object, table_name: str) -> Mapping[str, frozenset[str]
     return MappingProxyType(result)
 
 
+def _is_string_list(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
+
+
+# Each field of a `[harness-commands.<harness>]` table, and the check its value must pass.
+_HARNESS_COMMAND_FIELDS: Mapping[str, Callable[[object], bool]] = {
+    "source": lambda value: isinstance(value, str) and bool(value.strip()),
+    "checked": lambda value: isinstance(value, datetime.date),
+    "program": lambda value: isinstance(value, str) and bool(value),
+    "maintenance": _is_string_list,
+    "switches": _is_string_list,
+    "value-switches": lambda value: isinstance(value, dict) and _is_string_list(list(value.values())),
+    "environment": _is_string_list,
+    "aliases": lambda value: isinstance(value, dict) and _is_string_list([*value, *value.values()]),
+}
+
+
+def _harness_commands(table: object) -> Mapping[str, HarnessCommands]:
+    """Read `[harness-commands.<harness>]` tables, each stating its source and the date it was checked."""
+    if not isinstance(table, dict):
+        raise ToolVocabularyError("harness-commands must be a table")
+    result: dict[str, HarnessCommands] = {}
+    for harness, declared in table.items():
+        name = f"harness-commands.{harness}"
+        if not isinstance(declared, dict):
+            raise ToolVocabularyError(f"{name} must be a table")
+        body = {"aliases": {}, **declared}
+        if mismatched := sorted(set(body) ^ set(_HARNESS_COMMAND_FIELDS)):
+            raise ToolVocabularyError(f"{name} is missing or does not know: " + ", ".join(mismatched))
+        if invalid := sorted(field for field, valid in _HARNESS_COMMAND_FIELDS.items() if not valid(body[field])):
+            raise ToolVocabularyError(f"{name} has an invalid " + ", ".join(invalid))
+        try:
+            patterns = {option: re.compile(pattern) for option, pattern in body["value-switches"].items()}
+        except re.error as exc:
+            raise ToolVocabularyError(f"{name} value-switches: {exc}") from exc
+        result[harness] = HarnessCommands(
+            program=body["program"],
+            aliases=MappingProxyType(dict(body["aliases"])),
+            maintenance=tuple(tuple(entry.split()) for entry in body["maintenance"]),
+            switches=frozenset(body["switches"]),
+            value_switches=MappingProxyType(patterns),
+            environment=frozenset(body["environment"]),
+        )
+    return MappingProxyType(result)
+
+
 def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabulary:
     """Load and validate the declared tool vocabulary."""
     try:
@@ -134,8 +199,8 @@ def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabul
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ToolVocabularyError(str(exc)) from exc
 
-    if set(data) != {"groups", "ask", "mappings", "passthrough", "refused"}:
-        raise ToolVocabularyError("expected groups, ask, mappings, passthrough, and refused tables")
+    if set(data) != {"groups", "ask", "mappings", "passthrough", "refused", "harness-commands"}:
+        raise ToolVocabularyError("expected groups, ask, mappings, passthrough, refused, and harness-commands tables")
 
     groups = _tool_sets(data["groups"], "groups")
     ask = _tool_sets(data["ask"], "ask")
@@ -176,7 +241,9 @@ def load_tool_vocabulary(path: Path | str = TOOL_VOCABULARY_PATH) -> ToolVocabul
         if overlap := sorted(tool for tool in entries if any(fnmatch.fnmatchcase(tool, p) for p in patterns)):
             raise ToolVocabularyError(f"refused.{harness} names passthrough tools: " + ", ".join(overlap))
 
-    return ToolVocabulary(groups, ask, MappingProxyType(mappings), passthrough, refused)
+    return ToolVocabulary(
+        groups, ask, MappingProxyType(mappings), passthrough, refused, _harness_commands(data["harness-commands"])
+    )
 
 
 TOOL_VOCABULARY = load_tool_vocabulary()

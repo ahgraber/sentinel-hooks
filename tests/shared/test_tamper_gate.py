@@ -14,7 +14,7 @@ import shutil
 import subprocess
 
 import bash_commands
-from guarded_paths import folds_case
+from guarded_paths import TOOL_VOCABULARY, folds_case
 from hermetic import HOOKS_DIR, REPO_ROOT
 import pytest
 
@@ -696,6 +696,8 @@ DESTROYS_AN_ANCESTOR = [
     "cd ~/.config/Code && rm -rf User",
     "cd /tmp; rm -rf .",
     "cd /tmp | rm -rf .",
+    # The declared `~/.pi/agent/` goes with it, though no word names it.
+    "rm -rf ~/.pi",
     # `~/.claude/` is a declaration in its own right, so removing it is judged
     # by the naming rule and carries that rule's wording. The home above it is
     # an ancestor and nothing else.
@@ -808,6 +810,148 @@ class TestRelativeOperandWithoutAWorkingDirectory:
         assert result.exit_code == 0
         assert result.stdout == ""
         assert result.stderr == ""
+
+
+HARNESS_COMMANDS = TOOL_VOCABULARY.harness_commands
+
+
+def _maintenance_commands() -> list[str]:
+    """Each maintenance sequence in the table as a command, once more under each alias it allows."""
+    commands = []
+    for table in HARNESS_COMMANDS.values():
+        respellings = [{"*": "value"}, *({"*": "value", word: alias} for alias, word in table.aliases.items())]
+        commands.extend(
+            " ".join((table.program, *(respelling.get(word, word) for word in sequence), "sentinel"))
+            for sequence in table.maintenance
+            for respelling in respellings
+        )
+    return list(dict.fromkeys(commands))
+
+
+# A value each value switch is refused with, since a pattern names no example of its own.
+VALUE_SWITCH_EXAMPLES = {
+    ("claude", "--settings"): "'{\"disableAllHooks\": true}'",
+    ("codex", "--disable"): "plugins",
+    ("codex", "-c"): "features.plugins=false",
+    ("codex", "--config"): "'plugins.\"sentinel@sentinel-hooks\".enabled=false'",
+}
+
+
+def _session_switch_commands() -> list[str]:
+    """Each session switch and environment variable in the table, in a command that starts a session."""
+    commands = []
+    for harness, table in HARNESS_COMMANDS.items():
+        commands.extend(f"{table.program} {switch} value" for switch in sorted(table.switches))
+        commands.extend(f"{name}=1 {table.program}" for name in sorted(table.environment))
+        commands.extend(
+            f"{table.program} {switch} {VALUE_SWITCH_EXAMPLES[harness, switch]}" for switch in table.value_switches
+        )
+    return commands
+
+
+class TestPluginMaintenanceReachesTheUser:
+    """A harness's own command line switches a plugin off with no path a declaration covers."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("claude plugin disable sentinel@sentinel-hooks", id="PluginIsDisabled"),
+            pytest.param("copilot plugin uninstall sentinel", id="PluginIsRemovedInAnotherHarness"),
+            pytest.param("claude plugin marketplace remove sentinel-hooks", id="MarketplaceIsRemoved"),
+            pytest.param("timeout 30 claude plugin disable sentinel", id="PluginCommandBehindAWrapper-timeout"),
+            pytest.param("ls && codex plugin remove sentinel", id="PluginCommandBehindAWrapper-list"),
+            pytest.param("codex -c model=o3 plugin remove sentinel", id="option-value-before-subcommand"),
+            pytest.param("bash -c 'claude plugin disable sentinel'", id="PluginCommandInProgramText"),
+            pytest.param("echo 'codex plugin remove sentinel' | sh", id="program-text-piped-to-a-shell"),
+            pytest.param("echo sentinel | xargs claude plugin disable", id="launched-by-xargs"),
+            pytest.param("watch claude plugin rm sentinel", id="run-by-watch"),
+        ],
+    )
+    @pytest.mark.parametrize("agent", [CLAUDE, COPILOT])
+    def test_a_maintenance_command_asks(self, command: str, agent: str) -> None:
+        """Validates: PluginIsDisabled, PluginIsRemovedInAnotherHarness, MarketplaceIsRemoved, PluginCommandBehindAWrapper, PluginCommandInProgramText."""
+        assert "Sentinel included" in ask_reason(bash(command, agent))
+
+    @pytest.mark.parametrize("agent", [CODEX, UNKNOWN])
+    def test_a_maintenance_command_refuses_where_no_prompt_is_honored(self, agent: str) -> None:
+        assert_refused(bash("claude plugin disable sentinel@sentinel-hooks", agent), "cannot ask")
+
+    @pytest.mark.parametrize(
+        "command",
+        ["claude plugin list", "codex plugin list", "copilot plugin list", "pi list", "copilot config model"],
+    )
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX])
+    def test_listing_or_inspecting_proceeds(self, command: str, agent: str) -> None:
+        """Validates: PluginIsListed."""
+        assert_allowed(bash(command, agent))
+
+    @pytest.mark.parametrize("command", _maintenance_commands())
+    def test_each_maintenance_command_in_the_table_asks(self, command: str) -> None:
+        assert "Sentinel included" in ask_reason(bash(command, CLAUDE))
+
+
+class TestSessionsWithoutTheHooksAreRefused:
+    """A nested session without the hooks escapes every guardrail for as long as it runs."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('claude --bare -p "fix the tests"', id="NestedSessionWithHooksOff"),
+            pytest.param('codex exec -c features.hooks=false "fix the tests"', id="NestedSessionThroughAnOverride"),
+            pytest.param(
+                'CLAUDE_CODE_SIMPLE=1 claude -p "fix the tests"', id="NestedSessionThroughAnEnvironmentAssignment"
+            ),
+            pytest.param("env CLAUDE_CODE_SIMPLE=1 claude", id="assignment-through-env"),
+            pytest.param("pi -ne -e ./runner.ts", id="ExtensionReplacedInPi"),
+            pytest.param("codex --disable=hooks exec x", id="switch-with-equals"),
+            pytest.param('export CLAUDE_CODE_SIMPLE=1; claude -p "fix the tests"', id="NestedSessionThroughAnExport"),
+            pytest.param("declare -x COPILOT_HOME=/tmp/h && copilot -p x", id="export-through-declare"),
+            pytest.param("CLAUDE_CODE_SIMPLE=1; claude -p x", id="assignment-in-an-earlier-segment"),
+            pytest.param("bash -c 'claude --bare -p \"fix the tests\"'", id="NestedSessionInProgramText"),
+            pytest.param("echo 'pi -ne' | sh", id="program-text-piped-to-a-shell"),
+            pytest.param("bash -c \"sh -c 'claude --bare'\"", id="program-text-in-program-text"),
+            pytest.param("export CLAUDE_CODE_SIMPLE=1; bash -c 'claude -p x'", id="export-before-program-text"),
+            pytest.param("echo x | xargs claude --bare", id="launched-by-xargs"),
+            pytest.param("find . -name a -exec timeout 5 claude --bare \\;", id="launched-by-find"),
+            pytest.param("watch claude --bare -p x", id="run-by-watch"),
+            pytest.param("pi -e./runner.ts", id="value-attached-to-a-short-switch"),
+        ],
+    )
+    @pytest.mark.parametrize("agent", [CLAUDE, CODEX, COPILOT, UNKNOWN])
+    def test_a_session_without_the_hooks_is_refused_on_every_agent(self, command: str, agent: str) -> None:
+        """Validates: NestedSessionWithHooksOff, NestedSessionThroughAnOverride, NestedSessionThroughAnEnvironmentAssignment, NestedSessionThroughAnExport, NestedSessionInProgramText, ExtensionReplacedInPi."""
+        assert_refused(bash(command, agent), "own terminal")
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'claude -p "fix the tests"',
+            "codex exec -c model=o3 x",
+            "codex --disable web_search exec x",
+            'claude --settings \'{"model": "opus"}\'',
+            "claude -p x -- --bare",
+            "claude -p CLAUDE_CODE_SIMPLE=1",
+            "bash -c 'claude -p x'",
+            "echo x | xargs claude -p",
+        ],
+    )
+    def test_a_session_with_the_hooks_proceeds(self, command: str) -> None:
+        """Validates: NestedSessionWithHooksOn."""
+        assert_allowed(bash(command, CLAUDE))
+
+    def test_a_settings_file_that_turns_the_hooks_off_is_refused(self, tmp_path: Path) -> None:
+        (tmp_path / "off.json").write_text('{"disableAllHooks": true}')
+        (tmp_path / "on.json").write_text('{"model": "opus"}')
+        assert_refused(bash("claude --settings off.json -p x", CLAUDE, cwd=str(tmp_path)), "own terminal")
+        assert_allowed(bash("claude --settings on.json -p x", CLAUDE, cwd=str(tmp_path)))
+
+    def test_every_value_switch_has_an_example(self) -> None:
+        tabled = {(harness, switch) for harness, table in HARNESS_COMMANDS.items() for switch in table.value_switches}
+        assert tabled == set(VALUE_SWITCH_EXAMPLES)
+
+    @pytest.mark.parametrize("command", _session_switch_commands())
+    def test_each_switch_in_the_table_is_refused(self, command: str) -> None:
+        assert_refused(bash(command, CLAUDE), "own terminal")
 
 
 AGENT_HOME_READS = [
