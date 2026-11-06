@@ -338,6 +338,9 @@ harness event
   A task records a payload for each of Copilot CLI's tools before the vocabulary and the adapter change.
 - **A session-start report may not reach the user**: each harness shows a session hook's standard error differently.
   The install evidence records where each harness shows it.
+- **A harness home moved by an environment variable is not declared**: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, and `VSCODE_AGENT_PLUGINS` move a harness's home and install location, and the manifest declares only the default paths.
+  OPEN QUESTION: the manifest's home paths should probably honor these variables; a later change decides how, because the change touches every home declaration.
+  `scripts/isolated-harness.sh` sets them to run a harness in `tmp/homes/`, where payload capture works but the floor does not cover the install.
 - **Removing a directory above a found plugin location does not ask**: `rm -rf plugins` in a checkout loaded in place, or above a link target, is not an ancestor removal.
   The found location itself stays in the floor; a marketplace install sits under a declared location and is not affected.
 - **A planted hook source**: a file named `hooks/guarded_paths.py` exempts its directory from the name heuristic, so an agent can create one to read a file named `secrets.txt` beside it.

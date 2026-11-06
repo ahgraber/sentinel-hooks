@@ -60,6 +60,7 @@ site/
 *.log
 .temp*
 .task/
+/tmp/
 
 # --- repo-specific ---
 
