@@ -127,8 +127,15 @@
 - [ ] 12.5 Add `node --test` cases for `UnusableUserFileLeavesThePackageHooks` and `UnusablePackageFileLeavesTheUserHooks`, and update the other unusable-file cases to name the file they break.
 - [ ] 12.6 Add `node --test` cases for `PackageHookReadsThePackageDirectory` and `UserHookHasNoPackageDirectory`.
 
-## 13. Install evidence and documentation
+## 13. Codex hook installer
 
-- [ ] 13.1 Install Sentinel in Claude Code, Codex, VS Code, Copilot CLI, and Pi from the repository's git URL, and save each transcript, with the evidence `design.md` names for each harness, where the harness shows the session-start report, and a hook's run time on Copilot CLI, to `evidence/install-<harness>.txt`.
-- [ ] 13.2 Write the install steps for each harness in `README.md`, including the programs `session-tool-checks` requires.
-- [ ] 13.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.
+- [x] 13.1 Add tests for `harnesses/codex/install-hooks.py`: it writes each entry of `harnesses/codex/hooks.json` with `${PLUGIN_ROOT}` replaced by its installed copy, keeps the user's other hooks, replaces an earlier Sentinel install's entries, removes them with `--uninstall`, and refuses to run outside a plugin install location.
+- [x] 13.2 Add a test that a written entry exits 2 with the installer's command when its hook file is missing, and runs the hook when it is present.
+- [x] 13.3 Write `harnesses/codex/install-hooks.py` with a `uv` script shebang, and state in its docstring the Codex defect it works around and when to remove it.
+- [x] 13.4 Install the plugin and run the installer in an isolated Codex home through `scripts/isolated-harness.sh`, trust the hooks, and record that a read of a `.env` file is refused.
+
+## 14. Install evidence and documentation
+
+- [ ] 14.1 Install Sentinel in Claude Code, Codex, VS Code, Copilot CLI, and Pi from the repository's git URL, and save each transcript, with the evidence `design.md` names for each harness, where the harness shows the session-start report, and a hook's run time on Copilot CLI, to `evidence/install-<harness>.txt`.
+- [ ] 14.2 Write the install steps in `README.md` as one table with one install method per harness, including the programs `session-tool-checks` requires.
+- [ ] 14.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.

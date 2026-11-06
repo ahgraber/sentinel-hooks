@@ -13,6 +13,8 @@ Facts from the harness documentation and source, gathered 2026-10-31 and checked
 - Claude Code reads `.claude-plugin/plugin.json`, and always loads `hooks/hooks.json` when the file exists, in addition to the file its manifest names.
 - Codex treats a root `plugin.json` that declares the Agent Plugins `$schema` as the canonical manifest, and reads hook settings from its `extensions.com.openai` object.
   `.codex-plugin/plugin.json` is a compatibility fallback that applies only when that object is absent.
+  Codex's loader then skips the plugin's hooks, because it loads hooks only for the older manifest format (`codex-rs/core-plugins/src/loader.rs`, Codex 0.166.0; openai/codex#47925).
+  Codex loads user hooks from `$CODEX_HOME/hooks.json`, runs each hook command as `$SHELL -lc`, and removes a plugin's other version directories when a version installs.
   An explicit `hooks` value replaces the default discovery of `hooks/hooks.json`.
   The Codex documentation says lifecycle hooks "are supported for plugins installed manually in Codex desktop", and does not say whether Codex CLI runs them.
 - VS Code picks a plugin's format from its marker files: a root `plugin.json` with the Agent Plugins `$schema` is Agent Plugins 1.0, `.claude-plugin/plugin.json` is the Claude format, and the Copilot format applies only when no other marker is found.
@@ -307,6 +309,28 @@ The shell warning names no install path: it reports a `CLAUDE_CODE_SHELL` that i
 **Rationale:** a harness whose hooks are off runs no check, so only another harness's session can report it.
 The values are vendor identifiers, so they are data, with a version, beside the code that reads them.
 
+### Decision: CodexHooksComeFromAnInstaller
+
+**Chosen:** the plugin ships `harnesses/codex/install-hooks.py`, which writes the entries of `harnesses/codex/hooks.json` into `$CODEX_HOME/hooks.json` with `${PLUGIN_ROOT}` replaced by the installed copy it runs from.
+It keeps the user's other hooks, replaces entries from an earlier Sentinel install, removes Sentinel's entries with `--uninstall`, and refuses to run outside a plugin install location.
+Each entry runs its hook through `sh -c`, which exits 2 with the installer's command when the hook file is missing.
+The README installs Codex this way, and every other harness through its own plugin install.
+
+**Rationale:** Codex skips the hooks of a plugin with an Agent Plugins root manifest, and VS Code and Copilot CLI need that manifest.
+The installer reads the registration the plugin ships, so the registration stays the one source and the parity test still covers it.
+An update removes the old version directory, so an entry from the earlier install names a missing file.
+Codex lets a call proceed when its hook fails.
+Each entry therefore checks for its file and exits 2 when the file is missing, which refuses the call and prints the repair.
+`sh -c` keeps the guard working under any login shell, including fish.
+
+**Alternatives considered:**
+
+- Codex installs the repository root with a `.codex-plugin/plugin.json`: Codex copies `.git` into the hook trust bundle of a root install (openai/codex#56793).
+- Install scripts for every harness: a second registration beside a plugin whose hooks already run, and each hook would run twice.
+- Wait for the Codex fix: until it ships, Codex skips every Sentinel hook.
+
+Decided with the user.
+
 ### Decision: OneVersionIsCheckedNotGenerated
 
 **Chosen:** each manifest, `package.json`, and catalog entry carries the version as a literal.
@@ -362,6 +386,13 @@ harness event
 - `sensitive-path-blocking` `GuardrailSourceNamedForWhatItBlocks`: it named the hook sources of one repository; `GuardrailSourceInACheckout` and `GuardrailSourceInAnInstalledCopy` cover a checkout and each installed copy.
 - `hook-registration` `ToolCallsProceed`: with two registration files, an unusable file no longer means that no hook runs; `UnusableUserFileLeavesThePackageHooks` and `UnusablePackageFileLeavesTheUserHooks` state what runs.
 - `agent-configuration-floor` `AuthorizedGuardrailEdit` and `UnauthorizedGuardrailEdit`: they bound a harness's own review surface, which is that harness's configuration and which Sentinel neither sets nor can judge.
+
+## Known Noncompliance
+
+- **Requirement:** `plugin-distribution` `EachSupportedHarnessInstallsSentinel`, scenario `CodexInstall` **Reason:** Codex skips the hooks of any plugin whose root manifest is an Agent Plugins manifest (openai/codex#39895, #47925, #59516), so Codex needs a step outside its own install mechanism: `harnesses/codex/install-hooks.py`.
+  A Codex user who skips the installer runs every Codex session without Sentinel's hooks, and without any warning.
+  **Exit condition:** when a Codex release loads `extensions.com.openai.hooks` from an Agent Plugins manifest, delete the installer and its tests, return the README's Codex row to the plugin install alone, and tell installed users to run `install-hooks.py --uninstall` so each hook does not run twice.
+  **Recorded:** 2026-11-05
 
 ## Verification Waivers
 

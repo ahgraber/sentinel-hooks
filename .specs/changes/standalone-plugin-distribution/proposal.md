@@ -75,3 +75,5 @@ The policy's self-protection names the directories where each harness installs p
   Decided with the user.
 - 2026-11-04 Harness commands: the plugin command gate and the session check also read program text passed to a shell or `eval`, and the session check counts a listed variable assigned anywhere in the command, such as through `export`.
   Decided with the user.
+- 2026-11-05 Codex install: the plugin ships a hook installer, the Codex install method until Codex loads hooks from an Agent Plugins manifest; `EachSupportedHarnessInstallsSentinel` stays unchanged, and `design.md` records the Codex gap as known noncompliance.
+  Decided with the user.
