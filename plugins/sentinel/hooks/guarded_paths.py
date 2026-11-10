@@ -29,7 +29,7 @@ import re
 import tomllib
 from types import MappingProxyType
 
-from in_place_plugins import in_place_plugins
+from in_place_plugins import in_place_pi_extensions, in_place_plugins, pi_extensions
 
 HOME = os.path.expanduser("~")
 
@@ -844,13 +844,22 @@ class PathPolicy:
         """Directories whose files are enforcement.
 
         They are the manifest's, this module's, the launcher's, the plugin directory
-        holding this module, each plugin directory a harness loads in place, and
-        each floor tree that is not a plugin install location.
+        holding this module, the Pi extensions of the repository that holds that
+        plugin directory, each plugin directory a harness loads in place, each
+        extension an in-place Pi package loads, and each floor tree that is not a
+        plugin install location.
         """
         module_directory = Path(__file__).resolve().parent
-        directories = {self._manifest_path.parent, module_directory, *self._in_place_plugins}
+        directories = {
+            self._manifest_path.parent,
+            module_directory,
+            *self._in_place_plugins,
+            *in_place_pi_extensions(self.home),
+        }
         if (module_directory.parent / ".claude-plugin" / "plugin.json").is_file():
             directories.add(module_directory.parent)
+            # Pi's runner finds the plugin directory at plugins/sentinel/ in its repository.
+            directories.update(pi_extensions(module_directory.parents[2]))
         if self._invocation_path:
             directories.add(Path(os.path.abspath(self._invocation_path)).parent)
         hook_trees = (tree for tree in self._floor_trees if tree not in self._plugin_locations)

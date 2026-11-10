@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { compileMatcher } from "../../plugins/sentinel/harnesses/pi/extension/matcher.ts"
+import { compileMatcher } from "../../extensions/pi/matcher.ts"
 
 test("Bash matches Pi's bash", () => {
   assert.equal(compileMatcher("Bash").matches("bash"), true)

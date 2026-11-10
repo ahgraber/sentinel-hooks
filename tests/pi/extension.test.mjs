@@ -4,16 +4,21 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { registerHooks } from "../../plugins/sentinel/harnesses/pi/extension/extension.ts"
+import { registerHooks } from "../../extensions/pi/extension.ts"
 
 let agentDir
+let pluginDir
 let project
 
 beforeEach(async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-hooks-extension-")))
   agentDir = join(root, "agent")
+  pluginDir = join(root, "plugin")
   project = join(root, "project")
   await mkdir(agentDir)
+  await mkdir(join(pluginDir, "harnesses", "pi"), { recursive: true })
+  // The package always ships its registration; a test that needs hooks there overwrites it.
+  await writeFile(join(pluginDir, "harnesses", "pi", "hooks.json"), JSON.stringify({ hooks: {} }))
   await mkdir(project)
 })
 
@@ -28,6 +33,9 @@ const exists = (path) =>
   )
 
 const register = (hooks) => writeFile(join(agentDir, "hooks.json"), JSON.stringify({ hooks }))
+const packageFile = () => join(pluginDir, "harnesses", "pi", "hooks.json")
+const registerPackage = (hooks) => writeFile(packageFile(), JSON.stringify({ hooks }))
+const unusable = (file) => ({ key: "hooks", value: `${file} is unusable: its hooks do not run` })
 const command = (text, matcher = "") => [{ matcher, hooks: [{ type: "command", command: text }] }]
 
 /** A stand-in for Pi's extension API that records what the handlers return and call. */
@@ -57,7 +65,7 @@ function standIn(options = {}) {
       },
     },
   }
-  registerHooks(pi, { agentDir: () => agentDir })
+  registerHooks(pi, { agentDir: () => agentDir, pluginDir })
   const emit = (name, event = {}) => handlers[name](event, ctx)
   return { emit, calls }
 }
@@ -108,7 +116,7 @@ for (const [label, content, pattern] of [
     assert.equal(errors.length, 1)
     assert.ok(errors[0].message.includes(join(agentDir, "hooks.json")))
     assert.match(errors[0].message, pattern)
-    assert.deepEqual(calls.status.at(-1), { key: "hooks", value: "hooks.json unusable: no hooks run" })
+    assert.deepEqual(calls.status.at(-1), unusable(join(agentDir, "hooks.json")))
   })
 }
 
@@ -607,7 +615,7 @@ test("a reload from a usable file to an unusable one is reported and sets the in
   await emit("tool_call", toolCall())
 
   assert.ok(calls.notify.some((call) => call.level === "error" && /does not parse/.test(call.message)))
-  assert.deepEqual(calls.status.at(-1), { key: "hooks", value: "hooks.json unusable: no hooks run" })
+  assert.deepEqual(calls.status.at(-1), unusable(join(agentDir, "hooks.json")))
   assert.equal(await exists(marker), false)
 })
 
@@ -686,4 +694,132 @@ test("a session start Pi reports twice runs SessionStart once, and a start after
     .map((line) => JSON.parse(line).source)
   assert.deepEqual(sources, ["clear", "clear"])
   assert.equal(calls.status.length, 2)
+})
+
+// The package's registration beside the agent directory's
+
+test("a hook in the package's file runs on a call its matcher matches", async () => {
+  const marker = join(project, "package-ran")
+  await registerPackage({ PreToolUse: command(`touch ${marker}`, "bash") })
+
+  const { emit } = await started()
+  await emit("tool_call", toolCall())
+
+  assert.equal(await exists(marker), true)
+})
+
+test("a hook in the agent directory's file runs on a call its matcher matches", async () => {
+  const marker = join(project, "user-ran")
+  await register({ PreToolUse: command(`touch ${marker}`, "bash") })
+
+  const { emit } = await started()
+  await emit("tool_call", toolCall())
+
+  assert.equal(await exists(marker), true)
+})
+
+test("when both files match one call, both hooks run", async () => {
+  const packageMarker = join(project, "package-ran")
+  const userMarker = join(project, "user-ran")
+  await registerPackage({ PreToolUse: command(`touch ${packageMarker}`, "bash") })
+  await register({ PreToolUse: command(`touch ${userMarker}`, "bash") })
+
+  const { emit } = await started()
+  await emit("tool_call", toolCall())
+
+  assert.equal(await exists(packageMarker), true)
+  assert.equal(await exists(userMarker), true)
+})
+
+test("hooks declared in the project's .pi/hooks.json or .claude/settings.json do not run", async () => {
+  const marker = join(project, "ran")
+  const hooks = JSON.stringify({ hooks: { PreToolUse: command(`touch ${marker}`) } })
+  await mkdir(join(project, ".pi"))
+  await mkdir(join(project, ".claude"))
+  await writeFile(join(project, ".pi", "hooks.json"), hooks)
+  await writeFile(join(project, ".claude", "settings.json"), hooks)
+
+  const { emit } = await started()
+  await emit("tool_call", toolCall())
+
+  assert.equal(await exists(marker), false)
+})
+
+test("with no file in the agent directory, the package's hooks run and nothing is reported", async () => {
+  const marker = join(project, "package-ran")
+  await registerPackage({ SessionStart: command(`touch ${marker}`) })
+
+  const { calls } = await started()
+
+  assert.equal(await exists(marker), true)
+  assert.deepEqual(calls.notify, [])
+})
+
+test("an unusable agent directory file is reported by its path, and the package's hooks still run", async () => {
+  const marker = join(project, "package-ran")
+  await registerPackage({ PreToolUse: command(`touch ${marker}`, "bash") })
+  await writeFile(join(agentDir, "hooks.json"), "{ not json")
+
+  const { emit, calls } = await started()
+  await emit("tool_call", toolCall())
+
+  const errors = calls.notify.filter((call) => call.level === "error").map((call) => call.message)
+  assert.equal(errors.length, 1)
+  assert.ok(errors[0].startsWith(join(agentDir, "hooks.json")))
+  assert.deepEqual(calls.status.at(-1), unusable(join(agentDir, "hooks.json")))
+  assert.equal(await exists(marker), true)
+})
+
+test("an unusable package file is reported by its path, and the agent directory's hooks still run", async () => {
+  const marker = join(project, "user-ran")
+  await writeFile(packageFile(), "{ not json")
+  await register({ PreToolUse: command(`touch ${marker}`, "bash") })
+
+  const { emit, calls } = await started()
+  const verdict = await emit("tool_call", toolCall())
+
+  const errors = calls.notify.filter((call) => call.level === "error").map((call) => call.message)
+  assert.equal(errors.length, 1)
+  assert.ok(errors[0].startsWith(packageFile()))
+  assert.deepEqual(calls.status.at(-1), unusable(packageFile()))
+  assert.equal(await exists(marker), true)
+  assert.equal(verdict, undefined)
+})
+
+test("a missing package file is reported by its path, and the agent directory's hooks still run", async () => {
+  const marker = join(project, "user-ran")
+  await rm(packageFile())
+  await register({ PreToolUse: command(`touch ${marker}`, "bash") })
+
+  const { emit, calls } = await started()
+  await emit("tool_call", toolCall())
+
+  const errors = calls.notify.filter((call) => call.level === "error").map((call) => call.message)
+  assert.equal(errors.length, 1)
+  assert.ok(errors[0].startsWith(`${packageFile()} is missing`))
+  assert.deepEqual(calls.status.at(-1), unusable(packageFile()))
+  assert.equal(await exists(marker), true)
+})
+
+test("a hook in the package's file runs with PLUGIN_ROOT set to the plugin directory", async () => {
+  const seen = join(project, "plugin-root")
+  await registerPackage({ SessionStart: command(`printf %s "$PLUGIN_ROOT" > ${seen}`) })
+
+  await started()
+
+  assert.equal(await readFile(seen, "utf8"), pluginDir)
+})
+
+test("a hook in the agent directory's file runs without PLUGIN_ROOT", async () => {
+  const seen = join(project, "plugin-root")
+  await register({ SessionStart: command(`printf %s "$PLUGIN_ROOT" > ${seen}`) })
+  const inherited = process.env.PLUGIN_ROOT
+  delete process.env.PLUGIN_ROOT
+  try {
+    await started()
+  } finally {
+    if (inherited !== undefined) process.env.PLUGIN_ROOT = inherited
+  }
+
+  assert.equal(await readFile(seen, "utf8"), "")
 })

@@ -25,6 +25,8 @@ export interface CommandHandler {
   command: string
   /** Seconds; absent means the runner's default. */
   timeout?: number
+  /** The plugin directory, for a hook the package registers; the hook runs with it as `PLUGIN_ROOT`. */
+  pluginRoot?: string
 }
 
 export interface MatcherGroup {
@@ -44,14 +46,15 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 /**
  * Read `hooks.json` from `directory`.
  *
- * A missing file is no registrations and no error. A file that cannot be read,
+ * A missing file is unusable when `required`, and otherwise no registrations and
+ * no error. A file that cannot be read,
  * does not parse, or does not have the registration shape is unusable as a whole.
  * A handler of another type, or an event this extension cannot raise, is dropped
  * with a warning, and the rest of the file is kept. An event name that differs
  * from a raised event only in case was meant as that event, so it makes the file
  * unusable rather than dropping its hooks with a warning.
  */
-export function readRegistrations(directory: string): RegistrationResult {
+export function readRegistrations(directory: string, required = false): RegistrationResult {
   const file = join(directory, REGISTRATION_FILE)
 
   let text: string
@@ -59,7 +62,9 @@ export function readRegistrations(directory: string): RegistrationResult {
     text = readFileSync(file, "utf8")
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { usable: true, file, registrations: {}, warnings: [] }
+      return required
+        ? { usable: false, file, problem: "is missing" }
+        : { usable: true, file, registrations: {}, warnings: [] }
     }
     return { usable: false, file, problem: `cannot be read: ${(error as Error).message}` }
   }

@@ -58,6 +58,7 @@ sentinel-hooks/
 ├── .agents/plugins/marketplace.json
 ├── .github/plugin/marketplace.json
 ├── package.json                    # Pi: whole-repository git install
+├── extensions/pi/                  # Pi's hook runner, the extension package.json names
 ├── pyproject.toml                  # test tools
 ├── .specs/
 ├── tests/                          # shared/, claude/, codex/, copilot/, pi/
@@ -70,7 +71,7 @@ sentinel-hooks/
         ├── claude/hooks.json
         ├── codex/hooks.json
         ├── copilot/                # copilot-vscode-hook-adapter.py
-        └── pi/                     # hooks.json, hook-dispatch.py, extension/
+        └── pi/                     # hooks.json, hook-dispatch.py
 ```
 
 **Rationale:** with one plugin, every harness can share one hooks directory, so no build step copies files and the installed copy is the tested tree.
@@ -123,13 +124,46 @@ The Pi install locations carry no agent marker, so the Pi registration names its
 
 ### Decision: PiInstallsTheRepository
 
-**Chosen:** a root `package.json` with a `pi` key names the extension at `plugins/sentinel/harnesses/pi/extension/`, and declares the Pi packages the extension imports as `"*"` peer dependencies.
-The extension reads `harnesses/pi/hooks.json` from the plugin directory and `hooks.json` from Pi's agent directory.
-It sets `PLUGIN_ROOT` to the plugin directory, found from its own file, for the package's hooks only.
+**Chosen:** a root `package.json` with a `pi` key names the extension at `extensions/pi/`, and declares the Pi packages the extension imports as `"*"` peer dependencies.
+The extension reads `harnesses/pi/hooks.json` from `plugins/sentinel/` in the repository that holds it, and `hooks.json` from Pi's agent directory.
+It sets `PLUGIN_ROOT` to that plugin directory for the package's hooks only.
 
 **Rationale:** Pi has no subdirectory install, so a git install takes the whole repository.
 Setting `PLUGIN_ROOT` to the plugin directory, not to the repository root, gives Pi the same command form as the other harnesses.
-An npm package published from `plugins/sentinel/` can follow later without a change to the registration.
+
+### Decision: ThePiHookRunnerIsHostRuntime
+
+**Chosen:** Pi's hook runner lives in `extensions/pi/`, outside the plugin directory.
+`plugins/sentinel/harnesses/pi/` keeps Sentinel's Pi registration and `hook-dispatch.py`.
+For a Pi package loaded in place, the floor covers the directory of each extension its `package.json` names under `pi.extensions`, beside the plugin directories its catalogs name.
+When Sentinel runs from `plugins/sentinel/` in a repository, the floor also covers the extensions that repository's `package.json` names, as it covers the running plugin directory.
+
+**Rationale:** the runner gives Pi the hook engine Claude Code, Codex, and Copilot have built in.
+It also runs the user's own hooks from Pi's agent directory, so it is host runtime that runs plugins, and no part of a plugin.
+Inside the plugin directory, every harness that copies the plugin would carry it unused, and a second plugin would have to reach into Sentinel's directory to run on Pi.
+Pi loads exactly the files `pi.extensions` names, so that list, and not the catalogs Pi never reads, says which files of an in-place package must be in the floor.
+A git install is in the floor whole, under `~/.pi/agent/git/`.
+
+**Alternatives considered:**
+
+- The runner under `plugins/sentinel/harnesses/pi/`: the floor covered it through the catalog-named plugin directory, with no change to the guard, but it ties the runner to one plugin.
+
+Decided with the user.
+
+### Decision: AMissingPackageRegistrationIsUnusable
+
+**Chosen:** the runner reports a missing `harnesses/pi/hooks.json` in the package as an unusable file.
+A missing `hooks.json` in Pi's agent directory stays silent.
+
+**Rationale:** the package always ships its file, so a missing one means a broken install or a runner that looks in the wrong place.
+Read as no registrations, either one stops every Sentinel hook under Pi with no report.
+Most users write no hooks of their own, so a missing agent directory file is the usual case.
+
+**Alternatives considered:**
+
+- A missing file is no registrations for both sources: the requirement's earlier wording, which let Sentinel's hooks stop in silence.
+
+Decided with the user.
 
 ### Decision: TheRunningPluginDirectoryIsInTheFloor
 

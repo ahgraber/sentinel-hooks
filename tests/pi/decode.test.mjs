@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { decode } from "../../plugins/sentinel/harnesses/pi/extension/decode.ts"
+import { decode } from "../../extensions/pi/decode.ts"
 
 const run = (fields) => ({ exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", ...fields })
 const reply = (hookSpecificOutput, extra = {}) =>

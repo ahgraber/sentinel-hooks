@@ -1,7 +1,8 @@
 """Plugin directories that a harness loads in place, read from each harness's own records.
 
 Codex copies every plugin it installs. Claude Code, VS Code, Copilot CLI, and Pi
-run a local plugin where it is, and record where in a user-level file. A record
+run a local plugin where it is, and record where in a user-level file. Pi also
+loads the extensions a package's `package.json` names under `pi.extensions`. A record
 that is missing or does not parse names nothing, because the harness loads no
 plugin from it either.
 """
@@ -33,6 +34,29 @@ def in_place_plugins(home: str) -> tuple[Path, ...]:
         *_copilot_locations(home_directory),
     )
     return tuple(dict.fromkeys(plugin for location in locations for plugin in _plugins_at(location)))
+
+
+def in_place_pi_extensions(home: str) -> tuple[Path, ...]:
+    """Return the directory of each extension named by a Pi package that Pi's records under `home` load in place."""
+    return tuple(
+        dict.fromkeys(directory for package in _pi_locations(Path(home)) for directory in pi_extensions(package))
+    )
+
+
+def pi_extensions(package: Path) -> tuple[Path, ...]:
+    """Return the directory of each extension the `package.json` in `package` names under `pi.extensions`.
+
+    An entry counts only when it is a `./` path that exists. A file entry gives its parent directory.
+    """
+    manifest = _read_json(package / "package.json")
+    pi = manifest.get("pi") if isinstance(manifest, dict) else None
+    entries = pi.get("extensions") if isinstance(pi, dict) else None
+    paths = (
+        Path(os.path.normpath(package / entry))
+        for entry in (entries if isinstance(entries, list) else ())
+        if isinstance(entry, str) and entry.startswith("./")
+    )
+    return tuple(dict.fromkeys(path if path.is_dir() else path.parent for path in paths if path.exists()))
 
 
 def _claude_locations(home: Path) -> Iterable[Path]:

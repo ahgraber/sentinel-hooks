@@ -53,11 +53,13 @@ Serves: install-per-agent
 
 > Previously: the extension read one registration file, and an unusable file stopped every hook.
 
-A registration file that exists but cannot be read, does not parse, or does not have the registration shape SHALL be reported to the user as an error when the session starts, and SHALL stay visibly reported for as long as the session runs without it.
+A registration file that cannot be read, does not parse, or does not have the registration shape SHALL be reported to the user as an error when the session starts, and SHALL stay visibly reported for as long as the session runs without it.
+The package's file is unusable when it is missing; the agent directory's file is unusable only when it exists.
 
 While a file is unusable none of its hooks run, and the other file's hooks run as declared.
 An event that no usable file's hooks match proceeds.
 A file that is present was meant to register hooks, so running none of them is reported as an error and stays in view, rather than appearing once and scrolling away.
+The package always ships its file, so a missing one means a broken install, and Sentinel's hooks would otherwise stop with no report.
 Where Pi shows no user interface, the report is written to standard error.
 
 A group whose `matcher` is not a valid regular expression selects no tool.
@@ -84,6 +86,12 @@ Serves: install-per-agent
 - **GIVEN** a session whose package `hooks.json` is unusable
 - **WHEN** the agent makes a tool call
 - **THEN** the hooks in the agent directory's file run as declared, no hook from the package's file runs, and the tool runs if no hook refuses it
+
+#### Scenario: MissingPackageFileIsReported
+
+- **GIVEN** a session whose package holds no `harnesses/pi/hooks.json`
+- **WHEN** the session starts
+- **THEN** the user sees an error naming the missing file, an indicator stays in view, and the hooks in the agent directory's file run as declared
 
 #### Scenario: FileHasTheWrongShape
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { runCommand } from "../../plugins/sentinel/harnesses/pi/extension/runner.ts"
+import { runCommand } from "../../extensions/pi/runner.ts"
 
 let directory
 

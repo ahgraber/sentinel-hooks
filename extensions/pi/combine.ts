@@ -60,7 +60,8 @@ export async function runEvent(
   const outcomes = await Promise.all(
     handlers.map(async (handler): Promise<[CommandHandler, Outcome]> => {
       const timeoutMs = handler.timeout === undefined ? DEFAULT_TIMEOUT_MS : handler.timeout * 1000
-      const result = await runCommand({ command: handler.command, cwd, payload, timeoutMs })
+      const env = handler.pluginRoot === undefined ? undefined : { PLUGIN_ROOT: handler.pluginRoot }
+      const result = await runCommand({ command: handler.command, cwd, payload, timeoutMs, env })
       return [handler, decode(result, timeoutMs, event)]
     }),
   )

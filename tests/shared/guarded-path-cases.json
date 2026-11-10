@@ -99,7 +99,7 @@
       "why": "the pi hook registration in an installed copy"
     },
     {
-      "path": "~/.pi/agent/git/github.com/ahgraber/sentinel-hooks/plugins/sentinel/harnesses/pi/extension/extension.ts",
+      "path": "~/.pi/agent/git/github.com/ahgraber/sentinel-hooks/extensions/pi/extension.ts",
       "blocked": true,
       "why": "the pi hook runner in an installed copy"
     },

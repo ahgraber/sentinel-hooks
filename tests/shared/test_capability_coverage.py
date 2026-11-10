@@ -15,6 +15,7 @@ SPECS_ROOT = REPO_ROOT / ".specs" / "specs"
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "sentinel"
 HOOKS_ROOT = PLUGIN_ROOT / "hooks"
 HARNESSES_ROOT = PLUGIN_ROOT / "harnesses"
+EXTENSIONS_ROOT = REPO_ROOT / "extensions"
 TESTS_ROOT = REPO_ROOT / "tests" / "shared"
 REGISTRATIONS = (
     *sorted(HARNESSES_ROOT.glob("*/hooks.json")),
@@ -48,13 +49,13 @@ CAPABILITIES: Mapping[str, Capability] = {
     "git-baseline-drift": Capability("enforcement", ("git-baseline.sh",)),
     "guarded-path-declarations": Capability("mechanism", ("guarded_paths.py",)),
     "guarded-surface": Capability("posture", ("guarded-paths.toml",)),
-    "hook-events": Capability("harness", ("pi/extension/extension.ts", "pi/extension/index.ts")),
+    "hook-events": Capability("harness", ("pi/extension.ts", "pi/index.ts")),
     "hook-execution": Capability(
         "harness",
-        ("pi/extension/runner.ts", "pi/extension/decode.ts", "pi/extension/combine.ts"),
+        ("pi/runner.ts", "pi/decode.ts", "pi/combine.ts"),
     ),
     "hook-interface": Capability("mechanism", ("hook_response.py",)),
-    "hook-registration": Capability("harness", ("pi/extension/registration.ts", "pi/extension/matcher.ts")),
+    "hook-registration": Capability("harness", ("pi/registration.ts", "pi/matcher.ts")),
     "hook-tampering-blocking": Capability("enforcement", ("block-hook-tampering.py",)),
     "path-matching": Capability("mechanism", ("guarded_paths.py",)),
     "secret-access-blocking": Capability("enforcement", ("block-leaks.py",)),
@@ -72,7 +73,7 @@ def package_coverage_errors(
     specs_root: Path,
     hooks_root: Path,
     tests_root: Path,
-    harnesses_root: Path,
+    extensions_root: Path,
     capabilities: Mapping[str, Capability],
 ) -> list[str]:
     """Return missing capability records and package artifacts."""
@@ -88,7 +89,7 @@ def package_coverage_errors(
         if not capability.artifacts:
             errors.append(f"{name} has no package artifacts")
             continue
-        root = {"conformance": tests_root, "harness": harnesses_root}.get(capability.kind, hooks_root)
+        root = {"conformance": tests_root, "harness": extensions_root}.get(capability.kind, hooks_root)
         errors.extend(
             f"{name} artifact does not exist: {artifact}"
             for artifact in capability.artifacts
@@ -187,10 +188,10 @@ def assert_package_coverage(
     specs_root: Path,
     hooks_root: Path,
     tests_root: Path,
-    harnesses_root: Path,
+    extensions_root: Path,
     capabilities: Mapping[str, Capability],
 ) -> None:
-    errors = package_coverage_errors(specs_root, hooks_root, tests_root, harnesses_root, capabilities)
+    errors = package_coverage_errors(specs_root, hooks_root, tests_root, extensions_root, capabilities)
     assert not errors, "\n".join(errors)
 
 
@@ -204,7 +205,7 @@ def assert_hook_coverage(
 
 
 def test_every_capability_has_a_kind_and_existing_package_artifact() -> None:
-    assert_package_coverage(SPECS_ROOT, HOOKS_ROOT, TESTS_ROOT, HARNESSES_ROOT, CAPABILITIES)
+    assert_package_coverage(SPECS_ROOT, HOOKS_ROOT, TESTS_ROOT, EXTENSIONS_ROOT, CAPABILITIES)
 
 
 def test_every_hook_is_claimed_by_a_capability_or_tooling_record() -> None:

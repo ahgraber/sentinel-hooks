@@ -18,6 +18,8 @@ export interface RunRequest {
   cwd: string
   payload: unknown
   timeoutMs?: number
+  /** Variables added to Pi's environment for this command. */
+  env?: Record<string, string>
 }
 
 export interface RunResult {
@@ -65,6 +67,7 @@ export function runCommand(request: RunRequest): Promise<RunResult> {
     try {
       child = spawn("/bin/sh", ["-c", request.command], {
         cwd: request.cwd,
+        env: { ...process.env, ...request.env },
         detached: true,
         stdio: ["pipe", "pipe", "pipe"],
       })

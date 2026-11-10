@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { matchingHandlers, runEvent } from "../../plugins/sentinel/harnesses/pi/extension/combine.ts"
+import { matchingHandlers, runEvent } from "../../extensions/pi/combine.ts"
 
 let directory
 

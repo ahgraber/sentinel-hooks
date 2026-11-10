@@ -1010,7 +1010,7 @@ class TestAgentHomeReadsProceed:
         assert_allowed(bash(command, CLAUDE))
 
 
-PI_SOURCE = "plugins/sentinel/harnesses/pi/extension/extension.ts"
+PI_SOURCE = "extensions/pi/extension.ts"
 HOOK_SOURCE = "plugins/sentinel/hooks/block-leaks.py"
 
 MODULE_TREE_READS = [

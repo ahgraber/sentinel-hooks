@@ -120,12 +120,15 @@
 
 ## 12. Pi hook runner
 
-- [ ] 12.1 Read the package's `harnesses/pi/hooks.json` from the plugin directory, found from the extension's own file, and the agent directory's `hooks.json`, and run the hooks of both.
-- [ ] 12.2 Report an unusable file by its own path, and keep running the other file's hooks.
-- [ ] 12.3 Set `PLUGIN_ROOT` to the plugin directory for the package's hooks only.
-- [ ] 12.4 Add `node --test` cases for `PackageHookRuns`, `UserHookRuns`, `BothFilesMatchOneCall`, `ProjectFileIsIgnored`, and `NoUserFile`.
-- [ ] 12.5 Add `node --test` cases for `UnusableUserFileLeavesThePackageHooks` and `UnusablePackageFileLeavesTheUserHooks`, and update the other unusable-file cases to name the file they break.
-- [ ] 12.6 Add `node --test` cases for `PackageHookReadsThePackageDirectory` and `UserHookHasNoPackageDirectory`.
+- [x] 12.1 Read the package's `harnesses/pi/hooks.json` from the plugin directory, found from the extension's own file, and the agent directory's `hooks.json`, and run the hooks of both.
+- [x] 12.2 Report an unusable file by its own path, and keep running the other file's hooks.
+- [x] 12.3 Set `PLUGIN_ROOT` to the plugin directory for the package's hooks only.
+- [x] 12.4 Add `node --test` cases for `PackageHookRuns`, `UserHookRuns`, `BothFilesMatchOneCall`, `ProjectFileIsIgnored`, and `NoUserFile`.
+- [x] 12.5 Add `node --test` cases for `UnusableUserFileLeavesThePackageHooks` and `UnusablePackageFileLeavesTheUserHooks`, and update the other unusable-file cases to name the file they break.
+- [x] 12.6 Add `node --test` cases for `PackageHookReadsThePackageDirectory` and `UserHookHasNoPackageDirectory`.
+- [x] 12.7 Move the extension to `extensions/pi/`, point `package.json` at it, and find the plugin directory as `plugins/sentinel/` in the repository that holds it.
+- [x] 12.8 Put in the floor the directory of each extension that an in-place Pi package, or the repository holding the running plugin directory, names under `pi.extensions` in its `package.json`, and add the floor and tamper cases for it.
+- [x] 12.9 Report a missing package `harnesses/pi/hooks.json` as an unusable file, and add a `node --test` case for `MissingPackageFileIsReported`.
 
 ## 13. Codex hook installer
 

@@ -1,13 +1,16 @@
 /** Run command hooks registered in `hooks.json` on Pi's events, with Claude Code's hook contract. */
 
+import { join } from "node:path"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { type Combined, matchingHandlers, runEvent, TOOL_EVENTS } from "./combine.ts"
 import { compileMatcher } from "./matcher.ts"
-import { type EventName, type Registrations, readRegistrations } from "./registration.ts"
+import { type EventName, type MatcherGroup, type Registrations, readRegistrations } from "./registration.ts"
 
 export interface HooksOptions {
-  /** Pi's agent directory, which holds `hooks.json`. */
+  /** Pi's agent directory, whose `hooks.json` registers the user's own hooks. */
   agentDir: () => string
+  /** The installed plugin directory, whose `harnesses/pi/hooks.json` registers Sentinel's hooks. */
+  pluginDir: string
 }
 
 const STATUS_KEY = "hooks"
@@ -50,6 +53,49 @@ const textOf = (content: unknown): string =>
         .join("\n")
     : ""
 
+/**
+ * Read the package's registration and the agent directory's, and merge their groups per event.
+ *
+ * Each unusable file is reported by its path, and only its own hooks stop. The package
+ * always ships its file, so a missing one is unusable; the agent directory's file is
+ * optional. A package hook carries the plugin directory, which the runner gives it as
+ * `PLUGIN_ROOT`.
+ * Returns the merged registrations and the status line to keep in view, if any.
+ */
+function loadRegistrations(ctx: ExtensionContext, options: HooksOptions): [Registrations, string | undefined] {
+  const sources = [
+    { directory: join(options.pluginDir, "harnesses", "pi"), pluginRoot: options.pluginDir, required: true },
+    { directory: options.agentDir(), pluginRoot: undefined, required: false },
+  ]
+  const registrations: Registrations = {}
+  const status: string[] = []
+  let invalidMatchers = 0
+  for (const source of sources) {
+    const result = readRegistrations(source.directory, source.required)
+    if (!result.usable) {
+      report(ctx, `${result.file} ${result.problem}. Its hooks do not run in this session.`, "error")
+      status.push(`${result.file} is unusable: its hooks do not run`)
+      continue
+    }
+    for (const warning of result.warnings) report(ctx, warning, "warning")
+    for (const [event, groups] of Object.entries(result.registrations) as [EventName, MatcherGroup[]][]) {
+      for (const group of groups) {
+        // An invalid matcher silences only its own group, so the other hooks keep running,
+        // and the report stays in view because that group may hold a guard.
+        const problem = TOOL_EVENTS.has(event) ? compileMatcher(group.matcher).problem : undefined
+        if (problem !== undefined) {
+          invalidMatchers += 1
+          report(ctx, `${result.file}: ${problem}. Its hooks do not run in this session.`, "error")
+        }
+        const handlers = group.handlers.map((handler) => ({ ...handler, pluginRoot: source.pluginRoot }))
+        registrations[event] = [...(registrations[event] ?? []), { ...group, handlers }]
+      }
+    }
+  }
+  if (invalidMatchers > 0) status.push(`hooks.json: ${invalidMatchers} invalid matcher(s), their hooks do not run`)
+  return [registrations, status.length > 0 ? status.join("; ") : undefined]
+}
+
 export function registerHooks(pi: ExtensionAPI, options: HooksOptions): void {
   let registrations: Registrations = {}
   /** Context from `SessionStart` and `UserPromptSubmit`, returned by the next `before_agent_start`. */
@@ -80,32 +126,9 @@ export function registerHooks(pi: ExtensionAPI, options: HooksOptions): void {
     if (start === lastStart) return
     lastStart = start
 
-    const result = readRegistrations(options.agentDir())
-    if (result.usable) {
-      registrations = result.registrations
-      for (const warning of result.warnings) report(ctx, warning, "warning")
-      // An invalid matcher silences only its own group, so the other hooks keep running,
-      // and the report stays in view because that group may hold a guard.
-      let invalidMatchers = 0
-      for (const [event, groups] of Object.entries(registrations)) {
-        if (!TOOL_EVENTS.has(event as EventName)) continue
-        for (const group of groups ?? []) {
-          const problem = compileMatcher(group.matcher).problem
-          if (problem === undefined) continue
-          invalidMatchers += 1
-          report(ctx, `${result.file}: ${problem}. Its hooks do not run in this session.`, "error")
-        }
-      }
-      if (ctx.hasUI) {
-        const status =
-          invalidMatchers > 0 ? `hooks.json: ${invalidMatchers} invalid matcher(s), their hooks do not run` : undefined
-        ctx.ui.setStatus(STATUS_KEY, status)
-      }
-    } else {
-      registrations = {}
-      report(ctx, `${result.file} ${result.problem}. No hooks run in this session.`, "error")
-      if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, "hooks.json unusable: no hooks run")
-    }
+    const [loaded, status] = loadRegistrations(ctx, options)
+    registrations = loaded
+    if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, status)
 
     // A reload rebinds the runtime; the session neither starts nor ends.
     if (event.reason === "reload") return

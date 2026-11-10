@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { registerHooks } from "../../plugins/sentinel/harnesses/pi/extension/extension.ts"
+import { registerHooks } from "../../extensions/pi/extension.ts"
 
 /** The repository root: the nearest directory above this file that holds `.specs/`. */
 function repositoryRoot(directory) {
@@ -21,7 +21,6 @@ function repositoryRoot(directory) {
 
 const REPO_ROOT = repositoryRoot(import.meta.dirname)
 const PLUGIN_DIR = join(REPO_ROOT, "plugins", "sentinel")
-const PI_HARNESS = join(PLUGIN_DIR, "harnesses", "pi")
 const SHARED_HOOKS = join(PLUGIN_DIR, "hooks")
 
 // uv resolves its cache and interpreters from HOME, which each case replaces.
@@ -32,14 +31,10 @@ const realHome = process.env.HOME
 let root
 let project
 
-// The registration names its hooks from the plugin directory, the value Pi's runner gives package hooks.
-process.env.PLUGIN_ROOT = PLUGIN_DIR
-
-/** Link the registration into Pi's agent directory. */
-async function deploy(home, { hooks = true } = {}) {
+/** Create Pi's agent directory, which holds no registration of its own. */
+async function deploy(home) {
   const agentDir = join(home, ".pi", "agent")
   await mkdir(agentDir, { recursive: true })
-  if (hooks) await symlink(join(PI_HARNESS, "hooks.json"), join(agentDir, "hooks.json"))
   return agentDir
 }
 
@@ -63,7 +58,9 @@ afterEach(async () => {
 
 /** Start a session on a stand-in for Pi's extension API whose user gives `answer` to every prompt. */
 async function started({ answer = false, hooks = true } = {}) {
-  const agentDir = await deploy(process.env.HOME, { hooks })
+  const agentDir = await deploy(process.env.HOME)
+  // Without the registration, the extension runs from a plugin directory that holds none.
+  const pluginDir = hooks ? PLUGIN_DIR : join(root, "plugin")
   const handlers = {}
   const notices = []
   const prompts = []
@@ -81,7 +78,7 @@ async function started({ answer = false, hooks = true } = {}) {
       },
     },
   }
-  registerHooks(pi, { agentDir: () => agentDir })
+  registerHooks(pi, { agentDir: () => agentDir, pluginDir })
   const emit = (name, event = {}) => handlers[name](event, ctx)
   await emit("session_start", { reason: "startup" })
   return { emit, notices, prompts }

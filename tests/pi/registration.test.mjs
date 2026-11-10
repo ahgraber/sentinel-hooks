@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { readRegistrations } from "../../plugins/sentinel/harnesses/pi/extension/registration.ts"
+import { readRegistrations } from "../../extensions/pi/registration.ts"
 
 let directory
 

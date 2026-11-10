@@ -437,6 +437,9 @@ def sentinel_checkout(root: Path) -> Path:
         (plugin / relative).touch()
     (checkout / "tests").mkdir()
     (checkout / "tests" / "test_hooks.py").touch()
+    (checkout / "extensions" / "pi").mkdir(parents=True)
+    (checkout / "extensions" / "pi" / "index.ts").touch()
+    (checkout / "package.json").write_text(json.dumps({"pi": {"extensions": ["./extensions/pi/index.ts"]}}))
     (checkout / ".claude-plugin").mkdir()
     (checkout / ".claude-plugin" / "marketplace.json").write_text(
         json.dumps({"name": "local", "plugins": [{"name": "sentinel", "source": "./plugins/sentinel"}]})
@@ -492,6 +495,15 @@ class TestInPlaceCopies:
         rules = policy(policy_world)
 
         assert rules.verdict(str(checkout / "tests/test_hooks.py"), "write") == "undeclared"
+
+    @pytest.mark.parametrize(("harness", "verdict"), [("pi", "guarded"), ("claude", "undeclared")])
+    def test_only_pi_loads_the_extensions_a_package_names(self, policy_world, tmp_path, harness, verdict):
+        home = policy_world[0]
+        checkout = sentinel_checkout(tmp_path)
+        write_record(home, harness, checkout)
+        rules = policy(policy_world)
+
+        assert rules.verdict(str(checkout / "extensions/pi/index.ts"), "write") == verdict
 
     def test_an_in_place_skill_script_runs_and_its_write_asks(self, policy_world, tmp_path):
         home = policy_world[0]
