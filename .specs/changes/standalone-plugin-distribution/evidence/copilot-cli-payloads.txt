@@ -1,0 +1,37 @@
+Copilot CLI PreToolUse payloads, isolated Copilot home (scripts/isolated-harness.sh), 2026-11-09
+Copilot CLI with the plugin installed in place from tmp/homes/src; model GPT-6 Luna (auto-selected).
+A capture hook ran first in com.github.copilot/hooks/hooks.json and saved each hook's stdin.
+Session 64ce1b71 prompt: run `echo probe`, view README.md, create tmp/probe/created.txt, then edit it.
+  Tool names in the session log (tool.execution_start): bash, view, bash, apply_patch.
+Session 42953e8e prompt: create tmp/probe/created2.txt and edit it, with file tools and not the shell.
+  Tool names in the session log: apply_patch for both steps. One hook call was captured.
+This model's tool set has no separate create or string-replace edit tool.
+
+Hook stdin, in call order:
+{"hook_event_name":"PreToolUse","session_id":"64ce1b71-0332-44dc-aade-8d81227556d5","timestamp":"2026-11-10T00:42:39.607Z","cwd":"/Users/mithras/_code/sentinel-hooks","tool_name":"Bash","tool_input":{"command":"echo probe","description":"Run the requested probe command"}}
+{"hook_event_name":"PreToolUse","session_id":"64ce1b71-0332-44dc-aade-8d81227556d5","timestamp":"2026-11-10T00:42:41.418Z","cwd":"/Users/mithras/_code/sentinel-hooks","tool_name":"Read","tool_input":{"path":"/Users/mithras/_code/sentinel-hooks/README.md"}}
+{"hook_event_name":"PreToolUse","session_id":"64ce1b71-0332-44dc-aade-8d81227556d5","timestamp":"2026-11-10T00:42:42.917Z","cwd":"/Users/mithras/_code/sentinel-hooks","tool_name":"Bash","tool_input":{"command":"mkdir -p tmp/probe && printf 'one\\n' > tmp/probe/created.txt","description":"Create the requested probe file"}}
+{"hook_event_name":"PreToolUse","session_id":"64ce1b71-0332-44dc-aade-8d81227556d5","timestamp":"2026-11-10T00:42:44.781Z","cwd":"/Users/mithras/_code/sentinel-hooks","tool_name":"Edit","tool_input":"*** Begin Patch\n*** Update File: tmp/probe/created.txt\n@@\n-one\n+two\n*** End Patch\n"}
+{"hook_event_name":"PreToolUse","session_id":"42953e8e-7a2b-4dd1-9968-bd20818ba766","timestamp":"2026-11-10T00:52:11.476Z","cwd":"/Users/mithras/_code/sentinel-hooks","tool_use_id":"custom_call_LwWuSybDY4LDVD8B1GE0tlvp","tool_name":"Edit","tool_input":"*** Begin Patch\n*** Add File: tmp/probe/created2.txt\n+one\n*** End Patch\n"}
+
+Plugin-root variables a hook received (the same on every call):
+PLUGIN_ROOT=/Users/mithras/_code/sentinel-hooks/tmp/homes/src/plugins/sentinel
+COPILOT_PLUGIN_ROOT=/Users/mithras/_code/sentinel-hooks/tmp/homes/src/plugins/sentinel
+CLAUDE_PLUGIN_ROOT=/Users/mithras/_code/sentinel-hooks/tmp/homes/src/plugins/sentinel
+
+Copilot CLI PreToolUse payloads with a Claude model, 2026-11-10
+Model anthropic/claude-haiku-5.5 through OpenRouter (COPILOT_PROVIDER_TYPE=openai, base URL https://openrouter.ai/api/v1).
+A standalone capture plugin in Sentinel's layout (root plugin.json, com.github.copilot/hooks/hooks.json),
+installed from a local marketplace into a separate COPILOT_HOME, saved each hook's stdin and allowed the call.
+Session 22015fb6 prompt: create new.txt, replace one with two in existing.txt with the string-replace tool, view existing.txt.
+  Tool names in the session log: create, edit, view.
+
+Hook stdin, in call order:
+{"hook_event_name":"PreToolUse","session_id":"22015fb6-3ef5-454f-ab81-975b933c1da3","timestamp":"2026-11-10T14:26:19.894Z","cwd":"/private/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/workspace","tool_use_id":"toolu_vrtx_01LjRmsTnwbuPCAD63toZyKF","tool_name":"Write","tool_input":{"path":"/private/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/workspace/new.txt","file_text":"one"}}
+{"hook_event_name":"PreToolUse","session_id":"22015fb6-3ef5-454f-ab81-975b933c1da3","timestamp":"2026-11-10T14:26:20.826Z","cwd":"/private/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/workspace","tool_use_id":"toolu_vrtx_01Vkx5EZVYVpJWCktYEU4dMX","tool_name":"Edit","tool_input":{"path":"/private/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/workspace/existing.txt","old_str":"one","new_str":"two"}}
+{"hook_event_name":"PreToolUse","session_id":"22015fb6-3ef5-454f-ab81-975b933c1da3","timestamp":"2026-11-10T14:26:21.671Z","cwd":"/private/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/workspace","tool_use_id":"toolu_vrtx_01P8aby8idqABPHW53FEpy4d","tool_name":"Read","tool_input":{"path":"/private/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/workspace/existing.txt"}}
+
+Plugin-root variable the hook received:
+PLUGIN_ROOT=/var/folders/8t/wgdq5whj21s84_555gzs2blw0000gn/T/copilot-capture.pQaakC/market/plugins/capture
+Session 747c1873, the same prompt and model with COPILOT_PROVIDER_TYPE=anthropic and base URL https://openrouter.ai/api:
+  the same tool names (create, edit, view) and the same tool_name and tool_input fields as session 22015fb6.

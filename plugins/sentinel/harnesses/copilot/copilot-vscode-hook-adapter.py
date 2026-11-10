@@ -131,7 +131,7 @@ def _extract_all_paths(tool_input: dict) -> list[str]:
 
 
 def normalize_payload(raw_data: dict) -> dict:
-    """Remap a VS Code tool name and input into Claude Code's shape."""
+    """Remap a Copilot tool name and input, from VS Code or Copilot CLI, into Claude Code's shape."""
     data = deepcopy(raw_data)
     if "tool_name" not in data:
         return data
@@ -146,6 +146,11 @@ def normalize_payload(raw_data: dict) -> dict:
         if TOOL_VOCABULARY.is_passthrough("copilot", tool_name):
             return data
         raise UnmappedToolError(tool_name)
+
+    # Copilot CLI sends its `apply_patch` tool as `Edit`, with the patch text as the whole input.
+    if mapped_name in TOOL_VOCABULARY.group("file") and isinstance(data.get("tool_input"), str):
+        mapped_name = "apply_patch"
+        data["tool_input"] = {"input": data["tool_input"]}
 
     tool_input = _copy_dict(data.get("tool_input"))
 

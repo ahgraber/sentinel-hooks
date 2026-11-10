@@ -392,8 +392,11 @@ harness event
   The Codex install evidence records whether Codex CLI lists and runs them; if it does not, Codex CLI users need the hooks in their own configuration until it does.
 - **Copilot CLI lets a call proceed when a hook times out**: a hook that runs past its registration's timeout does not refuse.
   The registration's timeouts stay at the values the VS Code registration uses, and the install evidence records a hook's run time on Copilot CLI.
-- **Copilot CLI's tool input is not documented field by field**: the adapter reads `command` and the path fields VS Code sends.
-  A task records a payload for each of Copilot CLI's tools before the vocabulary and the adapter change.
+- **Copilot CLI's tool input is not documented field by field**: a recorded probe shows it sends Claude Code's tool names, `Bash` with `command`, `Read` with an absolute `path`, and its `apply_patch` tool as `Edit` with the patch text as the whole `tool_input`.
+  The adapter judges a file tool with a text input as `apply_patch`.
+  The file tools depend on the model.
+  A GPT model has only `apply_patch`, and creates files with it as `*** Add File:`.
+  A Claude model has `create` and `edit`, sent as `Write` with `path` and `file_text` and as `Edit` with `path`, `old_str`, and `new_str`.
 - **A session-start report may not reach the user**: each harness shows a session hook's standard error differently.
   The install evidence records where each harness shows it.
 - **A harness home moved by an environment variable is not declared**: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, and `VSCODE_AGENT_PLUGINS` move a harness's home and install location, and the manifest declares only the default paths.
@@ -413,6 +416,12 @@ harness event
   Sentinel cannot detect this from inside Codex, because its own session check is one of the hooks that does not run.
 - **The active changes name `modules/home/ai/` paths**: the path rewrite updates them.
   A missed path makes that change's tasks name a file that does not exist, which its apply step detects.
+
+## Spec Changes
+
+- `plugin-distribution` `EachHarnessRunsOnlyItsOwnRegistration` rationale: Copilot in VS Code and Copilot CLI share one event vocabulary; the claim of one tool vocabulary is removed.
+  The registration names no tools, so one registration still serves both.
+  Source: the recorded Copilot CLI payloads.
 
 ## Dropped Scenarios
 

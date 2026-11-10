@@ -46,6 +46,7 @@ class TestAgentIdentification:
             ("/home/user/.claude/hooks/block-hook-tampering.py", CLAUDE),
             ("/home/user/.codex/hooks/block-hook-tampering.py", CODEX),
             ("/home/user/.copilot/hooks/block-hook-tampering.py", COPILOT),
+            ("/home/user/.copilot/installed-plugins/sentinel-hooks/sentinel/hooks/block-hook-tampering.py", COPILOT),
         ],
     )
     def test_deployed_directory_names_the_agent(self, path: str, expected: str) -> None:

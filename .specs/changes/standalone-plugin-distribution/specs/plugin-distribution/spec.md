@@ -47,7 +47,7 @@ A harness that installs Sentinel SHALL run the hooks in the registration written
 
 The harnesses name their events and tools differently.
 A registration written for one harness matches no tool in another, or matches the wrong tools, and both leave a gap.
-Copilot in VS Code and Copilot CLI run one hook runtime with one event and tool vocabulary, so one registration is written for both.
+Copilot in VS Code and Copilot CLI run one hook runtime with one event vocabulary, so one registration is written for both.
 
 Serves: install-per-agent
 

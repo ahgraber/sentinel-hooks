@@ -103,10 +103,10 @@
 
 ## 10. Copilot CLI
 
-- [ ] 10.1 Install the plugin in Copilot CLI, and record the `PreToolUse` payload for each of its shell, read, create, and edit tools, and the environment a plugin hook receives.
-- [ ] 10.2 Add the Copilot CLI tool names from the recorded payloads to the `copilot` mappings in `tool-vocabulary.toml`, and make the adapter read their input fields.
-- [ ] 10.3 Add adapter tests that replay each recorded Copilot CLI payload and reach the same decision as the matching VS Code payload.
-- [ ] 10.4 Add a test that a hook under `~/.copilot/installed-plugins/` is detected as the `copilot` agent.
+- [x] 10.1 Install the plugin in Copilot CLI, and record the `PreToolUse` payload for each of its shell, read, create, and edit tools, and the environment a plugin hook receives.
+- [x] 10.2 Make the adapter judge a Copilot CLI file tool whose input is patch text as `apply_patch`, since Copilot CLI sends Claude Code's tool names and its `apply_patch` tool as `Edit`.
+- [x] 10.3 Add adapter tests that replay each recorded Copilot CLI payload and reach the same decision as the matching VS Code payload.
+- [x] 10.4 Add a test that a hook under `~/.copilot/installed-plugins/` is detected as the `copilot` agent.
 
 ## 11. agent-configuration-floor
 
