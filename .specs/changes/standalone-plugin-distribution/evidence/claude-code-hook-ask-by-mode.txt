@@ -1,0 +1,31 @@
+Claude Code 2.1.318: what happens to a PreToolUse hook's `ask` in each permission mode, and which
+session-start hook output becomes a message to the user, 2026-11-10
+Probe: a plugin loaded for one session with --plugin-dir. Its PreToolUse hook printed Sentinel's ask output for a
+call whose file path is notes.txt:
+  {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "Probe: the hook asks about notes.txt."}}
+and allowed every other call. Prompt: create notes.txt containing hello with the Write tool, one attempt, no shell.
+Each session ran as: claude --plugin-dir <plugin> --permission-mode <mode> '<prompt>'. The user's installed
+Sentinel hooks also ran. The user answered No to the prompt about notes.txt.
+
+Manual mode (session c2f207e7, hook input permission_mode "default"):
+  The hook answered ask to Write notes.txt. Claude Code showed the user a prompt; the user answered No.
+  notes.txt: not created.
+
+Auto mode (session 9fcb9de9, hook input permission_mode "auto"):
+  The hook answered ask to Write notes.txt. Claude Code showed the user a prompt; the user answered No.
+  notes.txt: not created.
+
+bypassPermissions mode (session 090c89e9, hook input permission_mode "bypassPermissions"):
+  The hook answered ask to Write notes.txt. Claude Code showed the user a prompt; the user answered No.
+  notes.txt: not created.
+
+Result: in manual, auto, and bypassPermissions modes, a hook's ask reaches the user.
+
+Session-start hook output, from the transcript of session c2f207e7:
+  Hook A wrote "PROBE-A: a line on standard error, exit 0" to standard error and exited 0.
+    The transcript holds it only inside the hook's result record ("stderr": "PROBE-A: ...", "exitCode": 0).
+  Hook B printed {"systemMessage": "PROBE-B: a systemMessage field"} and exited 0.
+    The transcript holds a separate record of type hook_system_message with content "PROBE-B: a systemMessage field".
+  On screen, the user saw "SessionStart:startup says: PROBE-B: a systemMessage field", and did not report PROBE-A.
+
+Result: Claude Code shows the user a session-start hook's systemMessage field, and not its standard error on exit 0.

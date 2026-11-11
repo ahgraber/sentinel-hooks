@@ -334,14 +334,90 @@ The check reads the file system only after a file name matches the heuristic.
 
 ### Decision: TheSessionCheckReadsAllHarnessSettings
 
-**Chosen:** `session-policy-checks.py` reads, at each session start, the user, project, and managed settings files of every supported harness, and reports each forbidden value, each unset setting whose current default is forbidden, each file it cannot parse, and each difference between the harnesses' allowed hosts.
-A data file, `configuration-floor.toml` beside the hooks, holds for each harness its settings files, the forbidden values, the unsafe defaults with the harness version they were read from, and the host-list settings.
+**Chosen:** `session-policy-checks.py` reads, at each session start, the user, project, and managed settings files of every supported harness.
+It reports each value `configuration-floor.toml` names, each unset setting whose current default is a reported value, and each file it cannot parse.
+The data file, beside the hooks, holds for each harness its settings files in merge order and its reported values.
+Each value carries its evidence, the harness version, and the date, as the harness commands in `tool-vocabulary.toml` carry `source` and `checked`.
 It reads JSON with comments and trailing commas for VS Code and Copilot CLI, and TOML through `tomllib` for Codex.
-The check writes no file, and its report is the hook's standard error, as the session checks report now.
+The check writes no file.
+It sends its report by the route each harness shows the user.
+Claude Code and Codex show a session hook's `systemMessage` field and do not show its standard error on exit 0 (`evidence/claude-code-hook-ask-by-mode.txt`, `evidence/codex-session-start-output.txt`), so the check returns that field there.
+Codex runs its session hooks when the first prompt is sent.
+Pi shows nothing of a session hook by itself, so the extension that runs Pi's hooks shows the user a reply's `systemMessage`, and the check returns the field there too.
+Copilot CLI shows the user none of a session hook's output, and VS Code logs it only in its "GitHub Copilot Chat Hooks" output channel.
+VS Code gives the model a session hook's `additionalContext`, so there the check returns the report in that field with a request to tell the user.
+Copilot CLI gives the model neither that field nor the hook's plain output, from a session-start hook or from a hook that runs when a prompt is sent, and shows the user none of it, so a Copilot CLI session reports nothing (`evidence/copilot-cli-hook-ask-by-mode.txt`).
+A session in another harness reports Copilot CLI's settings.
+The README says where the report appears in each harness.
 The shell warning names no install path: it reports a `CLAUDE_CODE_SHELL` that is not a bash.
 
 **Rationale:** a harness whose hooks are off runs no check, so only another harness's session can report it.
 The values are vendor identifiers, so they are data, with a version, beside the code that reads them.
+
+### Decision: TheFloorReportsOnlyWhatDefeatsSentinel
+
+**Chosen:** the session-start check reports a setting only when it stops Sentinel's hooks from running or lets a hook's `ask` be answered without the user.
+A value enters the data file only with a probe, the harness's source, or the harness's documentation as evidence.
+The values the data file starts with:
+
+| Harness             | Value                                                                                                                      | Effect                         | Evidence                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code 2.1.318 | `disableAllHooks` of `true`                                                                                                | hooks off                      | settings reference                                                                                                          |
+| Claude Code 2.1.318 | `enabledPlugins` entry for Sentinel of `false`                                                                             | plugin off                     | settings reference                                                                                                          |
+| Codex 0.167.0       | `features.hooks = false`, `features.plugins = false`                                                                       | hooks off, plugins off         | source, `features/src/lib.rs`                                                                                               |
+| Codex 0.167.0       | `[plugins."<plugin>@<marketplace>"] enabled = false` for Sentinel, `[plugins._default] enabled = false`                    | plugin off                     | source, `PluginConfig`                                                                                                      |
+| Codex 0.167.0       | `[hooks.state."<key>"] enabled = false` for a hook Sentinel registered                                                     | one hook off                   | source, `config/src/hook_config.rs`                                                                                         |
+| Copilot CLI 1.0.108 | `disableAllHooks` of `true`, `enabledPlugins` entry for Sentinel of `false`                                                | hooks off, plugin off          | configuration reference                                                                                                     |
+| Copilot CLI 1.0.108 | `defaultPermissionMode` of `assisted`, or unset                                                                            | a model answers a hook's `ask` | probe, `evidence/copilot-cli-hook-ask-by-mode.txt`; the reference says an unset mode "can start in manual or assisted mode" |
+| VS Code 1.145.2     | `chat.useHooks` of `false`, `chat.plugins.enabled` of `false`, `chat.plugins.enabledPlugins` entry for Sentinel of `false` | hooks off, plugin off          | setting declarations in the build                                                                                           |
+| Pi 1.4.0            | a `packages` entry for Sentinel whose `extensions` list is empty or holds a path with a `-` prefix                         | extension unloaded             | probe, `evidence/pi-extension-switched-off.txt`; Pi's `docs/packages.md` for the empty list                                 |
+
+Probes showed that a hook's `ask` reaches the user, or is refused, in each of these modes, so the check reports none of them: Claude Code's manual, `auto`, and `bypassPermissions`; Copilot CLI's `allow-all` and `autopilot`; and VS Code's default approvals, allow all, and autopilot (`evidence/vscode-hook-ask-by-mode.txt`).
+VS Code's assisted approvals are not in the data file: the account the probe ran on does not offer them.
+A Codex profile file, `<name>.config.toml`, applies only when the user selects it, so the check judges each one over the other files and names the file.
+The check does not read these, and reports nothing from them:
+
+- Copilot's managed preferences that device management delivers, the `com.github.copilot` domain on macOS; it reads the managed settings file.
+  No example of those preferences was found: a computer whose organization applies a Copilot policy held neither the file nor the preferences.
+- Copilot settings that GitHub's servers deliver, which that computer's policy uses and which are in no file the check can read.
+- A Pi `extensions` filter that excludes by pattern, written with a `!` prefix.
+
+**Rationale:** Sentinel is installed into configurations it does not own.
+A report on a user's permission mode, sandbox, or network settings appears in every session of a typical setup, and a report that always appears is ignored, including the one that says the hooks are off.
+Two inferences from a mode's description were wrong: `bypassPermissions` and `allow-all` both show the user a hook's `ask`.
+The requirement therefore names effects, and the data file names values with their evidence.
+
+**Alternatives considered:**
+
+- Report every value that weakens a harness's permission layer or sandbox: that judges settings Sentinel does not own, and each harness renames and adds such settings often.
+- Name each reported value in the requirement: every refresh of the data file would then change a requirement.
+
+A configuration audit the user runs on request is a later change.
+It inherits what this check leaves out: sandbox state and its escape settings, Codex's `danger-full-access`, the permission modes above, VS Code's terminal, edit, and URL approvals, the comparison of each harness's allowed hosts, and Claude Code mods, which its documentation says can approve a call a hook refused.
+A second later change can make a hook refuse where the settings select a mode that answers its `ask`.
+
+Decided with the user.
+
+### Decision: AMaintainerSkillKeepsTheFloorCurrent
+
+**Chosen:** a repository skill, `refresh-configuration-floor`, checks each harness's current build and documentation for settings that stop the hooks or answer a hook's `ask`, and for changed defaults, and updates `configuration-floor.toml`.
+Its directory holds the probes: a hook that answers `ask` for one file, and a script per command-line harness that runs one permission mode against it in a separate home.
+A probe needs a signed-in harness, and an interactive one needs a person, so the skill runs them and no test does.
+It lives in `.agents/skills/`, and `.claude/skills/` holds a relative link to it.
+The plugin does not ship it.
+It replaces `assess-agent-configuration`, which assessed a configuration repository's agent settings.
+
+**Rationale:** the capability test now checks each registration, and the session-start check reports the values that defeat the hooks, so each check the assessment made runs in one of them or waits for the configuration audit.
+A vendor default that becomes unsafe is reported only after the floor records it, and a person makes that record by reading each harness's new builds and documentation.
+Codex reads project skills from `.agents/skills/`, and Claude Code reads only `.claude/skills/`, so one copy with a link serves both.
+A relative link works in every clone.
+
+**Alternatives considered:**
+
+- Keep the assessment: every check it makes now belongs to a test or to the session-start report.
+- Ship the skill in the plugin: it maintains this repository, not a user's session.
+
+Decided with the user.
 
 ### Decision: CodexHooksComeFromAnInstaller
 
@@ -397,7 +473,12 @@ harness event
   The file tools depend on the model.
   A GPT model has only `apply_patch`, and creates files with it as `*** Add File:`.
   A Claude model has `create` and `edit`, sent as `Write` with `path` and `file_text` and as `Edit` with `path`, `old_str`, and `new_str`.
-- **A session-start report may not reach the user**: each harness shows a session hook's standard error differently.
+- **A session-start report may not reach the user**: each harness shows a session hook's output differently.
+  Claude Code and Codex show the `systemMessage` field.
+  The extension that runs Pi's hooks shows it too.
+  VS Code logs a session hook's output only in its "GitHub Copilot Chat Hooks" output channel, and Copilot CLI shows none of it (`evidence/vscode-hook-ask-by-mode.txt`, `evidence/copilot-cli-hook-ask-by-mode.txt`).
+  A report the model is asked to pass on reaches the user only when the model does so.
+  A session in Claude Code, Codex, or Pi reports every harness's settings, so the report reaches a user who runs one of them.
   The install evidence records where each harness shows it.
 - **A harness home moved by an environment variable is not declared**: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, and `VSCODE_AGENT_PLUGINS` move a harness's home and install location, and the manifest declares only the default paths.
   OPEN QUESTION: the manifest's home paths should probably honor these variables; a later change decides how, because the change touches every home declaration.

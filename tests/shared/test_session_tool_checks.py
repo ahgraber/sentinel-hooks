@@ -57,7 +57,8 @@ def test_bad_shell_pin_warns(session, pin):
 
     assert result.returncode == 0
     assert "CLAUDE_CODE_SHELL" in result.stderr
-    assert "CLAUDE_CODE_SHELL=/run/current-system/sw/bin/bash" in result.stderr
+    assert "Set it to a bash" in result.stderr
+    assert "/bin/bash" not in result.stderr
 
 
 @pytest.mark.parametrize("agent", ["codex", "copilot"])
@@ -107,3 +108,21 @@ def test_link_into_stricter_target_warns(session):
 
     assert result.returncode == 0
     assert "guarded/file" in result.stderr
+
+
+def test_a_shell_warning_is_still_reported_when_the_manifest_cannot_be_loaded(session):
+    result = run_session(session, pin="/bin/zsh", defect="unparsable")
+
+    assert result.returncode == 2
+    assert "CLAUDE_CODE_SHELL is /bin/zsh" in result.stderr
+    assert "guarded-paths.toml could not be loaded" in result.stderr
+
+
+def test_a_floor_file_with_a_defect_is_reported_and_the_session_proceeds(session):
+    hooks, _, _ = session
+    (hooks / "configuration-floor.toml").write_text('plugin = "sentinel"\n')
+
+    result = run_session(session, pin="/bin/bash")
+
+    assert result.returncode == 0
+    assert "configuration-floor.toml could not be read: the floor has no `package`" in result.stderr

@@ -110,13 +110,17 @@
 
 ## 11. agent-configuration-floor
 
-- [ ] 11.1 Write `configuration-floor.toml` with each supported harness's settings files, forbidden values, unsafe defaults with the version they were read from, and host-list settings, and find from the Copilot CLI documentation the values that approve every tool call without a prompt.
+- [x] 11.1 Write `configuration-floor.toml` with each supported harness's settings files in merge order and the values `SettingsThatDefeatTheHooksAreReported` reports, each with its evidence, harness version, and date.
   Add `configuration-floor.toml` to the `agent-configuration-floor` record and to the hook data files in the capability coverage test.
-- [ ] 11.2 Make `session-policy-checks.py` read every supported harness's settings, report as `BypassModesAreReported` and `NetworkReachIsUniformPerUser` require, write no file, and report a `CLAUDE_CODE_SHELL` that is not a bash without naming an install path.
-- [ ] 11.3 Add tests for each scenario of `BypassModesAreReported`, with a fixture settings file per harness, a VS Code file with comments and a trailing comma, a file that does not parse, and a check that no file changes.
-- [ ] 11.4 Add tests for each scenario of `NetworkReachIsUniformPerUser`.
-- [ ] 11.5 Add a test for `RegistrationsRouteTheVocabulary` over each registration the plugin ships, and a fixture registration that misses one spelling.
-- [ ] 11.6 Add tests for `GuardrailEditsRouteToTheUser` `WholesaleBypassRequested` and `NoSurfaceSeesTheRefusal` on the refusal text `hook_response.py` gives.
+- [x] 11.2 Make `session-policy-checks.py` read every supported harness's settings, report as `SettingsThatDefeatTheHooksAreReported` requires, write no file, and report a `CLAUDE_CODE_SHELL` that is not a bash without naming an install path.
+- [x] 11.3 Add tests for each scenario of `SettingsThatDefeatTheHooksAreReported`, with a fixture settings file per harness, a VS Code file with comments and a trailing comma, a file that does not parse, and a check that no file changes.
+- [x] 11.4 Make the check send its report by the route each harness shows the user: the `systemMessage` field in Claude Code, Codex, and Pi, with the Pi hook runner showing that field as `ASystemMessageReachesTheUser` requires and a test for each of its scenarios.
+  In Copilot CLI and VS Code, hand the report to the model as session context with a request to tell the user, by the form a probe shows each one passes on.
+- [x] 11.5 Add a test for `RegistrationsRouteTheVocabulary` over each registration the plugin ships, and a fixture registration that misses one spelling.
+- [x] 11.6 Add tests for `GuardrailEditsRouteToTheUser` `WholesaleBypassRequested` and `NoSurfaceSeesTheRefusal` on the refusal text `hook_response.py` gives.
+- [x] 11.7 Write the repository skill `refresh-configuration-floor` in `.agents/skills/`, which checks each harness's current build and documentation for settings that stop the hooks or answer a hook's `ask`, and for changed defaults, and updates `configuration-floor.toml`.
+  Put the probes in its directory: the hook that answers `ask`, and a script per command-line harness that runs one permission mode against it.
+  Track `.agents/skills/` and `.claude/skills/` in `.gitignore`, ask the user to link `.claude/skills/refresh-configuration-floor` to `../../.agents/skills/refresh-configuration-floor` and to remove the `assess-agent-configuration` link, and describe the skill in `AGENTS.md`.
 
 ## 12. Pi hook runner
 
@@ -141,4 +145,5 @@
 
 - [ ] 14.1 Install Sentinel in Claude Code, Codex, VS Code, Copilot CLI, and Pi from the repository's git URL, and save each transcript, with the evidence `design.md` names for each harness, where the harness shows the session-start report, and a hook's run time on Copilot CLI, to `evidence/install-<harness>.txt`.
 - [ ] 14.2 Write the install steps in `README.md` as one table with one install method per harness, including the programs `session-tool-checks` requires.
+  Say where the session-start report appears in each harness.
 - [ ] 14.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.

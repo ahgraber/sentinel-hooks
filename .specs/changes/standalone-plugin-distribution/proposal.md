@@ -31,7 +31,7 @@ As the Sentinel maintainer, I want the source tree to be the installed plugin, s
 - `guarded-path-declarations`: the enforcement floor covers the locations harnesses install plugins into, and plugin skill scripts run there.
 - `guarded-surface`: the guarded surface covers the installed plugins, the copies a harness loads in place, and the settings that switch a plugin off, not a source checkout that no harness runs.
 - `hook-tampering-blocking`: tamper protection applies to the installed plugin; a command that disables, removes, or updates a plugin asks the user, and a command that starts a session without the hooks is refused.
-- `agent-configuration-floor`: Sentinel reports, at session start, each harness setting that weakens a layer, and never writes a setting.
+- `agent-configuration-floor`: Sentinel reports, at session start, each harness setting that stops its hooks or answers a hook's `ask` without the user, and never writes a setting.
 - `sensitive-path-blocking`: the hook-source exemption covers the Sentinel plugin.
 - `cross-agent-capability-parity`: parity holds across the harnesses Sentinel supports, checked over the registrations the plugin ships.
 - `hook-registration` and `hook-execution` (Pi): the Pi runner runs the hooks shipped in the Sentinel package and the user's own hooks.
@@ -80,4 +80,10 @@ The policy's self-protection names the directories where each harness installs p
 - 2026-11-06 Pi's hook runner lives in `extensions/pi/`, outside the plugin directory, and the floor covers the extensions an in-place Pi package names.
   Decided with the user.
 - 2026-11-05 Codex install: the plugin ships a hook installer, the Codex install method until Codex loads hooks from an Agent Plugins manifest; `EachSupportedHarnessInstallsSentinel` stays unchanged, and `design.md` records the Codex gap as known noncompliance.
+  Decided with the user.
+- 2026-11-05 Scope: a repository skill, `refresh-configuration-floor` in `.agents/skills/`, keeps `configuration-floor.toml` current and replaces `assess-agent-configuration`.
+  Decided with the user.
+- 2026-11-10 Configuration floor: the session-start check reports only what defeats Sentinel, which is a setting that stops its hooks or lets a hook's `ask` be answered without the user; a value needs a probe, source, or documentation as evidence; `NetworkReachIsUniformPerUser` is removed; a configuration audit the user runs on request is a later change.
+  Decided with the user.
+- 2026-11-10 Session-start report: Pi's hook runner shows the user a hook's `systemMessage` (`ASystemMessageReachesTheUser`); where a harness shows no session hook output, the check hands the report to the model to pass on, and the README says where the report appears in each harness.
   Decided with the user.

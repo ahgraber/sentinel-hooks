@@ -1,0 +1,21 @@
+Codex 0.167.1: which session-start hook output Codex shows the user, 2026-11-10
+Probe: a throwaway project with its own hook file, .codex/hooks.json, holding three SessionStart hooks under the
+matcher "startup|resume|compact|clear". The user trusted the folder and, in /hooks, the three hooks.
+  Hook A wrote "PROBE-A: a line on standard error, exit 0" to standard error and exited 0.
+  Hook B printed {"systemMessage": "PROBE-B: a systemMessage field"} and exited 0.
+  Hook C wrote "PROBE-C: a line on standard error, exit 1" to standard error and exited 1.
+
+A session the user opened and closed with no prompt ran no session-start hook: the probe's three did not run, and
+the status line of Sentinel's installed session hook did not appear.
+
+A session in which the user sent the prompt "hello" showed, after the prompt:
+  ↳ Hook · PROBE-B: a systemMessage field
+  • Hook failed
+    └ hook exited with code 1
+  Hello. What can I help you with?
+The probe's record then held one file for each hook: a-9703.txt, b-9704.txt, c-9705.txt. All three hooks ran.
+
+Result: Codex runs session-start hooks when the first prompt is sent.
+It shows the user a hook's systemMessage field.
+It does not show a hook's standard error on exit 0, and for exit 1 it shows "Hook failed" with the exit code and
+without the standard error text.

@@ -1,0 +1,220 @@
+# Settings, in each supported harness, that defeat Sentinel's hooks.
+# `session-policy-checks.py` reads this file at session start and reports each value it finds.
+# It reports and never writes a settings file.
+#
+# A value is listed only when a probe, the harness's source, or the harness's documentation shows its effect.
+# A mode's name or description is not evidence.
+#
+# plugin    Sentinel's plugin name in a harness's plugin entries, written `<plugin>` or `<plugin>@<marketplace>`.
+# package   Sentinel's Pi package name.
+#
+# [harnesses.<id>]
+#   name           the harness's name in a report
+#   version        the build the values were read from
+#   home           the harness's home directory; `~` is the user's home
+#   home-variable  the environment variable that moves the home
+#   format         "json", "jsonc" (comments and trailing commas), or "toml"
+#   files          settings files, lowest precedence first. Each has a `scope` and a `path`.
+#                  `{home}` is the home above. `{project}` is each directory from the repository root
+#                  down to the session's working directory. A `*` matches part of a file name.
+#                  Any other path is absolute.
+#                  `root` names the key that holds the settings inside the file.
+#                  A file of scope "profile" applies only when the user selects it,
+#                  so each one is judged separately, over the other files.
+#
+# [[harnesses.<id>.values]]
+#   key       the setting, as a dotted path
+#   kind      "setting" (the default), "plugin-entry", "codex-hook-state", or "pi-package-filter"
+#   is        for a setting: the values that have the effect
+#   unset     true when leaving the setting unset has the effect too
+#   unset-unless  a setting that, when set in any file, takes the place of the unset one
+#   scopes    the file scopes the harness reads this setting from; every scope when absent
+#   field     for a plugin entry that is a table: the key that switches it off
+#   default-entry  for plugin entries: the entry that applies to a plugin with no entry of its own
+#   effect    what the value does, as the report states it
+#   evidence  "probe", "source", or "documentation"
+#   source    where that evidence is
+#   checked   the date the evidence was read
+
+plugin = "sentinel"
+package = "sentinel-hooks"
+
+[harnesses.claude]
+name = "Claude Code"
+version = "2.1.318"
+home = "~/.claude"
+home-variable = "CLAUDE_CONFIG_DIR"
+format = "json"
+files = [
+  { scope = "user", path = "{home}/settings.json" },
+  { scope = "project", path = "{project}/.claude/settings.json" },
+  { scope = "project", path = "{project}/.claude/settings.local.json" },
+  { scope = "managed", path = "/Library/Application Support/ClaudeCode/managed-settings.json" },
+  { scope = "managed", path = "/Library/Application Support/ClaudeCode/managed-settings.d/*.json" },
+  { scope = "managed", path = "/etc/claude-code/managed-settings.json" },
+  { scope = "managed", path = "/etc/claude-code/managed-settings.d/*.json" },
+]
+
+[[harnesses.claude.values]]
+key = "disableAllHooks"
+is = [true]
+effect = "turns off every hook, Sentinel's included"
+evidence = "documentation"
+source = "https://code.claude.com/docs/en/settings-reference#disableallhooks"
+checked = 2026-11-10
+
+[[harnesses.claude.values]]
+key = "enabledPlugins"
+kind = "plugin-entry"
+effect = "switches the Sentinel plugin off"
+evidence = "documentation"
+source = "https://code.claude.com/docs/en/settings-reference, `enabledPlugins`"
+checked = 2026-11-10
+
+[harnesses.codex]
+name = "Codex"
+version = "0.167.0"
+home = "~/.codex"
+home-variable = "CODEX_HOME"
+format = "toml"
+files = [
+  { scope = "managed", path = "/etc/codex/config.toml" },
+  { scope = "user", path = "{home}/config.toml" },
+  { scope = "profile", path = "{home}/*.config.toml" },
+  { scope = "project", path = "{project}/.codex/config.toml" },
+  { scope = "managed", path = "/etc/codex/managed_config.toml" },
+]
+
+[[harnesses.codex.values]]
+key = "features.hooks"
+is = [false]
+effect = "turns off every hook, Sentinel's included"
+evidence = "source"
+source = "github.com/openai/codex rust-v0.167.0, codex-rs/features/src/lib.rs"
+checked = 2026-11-10
+
+[[harnesses.codex.values]]
+key = "features.plugins"
+is = [false]
+effect = "turns off every plugin, Sentinel included"
+evidence = "source"
+source = "github.com/openai/codex rust-v0.167.0, codex-rs/features/src/lib.rs"
+checked = 2026-11-10
+
+[[harnesses.codex.values]]
+key = "plugins"
+kind = "plugin-entry"
+field = "enabled"
+default-entry = "_default"
+effect = "switches the Sentinel plugin off"
+evidence = "source"
+source = "github.com/openai/codex rust-v0.167.0, `PluginConfig.enabled`"
+checked = 2026-11-10
+
+[[harnesses.codex.values]]
+key = "hooks.state"
+kind = "codex-hook-state"
+effect = "switches off one hook Sentinel registered"
+evidence = "source"
+source = "github.com/openai/codex rust-v0.167.0, codex-rs/config/src/hook_config.rs"
+checked = 2026-11-10
+
+[harnesses.copilot]
+name = "Copilot CLI"
+version = "1.0.108"
+home = "~/.copilot"
+home-variable = "COPILOT_HOME"
+format = "jsonc"
+# Copilot CLI reads the shared settings (`disableAllHooks`, `enabledPlugins`) from Claude Code's project files too.
+files = [
+  { scope = "managed", path = "/Library/Application Support/GitHubCopilot/managed-settings.json" },
+  { scope = "managed", path = "/etc/github-copilot/managed-settings.json" },
+  { scope = "user", path = "{home}/settings.json" },
+  { scope = "shared", path = "{project}/.claude/settings.json" },
+  { scope = "shared", path = "{project}/.claude/settings.local.json" },
+  { scope = "project", path = "{project}/.github/copilot/settings.json" },
+  { scope = "project", path = "{project}/.github/copilot/settings.local.json" },
+]
+
+[[harnesses.copilot.values]]
+key = "disableAllHooks"
+is = [true]
+effect = "turns off every hook, Sentinel's included"
+evidence = "documentation"
+source = "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference"
+checked = 2026-11-10
+
+[[harnesses.copilot.values]]
+key = "enabledPlugins"
+kind = "plugin-entry"
+effect = "switches the Sentinel plugin off"
+evidence = "documentation"
+source = "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference"
+checked = 2026-11-10
+
+[[harnesses.copilot.values]]
+key = "defaultPermissionMode"
+is = ["assisted"]
+unset = true
+unset-unless = "permissions.defaultMode"
+scopes = ["user"]
+effect = "lets a model answer a question a hook put to the user"
+evidence = "probe"
+source = "evidence/copilot-cli-hook-ask-by-mode.txt; the configuration reference says an unset mode can start in manual or assisted mode"
+checked = 2026-11-10
+
+[harnesses.vscode]
+name = "VS Code"
+version = "1.145.2"
+home = "~"
+format = "jsonc"
+files = [
+  { scope = "user", path = "{home}/Library/Application Support/Code/User/settings.json" },
+  { scope = "user", path = "{home}/.config/Code/User/settings.json" },
+  { scope = "project", path = "{project}/*.code-workspace", root = "settings" },
+  { scope = "project", path = "{project}/.vscode/settings.json" },
+]
+
+[[harnesses.vscode.values]]
+key = "chat.useHooks"
+is = [false]
+effect = "turns off every hook, Sentinel's included"
+evidence = "source"
+source = "the setting's declaration in VS Code 1.145.2, out/vs/workbench/workbench.desktop.main.js"
+checked = 2026-11-10
+
+[[harnesses.vscode.values]]
+key = "chat.plugins.enabled"
+is = [false]
+effect = "turns off every plugin, Sentinel included"
+evidence = "source"
+source = "the setting's declaration in VS Code 1.145.2, out/vs/workbench/workbench.desktop.main.js"
+checked = 2026-11-10
+
+[[harnesses.vscode.values]]
+key = "chat.plugins.enabledPlugins"
+kind = "plugin-entry"
+scopes = ["user"]
+effect = "switches the Sentinel plugin off"
+evidence = "source"
+source = "the setting's declaration in VS Code 1.145.2, out/vs/workbench/workbench.desktop.main.js"
+checked = 2026-11-10
+
+[harnesses.pi]
+name = "Pi"
+version = "1.4.0"
+home = "~/.pi/agent"
+home-variable = "PI_CODING_AGENT_DIR"
+format = "json"
+files = [
+  { scope = "user", path = "{home}/settings.json" },
+  { scope = "project", path = "{project}/.pi/settings.json" },
+]
+
+[[harnesses.pi.values]]
+key = "packages"
+kind = "pi-package-filter"
+effect = "leaves Sentinel's extension unloaded"
+evidence = "probe"
+source = "evidence/pi-extension-switched-off.txt; Pi's docs/packages.md for an empty `extensions` list"
+checked = 2026-11-10

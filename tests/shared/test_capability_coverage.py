@@ -27,6 +27,7 @@ CAPABILITY_KINDS = frozenset({"enforcement", "mechanism", "posture", "conformanc
 HOOK_DATA_FILES = frozenset(
     {
         "block-destructive-ops-patterns.toml",
+        "configuration-floor.toml",
         "guarded-paths.toml",
         "tool-vocabulary.toml",
     }
@@ -41,7 +42,7 @@ class Capability:
 
 
 CAPABILITIES: Mapping[str, Capability] = {
-    "agent-configuration-floor": Capability("enforcement", ("session-policy-checks.py",)),
+    "agent-configuration-floor": Capability("enforcement", ("session-policy-checks.py", "configuration-floor.toml")),
     "bash-command-validator": Capability("enforcement", ("bash-command-validator.sh",)),
     "cross-agent-capability-parity": Capability("conformance", ("test_capability_coverage.py",)),
     "dangerous-bash-blocking": Capability("enforcement", ("block-dangerous-bash.sh",)),

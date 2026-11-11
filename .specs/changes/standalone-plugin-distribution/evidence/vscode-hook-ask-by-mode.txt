@@ -1,0 +1,38 @@
+VS Code 1.145.2: what happens to a PreToolUse hook's `ask` under each approval setting, and whether a
+session-start hook's output is shown to the user, 2026-11-10
+Probe: a throwaway workspace with its own hook file, .github/hooks/probe.json, opened in the user's VS Code.
+Its PreToolUse hook printed Sentinel's ask output for a call that names a notes-*.txt file:
+  {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "Probe: the hook asks about a notes file."}}
+and allowed every other call. The user ran one chat with default approvals, one with allow all, and one in
+autopilot mode, each asking the agent to create a notes file with its file-creation tool.
+The chat pickers offered default, allow all, and autopilot. They did not offer assisted approvals, so that
+setting was not tested.
+
+Result reported by the user: the hook was triggered in all three runs.
+Result printed by the probe:
+  files created: none
+  hook calls that answered ask: three, each for notes-manual.txt
+  session-start hooks that ran: start-stderr three times, start-message three times
+
+Under each of the three settings, VS Code showed the user a confirmation carrying "Probe: the hook asks about a
+notes file", and the user declined it.
+No notes file was created under default approvals, allow all, or autopilot.
+
+Result: under default approvals, allow all, and autopilot, a hook's ask reaches the user.
+
+Session-start hook output:
+  Hook A wrote "PROBE-A: a line on standard error, exit 0" to standard error and exited 0.
+  Hook B printed {"systemMessage": "PROBE-B: a systemMessage field"} and exited 0.
+  Both hooks ran in each of the three sessions. The user saw neither line in the chat.
+  The Output panel's "GitHub Copilot Chat Hooks" channel held:
+    2026-11-10 19:54:30.441 [info] [#10] [SessionStart] Output: {"systemMessage":"PROBE-B: a systemMessage field"}
+
+Result: VS Code does not show a session-start hook's systemMessage or standard error in the chat.
+It logs the hook's output in the "GitHub Copilot Chat Hooks" output channel.
+
+Session-start hook context, 2026-11-10:
+  A second throwaway workspace ran two SessionStart hooks. Each gave the model one word: hook D in the
+  additionalContext field of a JSON reply ("marmalade"), hook E as plain standard output ("tangerine").
+  Asked in a new chat which probe words a hook gave it, the model answered: marmalade
+
+Result: VS Code gives the model a session-start hook's additionalContext, and not its plain output.

@@ -17,7 +17,7 @@ from pathlib import Path
 PLUGIN_MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json")
 CATALOGS = (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json", ".github/plugin/marketplace.json")
 VSCODE_SETTINGS = ("Library/Application Support/Code/User/settings.json", ".config/Code/User/settings.json")
-_LOCAL_PREFIXES = ("/", "./", "../", "~")
+LOCAL_PREFIXES = ("/", "./", "../", "~")
 
 
 def in_place_plugins(home: str) -> tuple[Path, ...]:
@@ -48,7 +48,7 @@ def pi_extensions(package: Path) -> tuple[Path, ...]:
 
     An entry counts only when it is a `./` path that exists. A file entry gives its parent directory.
     """
-    manifest = _read_json(package / "package.json")
+    manifest = read_json(package / "package.json")
     pi = manifest.get("pi") if isinstance(manifest, dict) else None
     entries = pi.get("extensions") if isinstance(pi, dict) else None
     paths = (
@@ -61,7 +61,7 @@ def pi_extensions(package: Path) -> tuple[Path, ...]:
 
 def _claude_locations(home: Path) -> Iterable[Path]:
     """Claude Code: each known marketplace added from a directory or a file, at its install location."""
-    records = _read_json(home / ".claude/plugins/known_marketplaces.json")
+    records = read_json(home / ".claude/plugins/known_marketplaces.json")
     for record in records.values() if isinstance(records, dict) else ():
         source = record.get("source") if isinstance(record, dict) else None
         if isinstance(source, dict) and source.get("source") in {"directory", "file"}:
@@ -71,7 +71,7 @@ def _claude_locations(home: Path) -> Iterable[Path]:
 def _vscode_locations(home: Path) -> Iterable[Path]:
     """VS Code: each key of `chat.pluginLocations` in the user settings."""
     for relative in VSCODE_SETTINGS:
-        settings = _read_json(home / relative, comments=True)
+        settings = read_json(home / relative, comments=True)
         locations = settings.get("chat.pluginLocations") if isinstance(settings, dict) else None
         for key in locations if isinstance(locations, dict) else ():
             yield from _location(key, home)
@@ -80,17 +80,17 @@ def _vscode_locations(home: Path) -> Iterable[Path]:
 def _pi_locations(home: Path) -> Iterable[Path]:
     """Pi: each local path in the `packages` list, resolved from the settings file's directory."""
     settings_path = home / ".pi/agent/settings.json"
-    settings = _read_json(settings_path)
+    settings = read_json(settings_path)
     packages = settings.get("packages") if isinstance(settings, dict) else None
     for package in packages if isinstance(packages, list) else ():
         source = package.get("source") if isinstance(package, dict) else package
-        if isinstance(source, str) and (source == "." or source.startswith(_LOCAL_PREFIXES)):
+        if isinstance(source, str) and (source == "." or source.startswith(LOCAL_PREFIXES)):
             yield from _location(source, home, relative_to=settings_path.parent)
 
 
 def _copilot_locations(home: Path) -> Iterable[Path]:
     """Copilot CLI: each extra known marketplace added from a directory."""
-    settings = _read_json(home / ".copilot/settings.json")
+    settings = read_json(home / ".copilot/settings.json")
     marketplaces = settings.get("extraKnownMarketplaces") if isinstance(settings, dict) else None
     for record in marketplaces.values() if isinstance(marketplaces, dict) else ():
         source = record.get("source") if isinstance(record, dict) else None
@@ -120,7 +120,7 @@ def _plugins_at(location: Path) -> tuple[Path, ...]:
     named = tuple(
         Path(os.path.normpath(location / relative))
         for catalog in CATALOGS
-        for relative in _relative_plugins(_read_json(location / catalog))
+        for relative in _relative_plugins(read_json(location / catalog))
     )
     return named or (location,)
 
@@ -135,13 +135,17 @@ def _relative_plugins(catalog: object) -> Iterable[str]:
             yield path
 
 
-def _read_json(path: Path, *, comments: bool = False) -> object:
+def read_json(path: Path, *, comments: bool = False) -> object:
     """Return a record's parsed contents, or `None` when it is missing or does not parse."""
     try:
-        text = path.read_text(encoding="utf-8")
-        return json.loads(_without_trailing_commas(_without_comments(text)) if comments else text)
+        return parse_json(path.read_text(encoding="utf-8"), comments=comments)
     except (OSError, UnicodeDecodeError, ValueError):
         return None
+
+
+def parse_json(text: str, *, comments: bool = False) -> object:
+    """Parse JSON text, accepting comments and trailing commas when `comments` is set; raise `ValueError` otherwise."""
+    return json.loads(_without_trailing_commas(_without_comments(text)) if comments else text)
 
 
 def _without_comments(text: str) -> str:
