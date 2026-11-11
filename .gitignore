@@ -9,6 +9,10 @@
 !.agents/
 .agents/*
 !.agents/plugins/
+!.agents/skills/
+!.claude/
+.claude/*
+!.claude/skills/
 !.renovate/
 
 # -------------------------------------------------------

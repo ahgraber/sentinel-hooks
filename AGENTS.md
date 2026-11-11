@@ -140,3 +140,10 @@ Slow, or looking unrelated to the change, is not a reason to skip one.
 - The sandbox may not be able to run installs, network calls, or other privileged commands (permission errors) — attempt the command first rather than assuming failure.
 - **Delegate to the user** only if a command actually fails on a permission or network error.
   Describe the exact command to run.
+
+## Repository Skills
+
+- `refresh-configuration-floor`, in `.agents/skills/`, brings `plugins/sentinel/hooks/configuration-floor.toml` up to date with each harness's current build.
+  Run it on request, when a supported harness ships a new build or changes a setting that turns hooks or plugins off.
+  It holds the probes that show what each harness does with a hook's `ask` and with a session-start report.
+  Claude Code reads it through the link `.claude/skills/refresh-configuration-floor`.
