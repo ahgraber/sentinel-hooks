@@ -108,3 +108,24 @@ for (const [label, fields, pattern] of [
     assert.match(outcome.problem, pattern)
   })
 }
+
+test("a systemMessage is carried beside the decision as a notice for the user", () => {
+  const asked = reply({ permissionDecision: "ask", permissionDecisionReason: "confirm" }, { systemMessage: "check your settings" })
+
+  assert.deepEqual(decode(asked, 60_000, "PreToolUse"), {
+    kind: "ask",
+    reason: "confirm",
+    context: undefined,
+    notice: "check your settings",
+  })
+  assert.deepEqual(decode(run({ stdout: JSON.stringify({ systemMessage: "check your settings" }) }), 60_000, "SessionStart"), {
+    kind: "allow",
+    notice: "check your settings",
+  })
+})
+
+test("exit 2 keeps the systemMessage of a JSON reply that does not block", () => {
+  const result = run({ exitCode: 2, stderr: "no rm -rf\n", stdout: JSON.stringify({ systemMessage: "check your settings" }) })
+
+  assert.deepEqual(decode(result, 60_000, "PreToolUse"), { kind: "block", reason: "no rm -rf", notice: "check your settings" })
+})

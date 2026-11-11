@@ -155,3 +155,13 @@ test("a long command is truncated in the hook's name and a long report is trunca
   assert.ok(combined.reports[0].length <= 2000)
   assert.match(combined.reports[0], /^hook `echo x+…`/)
 })
+
+test("a systemMessage is reported to the user and leaves the decision as it is", async () => {
+  const notice = `printf '%s' '{"systemMessage":"Warning: hooks are off in Codex"}'`
+
+  const started = await runEvent("SessionStart", commands(notice), {}, directory)
+  const asked = await runEvent("PreToolUse", commands(notice, ASK), {}, directory)
+
+  assert.deepEqual([started.decision, started.reports], ["allow", ["Warning: hooks are off in Codex"]])
+  assert.deepEqual([asked.decision, asked.reports], ["ask", ["Warning: hooks are off in Codex"]])
+})

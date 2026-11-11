@@ -15,7 +15,10 @@ export interface Combined {
   context: string[]
   /** Plain standard output from every allowing hook, kept on the events that read it as context. */
   text: string[]
-  /** Errors and failures that did not decide the event, each naming its hook and truncated, for the user. */
+  /**
+   * Messages for the user, each truncated: a hook's `systemMessage`, and the errors and
+   * failures that did not decide the event, each naming its hook.
+   */
   reports: string[]
 }
 
@@ -71,6 +74,9 @@ export async function runEvent(
 
   for (const [handler, outcome] of outcomes) {
     const name = describeHook(handler)
+    if ("notice" in outcome && outcome.notice !== undefined) {
+      combined.reports.push(truncate(outcome.notice, REPORT_LENGTH))
+    }
     let decision: Decision
     switch (outcome.kind) {
       case "failure":

@@ -6,10 +6,13 @@ import type { EventName } from "./registration.ts"
 import type { RunResult } from "./runner.ts"
 
 export type Outcome =
-  /** `text` is plain standard output; `context` is `additionalContext` from a JSON reply. */
-  | { kind: "allow"; text?: string; context?: string }
-  | { kind: "ask"; reason: string; context?: string }
-  | { kind: "block"; reason: string; context?: string }
+  /**
+   * `text` is plain standard output; `context` is `additionalContext` from a JSON reply,
+   * and `notice` its `systemMessage`, which is for the user.
+   */
+  | { kind: "allow"; text?: string; context?: string; notice?: string }
+  | { kind: "ask"; reason: string; context?: string; notice?: string }
+  | { kind: "block"; reason: string; context?: string; notice?: string }
   /** A non-blocking error: the event proceeds and `message` is reported. */
   | { kind: "error"; message: string }
   /** The hook gave no answer: it timed out, did not start, died on a signal, or wrote a broken reply. */
@@ -72,12 +75,20 @@ export function decode(result: RunResult, timeoutMs: number, event: EventName): 
   }
 
   const outcome = fromReply(reply, event)
-  if (status !== 2) return outcome
-  return outcome.kind === "block" ? outcome : { kind: "block", reason: stderr || "the hook exited 2 without a reason" }
+  if (status !== 2 || outcome.kind === "block") return outcome
+  const block: Outcome = { kind: "block", reason: stderr || "the hook exited 2 without a reason" }
+  return "notice" in outcome && outcome.notice !== undefined ? { ...block, notice: outcome.notice } : block
+}
+
+/** Read a JSON reply's decision and its message for the user; a reply that is a failure keeps no message. */
+function fromReply(reply: Record<string, unknown>, event: EventName): Outcome {
+  const outcome = decisionOf(reply, event)
+  const notice = text(reply.systemMessage)
+  return notice === undefined || outcome.kind === "failure" ? outcome : { ...outcome, notice }
 }
 
 /** Read the decision a JSON reply carries. */
-function fromReply(reply: Record<string, unknown>, event: EventName): Outcome {
+function decisionOf(reply: Record<string, unknown>, event: EventName): Outcome {
   const specific = isObject(reply.hookSpecificOutput) ? reply.hookSpecificOutput : {}
   const context = text(specific.additionalContext)
   const decision = event === "PreToolUse" ? specific.permissionDecision : undefined

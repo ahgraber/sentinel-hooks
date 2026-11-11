@@ -25,3 +25,25 @@ Serves: install-per-agent
 - **GIVEN** a hook in the agent directory's registration file that prints `PLUGIN_ROOT`, in a Pi process whose environment does not set it
 - **WHEN** it runs
 - **THEN** it prints nothing
+
+### Requirement: ASystemMessageReachesTheUser
+
+The extension SHALL show the user the `systemMessage` a hook's JSON reply carries, on every event and whatever the hook decides.
+
+Claude Code and Codex show this field to the user, and a hook uses it for a report the user must see and the model need not act on.
+The session-start check reports the settings that defeat the hooks this way, so the same reply reaches the user in Pi.
+Where Pi has no UI, the message goes to standard error, as the extension's other reports do.
+
+Serves: install-per-agent
+
+#### Scenario: SessionHookReportsThroughASystemMessage
+
+- **GIVEN** a `SessionStart` hook that exits 0 with a `systemMessage` on standard output
+- **WHEN** a session starts
+- **THEN** the user is shown the message, and the session proceeds
+
+#### Scenario: SystemMessageBesideADecision
+
+- **GIVEN** a `PreToolUse` hook whose JSON reply carries a `permissionDecision` and a `systemMessage`
+- **WHEN** the agent makes a matching tool call
+- **THEN** the user is shown the message, and the decision stands
