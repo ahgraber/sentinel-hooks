@@ -1,0 +1,53 @@
+---
+title: Limits
+---
+
+Sentinel is one layer of oversight.
+It works with your agent's sandbox, permission settings, and approvals, and it does not replace them.
+
+## Some commands get past Sentinel, so keep your sandbox on
+
+Sentinel reads the text of each command before it runs.
+It does not run the command or watch what the command does.
+A command whose effect is not visible in its text can therefore get past Sentinel.
+For example:
+
+- a program given to an interpreter, such as `uv run python -c 'print(open(".env").read())'`
+- a file name kept in a variable, such as `f=.env; cat "$f"`
+- a command inside `bash -c` or `eval`
+- a symbolic link that points to a secret
+- a recursive search of a directory that holds a secret, such as `grep -r token ~`
+
+Set your agent's sandbox to deny reads of your credential files, and limit its network access.
+Then a command that gets past Sentinel still cannot read those files or send them off your computer.
+
+## Agent configuration options can remove the protection Sentinel depends on
+
+Sentinel depends on your agent's sandbox and permission settings.
+Unwise configuration settings can turn them off for a whole session, for example the Claude Code `bypassPermissions` mode or the Codex `danger-full-access` sandbox mode.
+Sentinel cannot detect that this has happened.
+The [session-start report](session-start-report.qmd) warns about settings that turn Sentinel's hooks off, but it does not check sandbox, network, or permission settings.
+
+**Do not use a mode that bypasses your agent's permissions or sandbox.**
+
+## Agents may enforce the same policy differently
+
+Sentinel applies one policy in every agent, but the agents give Sentinel different ways to enforce it.
+Where an agent cannot do what the policy requires, Sentinel handles the failure in the safe direction.
+For example:
+
+- Codex cannot show you a question, so Sentinel refuses each action it would otherwise ask you about.
+  You will see more refusals in Codex than in other agents.
+- Copilot CLI cannot show a question in a session started with `-p` or in autopilot mode, so it refuses those actions.
+- In Copilot CLI's assisted mode, a model can answer Sentinel's questions for you.
+  Sentinel cannot prevent this, and the session-start report warns when your settings allow it.
+
+If your work often needs actions that Sentinel asks about, use an agent that can show you the question.
+
+## Some controls are outside what Sentinel can check
+
+- GitHub can deliver Copilot policy from its servers.
+  Sentinel reads only the settings files on your computer, so it cannot report a server-delivered policy that turns hooks off.
+  Ask your administrator what policy applies to your account.
+- A Claude Code mod can approve an action that a Sentinel hook refused.
+  Install only mods that you trust.

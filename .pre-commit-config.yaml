@@ -30,6 +30,7 @@ repos:
         exclude: |
           (?x)^(
             ^.*(copier-answers\.ya?ml)$
+            |^great-docs\.yml$
           )$
       - id: forbid-rej
         name: Forbid .rej file extensions from `copier update`

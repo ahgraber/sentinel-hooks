@@ -1,0 +1,142 @@
+---
+title: Install, update, and remove Sentinel
+---
+
+Install Sentinel in each agent you use; each agent manages its own copy.
+
+Before you start, ensure `uv`, `jq`, and `perl` are available (see [prerequisites](../index.qmd#prerequisites)).
+
+Run these commands in your own terminal, not through an agent.
+Sentinel defends its own install and settings, so it asks you or refuses when an agent tries to change them.
+
+## Claude Code
+
+To install, run:
+
+```sh
+claude plugin marketplace add ahgraber/sentinel-hooks
+claude plugin install sentinel@sentinel-hooks
+```
+
+Then start a new session.
+
+To update, run `claude plugin update sentinel@sentinel-hooks`.
+You can also open `/plugin`, select the `sentinel-hooks` marketplace on the **Marketplaces** tab, and choose **Update marketplace**.
+
+To remove, run `claude plugin uninstall sentinel@sentinel-hooks`.
+
+## Codex
+
+Codex does not run hooks from plugins in the standard plugin format, which Sentinel uses ([openai/codex#47925](https://github.com/openai/codex/issues/47925)).
+A second step therefore writes Sentinel's hooks into your Codex hook file.
+
+To install:
+
+1. Add the marketplace:
+
+    ```sh
+    codex plugin marketplace add ahgraber/sentinel-hooks
+    ```
+
+2. Start Codex, open `/plugins`, and install Sentinel.
+
+3. Run the hook installer from the installed copy:
+
+    ```sh
+    ~/.codex/plugins/cache/sentinel-hooks/sentinel/*/harnesses/codex/install-hooks.py
+    ```
+
+    If you set `CODEX_HOME`, replace `~/.codex` with its value.
+    The installer keeps the other hooks in your hook file.
+
+4. Start Codex, open `/hooks`, and trust Sentinel's hooks.
+
+The hook file names the installed copy of Sentinel by its version.
+After each update, you must run the hook installer again.
+Until you do, Sentinel refuses every action and prints the installer command.
+
+To update:
+
+1. Update the marketplace:
+
+    ```sh
+    codex plugin marketplace upgrade sentinel-hooks
+    ```
+
+2. Run the hook installer from the new copy, as in install step 3.
+
+3. Start Codex, open `/hooks`, and trust Sentinel's hooks.
+
+To remove, remove the hooks first.
+If you remove the plugin first, the hook entries name a missing copy, and Sentinel refuses every action until you delete the entries from your hook file.
+
+1. Remove Sentinel's hooks from your hook file. The installer keeps every other hook.
+
+    ```sh
+    ~/.codex/plugins/cache/sentinel-hooks/sentinel/*/harnesses/codex/install-hooks.py --uninstall
+    ```
+
+2. Start Codex, open `/plugins`, and remove Sentinel.
+
+3. Remove the marketplace:
+
+    ```sh
+    codex plugin marketplace remove sentinel-hooks
+    ```
+
+## GitHub Copilot CLI
+
+To install, run:
+
+```sh
+copilot plugin marketplace add ahgraber/sentinel-hooks
+copilot plugin install sentinel@sentinel-hooks
+```
+
+Then start a new session.
+
+To update, run `copilot plugin update sentinel`.
+
+To remove, run `copilot plugin uninstall sentinel`.
+
+## GitHub Copilot in VS Code
+
+To install:
+
+1. Open the Agent Customizations editor and select **Browse**.
+2. Open the source menu and select **Configure Marketplaces**.
+3. Select **Add Marketplace** and enter `ahgraber/sentinel-hooks`.
+4. Return to **Browse**, select the `sentinel-hooks` marketplace, and install Sentinel.
+
+Then start a new chat session.
+
+To update, open the Agent Customizations editor, select **Configure Marketplaces**, select `sentinel-hooks`, and choose **Refresh Marketplace**.
+
+To remove, select **Plugins** in the Agent Customizations editor, open Sentinel's details, and select **Uninstall**.
+
+## Pi
+
+To install, run:
+
+```sh
+pi install git:github.com/ahgraber/sentinel-hooks
+```
+
+Pi installs the whole repository and loads Sentinel as an extension.
+Run `pi list` to see the package.
+
+To update, run `pi update git:github.com/ahgraber/sentinel-hooks`.
+
+To remove, run `pi remove git:github.com/ahgraber/sentinel-hooks`.
+
+## Confirm that Sentinel runs
+
+In a new session, ask the agent to run this command:
+
+```sh
+sudo -n true
+```
+
+Sentinel refuses it, and the agent shows the message `Blocked: privilege escalation detected.`
+If the command runs, or fails only because `sudo` needs a password, Sentinel is not running in that agent.
+Read the [session-start report](session-start-report.qmd) to find the cause.

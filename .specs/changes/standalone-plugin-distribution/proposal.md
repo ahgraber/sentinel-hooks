@@ -87,3 +87,5 @@ The policy's self-protection names the directories where each harness installs p
   Decided with the user.
 - 2026-11-10 Session-start report: Pi's hook runner shows the user a hook's `systemMessage` (`ASystemMessageReachesTheUser`); where a harness shows no session hook output, the check hands the report to the model to pass on, and the README says where the report appears in each harness.
   Decided with the user.
+- 2026-11-12 Scope: user documentation is a great-docs site published to GitHub Pages, with `README.md` as its home page and guide pages for installing, updating, and removing Sentinel, answering a question or a refusal, reading the session-start report, and the limits of the posture.
+  Decided with the user.

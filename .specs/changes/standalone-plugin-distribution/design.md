@@ -448,6 +448,22 @@ A conformance test fails when they differ.
 
 **Rationale:** four files with one field each is less machinery than a generator, and the test catches every drift the generator would prevent.
 
+### Decision: UserDocumentationIsAGreatDocsSite
+
+**Chosen:** the user documentation is a great-docs site whose home page is `README.md`, with one guide page in `user_guide/` for each task a user does and a limits page.
+A GitHub Actions workflow builds it and publishes it to GitHub Pages at `https://ahgraber.github.io/sentinel-hooks/`.
+The README carries the categories of action, the posture on refusal, the prerequisites, and one install table, and links to the guide pages for detail.
+
+**Rationale:** each harness installs Sentinel differently, Codex needs an extra step, and the session-start report appears in a different place in each harness, so a user needs more than a README can hold without hiding the install steps.
+great-docs builds a site from a README and guide pages alone, so the site needs no Python package.
+
+**Alternatives considered:**
+
+- README only: the per-harness install, update, and removal steps and the finding-by-finding report guide push the install table far down the page.
+- Docs as Markdown files in the repository, with no site: the same pages, but a user reads them only by browsing the repository.
+
+Decided with the user.
+
 ## Architecture
 
 ```text

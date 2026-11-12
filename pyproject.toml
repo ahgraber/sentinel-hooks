@@ -3,7 +3,7 @@
 # PEP 723 script, so a hook call does not check this lock or build `.venv`.
 
 [project]
-name = "agent-hooks"
+name = "sentinel-hooks"
 version = "0"
 requires-python = ">=3.11"
 dependencies = []
@@ -12,6 +12,9 @@ dependencies = []
 # hypothesis carries the property suites over the read classifier, which takes
 # arbitrary command text and cannot be covered by an example table.
 dev = ["pytest", "hypothesis"]
+# Builds the documentation site: `uv run --group docs great-docs build`.
+# quarto-cli bundles Quarto and the pandoc it needs.
+docs = ["great-docs", "quarto-cli"]
 
 [tool.uv]
 package = false

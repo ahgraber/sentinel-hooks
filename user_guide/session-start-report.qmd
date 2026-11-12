@@ -1,0 +1,91 @@
+---
+title: Read the session-start report
+---
+
+When a session starts, Sentinel checks that it can run and that your agent's settings let it run.
+It reports each problem it finds as one line that starts with `Warning:` or `Error:`.
+When it finds no problem, it reports nothing.
+Sentinel never changes a setting: you clear each finding yourself.
+
+## Where the report appears
+
+The agent may display the report when the session starts, as a message from the hook or as a notification.
+Note that some agents may not run the check on session start (Codex runs it when you send the first prompt).
+If an agent shows only part of the report, read the full text in the agent's hook log.
+In VS Code, the hook log is the **GitHub Copilot Chat Hooks** output channel.
+
+GitHub Copilot CLI does not show the report to you or to the agent.
+To check a Copilot CLI setup, start a session in another agent on the same computer.
+That session reports the Copilot CLI settings too, because Sentinel checks the settings of every supported agent it finds.
+
+## Findings and how to clear them
+
+### A program is missing
+
+`Error: required tool uv is not installed or not in PATH.` means a hook cannot run.
+The same message appears for `jq` and `perl`.
+Install the program and start a new session.
+The [prerequisites](../index.qmd#prerequisites) table says how.
+
+`Warning: optional tool gitleaks is not installed` means Sentinel detects secrets with its own patterns, which cover fewer formats.
+Install `gitleaks` to detect more formats, or leave the warning.
+
+### Claude Code runs commands in a shell other than bash
+
+`Warning: CLAUDE_CODE_SHELL is unset.` or a value other than a bash means Claude Code can run commands in a shell whose syntax Sentinel does not read.
+Set `CLAUDE_CODE_SHELL` to the path of a bash, for example `/bin/bash`, in the environment Claude Code starts from.
+
+### A setting turns Sentinel off
+
+A finding of this form names the setting, the file that sets it, and what it does:
+
+```text
+Warning: Claude Code: `disableAllHooks` is true in ~/.claude/settings.json, which turns off every hook, Sentinel's included.
+```
+
+Change or remove the setting in the file the finding names, then start a new session.
+
+| Agent                     | Setting                                                         | To clear it                                              |
+| ------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- |
+| Claude Code               | `disableAllHooks` is `true`                                      | remove it, or set it to `false`                          |
+| Claude Code               | `enabledPlugins` sets Sentinel to `false`                        | run `claude plugin enable sentinel@sentinel-hooks`       |
+| Codex                     | `features.hooks` is `false`                                      | remove it, or set it to `true`                           |
+| Codex                     | `features.plugins` is `false`                                    | remove it, or set it to `true`                           |
+| Codex                     | the `plugins` entry for Sentinel sets `enabled = false`          | set it to `true`                                         |
+| Codex                     | a hook Sentinel registered is switched off                       | switch it on in `/hooks`                                 |
+| GitHub Copilot CLI        | `disableAllHooks` is `true`                                      | remove it, or set it to `false`                          |
+| GitHub Copilot CLI        | `enabledPlugins` sets Sentinel to `false`                        | run `copilot plugin enable sentinel`                     |
+| GitHub Copilot in VS Code | `chat.useHooks` is `false`                                       | remove it, or set it to `true`                           |
+| GitHub Copilot in VS Code | `chat.plugins.enabled` is `false`                                | remove it, or set it to `true`                           |
+| GitHub Copilot in VS Code | `chat.plugins.enabledPlugins` sets Sentinel to `false`           | enable Sentinel in the Agent Customizations editor       |
+| Pi                        | the `packages` entry for Sentinel leaves its extension unloaded | run `pi config` and enable the extension                 |
+
+A finding about a managed settings file names a setting your organization controls.
+Ask your administrator to change it.
+
+### A model can answer Sentinel's questions
+
+```text
+Warning: Copilot CLI: `defaultPermissionMode` is unset, and Copilot CLI can then choose a value that lets a model answer a question a hook put to the user.
+```
+
+In assisted mode, a model answers Copilot CLI's permission prompts, including the questions Sentinel asks you.
+The same finding appears when `defaultPermissionMode` is `"assisted"`.
+To clear it, set `defaultPermissionMode` to `"manual"` in `~/.copilot/settings.json`.
+
+### Sentinel cannot read a settings file
+
+```text
+Warning: Codex: ~/.codex/config.toml could not be read as toml, so its settings are unchecked.
+```
+
+Sentinel did not check the settings in that file.
+Correct the file's syntax.
+
+### Sentinel's own files are damaged
+
+A finding that names a file inside the Sentinel install means that file is missing or damaged.
+Install Sentinel again.
+
+- `Error: guarded-paths.toml could not be loaded`: until you repair it, Sentinel asks you before each action that changes a file, or refuses the action where the agent cannot ask.
+- `Warning: configuration-floor.toml could not be read`: Sentinel checked none of your agent settings.

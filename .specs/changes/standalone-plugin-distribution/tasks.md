@@ -144,6 +144,23 @@
 ## 14. Install evidence and documentation
 
 - [ ] 14.1 Install Sentinel in Claude Code, Codex, VS Code, Copilot CLI, and Pi from the repository's git URL, and save each transcript, with the evidence `design.md` names for each harness, where the harness shows the session-start report, and a hook's run time on Copilot CLI, to `evidence/install-<harness>.txt`.
-- [ ] 14.2 Write the install steps in `README.md` as one table with one install method per harness, including the programs `session-tool-checks` requires.
-  Say where the session-start report appears in each harness.
+- [ ] 14.2 Write the user documentation as a great-docs site whose home page is `README.md`.
+  The reader is a developer who runs one or more of the supported agents and wants to install Sentinel and use it.
+  The reader does not need to understand the code.
+  Keep exit codes, command-parsing rules, file inventories, and maintainer material such as the `refresh-configuration-floor` skill out of the user documentation.
+  Write in plain language in the voice of a professional technical writer, following ASD-STE100.
+  - [x] 14.2.1 Confirm that great-docs builds a site from `README.md` and guide pages alone, because Sentinel ships no importable Python package.
+    If it does not build, stop and give the user the options before writing pages.
+  - [x] 14.2.2 Add `great-docs` and `quarto-cli` in a `docs` dependency group, and add `great-docs.yml` at the repository root.
+    Build with `uv run --group docs great-docs build`, and add the build output to `.gitignore`.
+    Exempt `great-docs.yml` from the `forbid-yml` hook, because great-docs reads only that file name.
+  - [x] 14.2.3 Show the user the outline of the README and of each guide page, and get approval before writing prose.
+  - [x] 14.2.4 Write `README.md` in this order: what Sentinel does and which agents it supports; which categories of action proceed, which ask the user, and which are refused, with one to three examples for each category; what happens when an action is refused, at a high level and in terms of the security posture; the install steps as one table with one install method per harness, including the programs `session-tool-checks` requires; what the session-start report is, at a high level; links to the guide pages.
+    The guide pages carry the detail of a refusal and of the session-start report.
+  - [x] 14.2.5 Write one guide page for each task a user does, each answering "how do I X": install, update, and remove Sentinel in each harness, with the Codex hook installer; read the session-start report, where it appears, and how to clear each finding; respond to an `ask` or a refusal, with what the user sees and what the agent is told.
+  - [x] 14.2.6 Write a limits page about the limits of the security posture, each with what the user does about it.
+    It says that Sentinel judges command text, so a command that hides its effect gets past it; that one agent setting can remove the sandbox and permission boundary Sentinel depends on; that harnesses differ in what Sentinel can enforce, and Sentinel refuses where a harness cannot ask; and that Sentinel cannot check Copilot policy the server delivers or a Claude Code mod that approves a refused call.
+  - [ ] 14.2.7 Add a GitHub Actions workflow that builds the site and publishes it to GitHub Pages at `https://ahgraber.github.io/sentinel-hooks/`, and set `site_url` in `great-docs.yml` to that address.
+    The README links to the site.
+  - [x] 14.2.8 Check each page against the proposal's user stories: it answers the questions a reader of that story asks, and it says nothing more.
 - [ ] 14.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.
