@@ -28,6 +28,7 @@ REGISTRATIONS = {
 }
 MANIFESTS = ("plugins/sentinel/.claude-plugin/plugin.json", "plugins/sentinel/plugin.json", "package.json")
 CATALOGS = (".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json", ".github/plugin/marketplace.json")
+EXTENSION_MANIFEST = "extensions/pi/package.json"
 
 
 def commands(registration: Path) -> list[str]:
@@ -130,3 +131,15 @@ def test_one_differing_version_fails(tmp_path) -> None:
     (tmp_path / "package.json").write_text(json.dumps(package))
 
     assert len(set(sentinel_versions(tmp_path).values())) == 2
+
+
+def test_the_pi_extension_carries_its_own_version(tmp_path) -> None:
+    for path in (*MANIFESTS, *CATALOGS, EXTENSION_MANIFEST):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO_ROOT / path, tmp_path / path)
+    extension = json.loads((tmp_path / EXTENSION_MANIFEST).read_text())
+    assert extension.get("version"), extension
+    extension["version"] = "999.0.0"
+    (tmp_path / EXTENSION_MANIFEST).write_text(json.dumps(extension))
+
+    assert len(set(sentinel_versions(tmp_path).values())) == 1

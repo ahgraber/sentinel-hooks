@@ -448,6 +448,30 @@ A conformance test fails when they differ.
 
 **Rationale:** four files with one field each is less machinery than a generator, and the test catches every drift the generator would prevent.
 
+### Decision: ThePluginAndThePiExtensionAreReleasedSeparately
+
+**Chosen:** the plugin and the Pi extension each have a version, a Keep a Changelog file, and an annotated tag prefix.
+The plugin version is in each plugin manifest, the root `package.json`, and each catalog's Sentinel entry, and `CHANGELOG.md` and `plugin-v<X.Y.Z>` tags record it.
+The extension version is in its own manifest, `extensions/pi/package.json`, and `extensions/pi/CHANGELOG.md` and `pi-v<X.Y.Z>` tags record it.
+`scripts/release.sh`, run through `just release-plugin` or `just release-pi`, sets the version, promotes `[Unreleased]`, commits, and tags.
+Changelog entries are written by hand with the `changelog` skill, as `AGENTS.md` directs.
+
+**Rationale:** the root `package.json` is the manifest Pi reads for the whole package, which runs the plugin's hooks, so it carries the plugin version, and every harness reports one plugin version.
+The extension is a separate component, the runner inside that package, and its own manifest gives its version a place a reader can find.
+The repository has no Python package, so `uv-ship` and `pyproject.toml` versioning do not apply.
+Commit subjects name mechanisms, and changelog entries describe what a user notices, so generated entries would be rewritten anyway.
+An extension release does not change the plugin version.
+If `pi update` compares the root `package.json` version before it pulls, an extension-only release reaches Pi users with the next plugin release; this is unverified, and the user accepted it to keep the two versions independent.
+
+**Alternatives considered:**
+
+- One version for the plugin and the extension: an extension-only change would bump every harness's plugin version.
+- The root `package.json` carries the extension version: Pi users would see the runner's version and not the plugin version they run.
+- The extension version only in its changelog and tags: no manifest would name the extension's version.
+- Entries generated from commits with `git-cliff`: see the rationale.
+
+Decided with the user.
+
 ### Decision: UserDocumentationIsAGreatDocsSite
 
 **Chosen:** the user documentation is a great-docs site whose home page is `README.md`, with one guide page in `user_guide/` for each task a user does and a limits page.

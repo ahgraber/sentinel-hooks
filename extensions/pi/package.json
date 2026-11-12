@@ -1,0 +1,6 @@
+{
+  "name": "sentinel-pi-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs Sentinel's hooks, and the user's own Claude-format hooks, on Pi's events."
+}

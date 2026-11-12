@@ -135,6 +135,23 @@ Slow, or looking unrelated to the change, is not a reason to skip one.
   Keep the subject under 72 characters and the body to 3–5 bullet lines.
 - Never pass `--no-verify` or work around a hook silently.
 
+## Versioning and Releases
+
+This repository ships two components, and each has its own version, changelog, and tag prefix.
+
+| Component       | Version is in                                                                                        | Changelog                    | Tag prefix |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------- | ---------- |
+| Sentinel plugin | each plugin manifest, the root `package.json`, and each catalog's Sentinel entry, all the same value | `CHANGELOG.md`               | `plugin-v` |
+| Pi extension    | `extensions/pi/package.json`                                                                         | `extensions/pi/CHANGELOG.md` | `pi-v`     |
+
+- A change to `extensions/pi/` goes in the extension's changelog.
+  Any other change a user of an agent would notice goes in the plugin's changelog.
+- Before committing a change that a user would notice (added, changed, deprecated, removed, or fixed behavior), invoke the `changelog` skill to draft the entry under `[Unreleased]` in the right changelog.
+  Skip the entry for test-only, CI, formatting, and repository-tooling commits.
+- Cut a release only when the user asks, and confirm the version number first.
+  Run `just release-plugin <version>` or `just release-pi <version>`.
+  The recipe sets the version, promotes `[Unreleased]`, commits, and creates the annotated tag; the user pushes the commit and the tag.
+
 ## Sandbox Limitations
 
 - The sandbox may not be able to run installs, network calls, or other privileged commands (permission errors) — attempt the command first rather than assuming failure.

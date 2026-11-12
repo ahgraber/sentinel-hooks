@@ -164,3 +164,11 @@
     The README links to the site.
   - [x] 14.2.8 Check each page against the proposal's user stories: it answers the questions a reader of that story asks, and it says nothing more.
 - [ ] 14.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.
+
+## 15. Versioning and releases
+
+- [x] 15.1 Give the Pi extension its own manifest, `extensions/pi/package.json`, with its own version, and narrow `OneVersionAcrossManifests` to exclude it (`ExtensionVersionIsItsOwn`), with a test.
+- [x] 15.2 Add `CHANGELOG.md` for the plugin and `extensions/pi/CHANGELOG.md` for the extension, in Keep a Changelog format, with the first release under `[Unreleased]`.
+- [x] 15.3 Add `scripts/release.sh` and the `just release-plugin` and `just release-pi` recipes, and try each in a throwaway clone: a first release, a second release, a dirty working tree, and an empty `[Unreleased]`.
+- [x] 15.4 Add the versioning and changelog procedure to `AGENTS.md`.
+- [ ] 15.5 Cut `plugin-v0.1.0` and `pi-v0.1.0` after the branch reaches `main`.

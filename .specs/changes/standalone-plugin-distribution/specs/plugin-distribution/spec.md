@@ -92,10 +92,13 @@ Serves: one-tree
 
 ### Requirement: OneVersionAcrossManifests
 
-Every plugin manifest, package manifest, and catalog entry the repository holds for Sentinel SHALL carry the same version.
+Every plugin manifest, package manifest, and catalog entry the repository holds for Sentinel SHALL carry the same version, the plugin version.
+The Pi extension's own manifest, `extensions/pi/package.json`, SHALL carry the extension's version, and that version SHALL NOT be held to the plugin version.
 
 Codex and Claude Code keep an installed copy for each version.
 A harness whose manifest carries an older version keeps its older copy after the others update, and then runs different guardrails.
+Pi installs the package that the root `package.json` describes, so the plugin version names what a Pi user runs.
+The extension is the runner inside that package, and it is released on its own.
 
 Serves: install-per-agent
 
@@ -110,3 +113,9 @@ Serves: install-per-agent
 - **GIVEN** one manifest that carries a different version from the others
 - **WHEN** the package is checked
 - **THEN** conformance fails
+
+#### Scenario: ExtensionVersionIsItsOwn
+
+- **GIVEN** the Pi extension's manifest carries a version that differs from the plugin version
+- **WHEN** the package is checked
+- **THEN** conformance passes, and the extension's manifest carries a version
