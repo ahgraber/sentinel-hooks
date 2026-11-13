@@ -494,8 +494,8 @@
     },
     {
       "path": "plugins/sentinel/hooks/block-secrets.py",
-      "blocked": false,
-      "why": "a hook source tree excuses a file the name heuristic would refuse"
+      "blocked": true,
+      "why": "a hook source tree does not earn the exemption, so a file planted there cannot switch the name heuristic off"
     },
     {
       "path": "claude/hooks/block-secrets.py",
@@ -509,8 +509,8 @@
     },
     {
       "path": "tests/shared/test_block_secrets.py",
-      "blocked": false,
-      "why": "a hook test tree excuses a file the name heuristic would refuse"
+      "blocked": true,
+      "why": "a hook test tree does not earn the exemption"
     },
     {
       "path": "~/.claude/.credentials.json",

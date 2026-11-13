@@ -178,12 +178,6 @@ class TestShellHistory:
         assert_blocked(write(f"{HOME}/.python_history"), "zero-access")
 
 
-def _sentinel_hooks(plugin):
-    """Make `plugin` hold Sentinel's hook sources, as a checkout or an installed copy does."""
-    (plugin / "hooks").mkdir(parents=True)
-    (plugin / "hooks" / "guarded_paths.py").write_text("")
-
-
 class TestPackageDirExemption:
     def test_credentials_in_venv_allowed(self):
         assert_allowed(write("/project/.venv/lib/python3.11/site-packages/google/auth/credentials.py"))
@@ -202,23 +196,15 @@ class TestPackageDirExemption:
         assert_allowed(write("/Users/me/.claude/hooks/block-secrets.py"))
 
     @pytest.mark.parametrize("tool", [read, write, edit])
-    @pytest.mark.parametrize(
-        "target", ["plugins/sentinel/hooks/block-secrets.py", "tests/shared/test_block_secrets.py"]
-    )
-    def test_a_guardrail_source_in_a_checkout_is_allowed(self, tool, target, tmp_path):
-        """Validates: GuardrailSourceInACheckout."""
-        _sentinel_hooks(tmp_path / "plugins" / "sentinel")
-        assert_allowed(tool(str(tmp_path / target)))
-
-    def test_a_guardrail_source_in_an_installed_copy_is_allowed(self, tmp_path):
-        """Validates: GuardrailSourceInAnInstalledCopy."""
-        plugin = tmp_path / ".codex" / "plugins" / "cache" / "sentinel-hooks" / "sentinel" / "1.0.0"
-        _sentinel_hooks(plugin)
-        assert_allowed(read(str(plugin / "hooks" / "secret_patterns.py")))
+    def test_a_planted_hook_source_does_not_exempt(self, tool, tmp_path):
+        """Validates: APlantedHookSourceDoesNotExempt."""
+        (tmp_path / "hooks").mkdir()
+        (tmp_path / "hooks" / "guarded_paths.py").write_text("")
+        assert_blocked(tool(str(tmp_path / "app" / "credentials.yaml")), "zero-access")
 
     @pytest.mark.parametrize("target", ["codex/hooks/block-secrets.py", "project/tests/test_secrets.py"])
-    def test_a_directory_without_sentinel_hooks_earns_nothing(self, target, tmp_path):
-        """A harness-named or test directory is exempt only where Sentinel's hooks are."""
+    def test_a_hook_or_test_directory_does_not_earn_the_exemption(self, target, tmp_path):
+        """A harness-named or test directory is not a package directory."""
         assert_blocked(write(str(tmp_path / target)), "zero-access")
 
     def test_pem_in_venv_still_blocked(self):

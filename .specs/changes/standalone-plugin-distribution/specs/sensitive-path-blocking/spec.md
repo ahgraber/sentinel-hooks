@@ -4,7 +4,7 @@
 
 ### Requirement: PackageDirExemption
 
-> Previously: the exemption covered the hook sources of a configuration checkout, and no installed copy.
+> Previously: the exemption also covered the hook sources of a configuration checkout.
 
 Name-based patterns (`credentials`, `secret`) SHALL NOT apply to paths within package or dependency directories, where these are valid module or source file names rather than credential stores.
 
@@ -17,29 +17,27 @@ Package and dependency directories include:
 
 Path-based patterns (e.g., `~/.aws/**`, `~/.ssh/**`, `*.pem`) are not subject to this exemption and remain zero-access regardless of location.
 
-The exemption SHALL cover the directories holding Sentinel's own hook sources, for every agent, in a checkout of this repository and in every installed copy of the plugin, and the checkout's test directory.
-Those directories hold files whose names describe what they guard against, not what they contain.
-Reaching one of them requires the name-based patterns not to apply, and an agent that cannot read or write its own guardrail source cannot maintain it.
+The exemption SHALL NOT depend on a file that an agent can create without asking the user.
+A file planted in a project would otherwise switch the name-based patterns off for every path beside it.
 
-The exemption SHALL cover the hook-source directory of every harness Sentinel supports.
-This includes a directory added or moved later, with no edit to the exemption.
-Naming the harnesses one at a time leaves a directory uncovered whenever these modules move, making a guardrail source unreachable to the people responsible for it.
+No file in this repository's plugin, extension, or test directories SHALL have a name that matches a name-based pattern.
+Sentinel's own files are then reachable without any exemption, in a checkout and in every installed copy.
 
 Serves: one-tree, protect-installed-copy
 
 <!-- modified-removes: GuardrailSourceNamedForWhatItBlocks -->
 
-#### Scenario: GuardrailSourceInACheckout
+#### Scenario: APlantedHookSourceDoesNotExempt
 
-- **GIVEN** a Read, Write, or Edit tool call is intercepted
-- **WHEN** the target is a hook source or a test in a checkout of this repository whose name matches a name-based pattern
-- **THEN** the hook exits 0
+- **GIVEN** a directory holds a file at `hooks/guarded_paths.py`
+- **WHEN** a Read, Write, or Edit tool call targets a file beside it whose name matches a name-based pattern
+- **THEN** the hook exits 2
 
-#### Scenario: GuardrailSourceInAnInstalledCopy
+#### Scenario: NoSentinelFileMatchesANamePattern
 
-- **GIVEN** a Read tool call is intercepted
-- **WHEN** the target is a hook source in an installed copy of the plugin whose name matches a name-based pattern
-- **THEN** the hook exits 0
+- **GIVEN** the files under this repository's plugin, extension, and test directories
+- **WHEN** each file name is checked against the name-based patterns
+- **THEN** none matches
 
 #### Scenario: CredentialsModuleInVenv
 

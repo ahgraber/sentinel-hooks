@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 from guarded_paths import repo_root_of
-from hermetic import HOOKS_DIR
+from hermetic import HOOKS_DIR, REPO_ROOT, load_hook
 import pytest
 from verdict_conformance import decode
 
@@ -98,6 +98,24 @@ def test_each_hook_decides_in_a_copy_as_in_the_checkout(installed, session, hook
     tool_name, tool_input = CALLS[call]
     payload = {"hook_event_name": "PreToolUse", "tool_name": tool_name, "tool_input": tool_input}
     assert decision(installed / hook, [], payload, session) == decision(PLUGIN_DIR / hook, [], payload, session)
+
+
+def test_no_sentinel_file_matches_a_name_pattern() -> None:
+    """Validates: NoSentinelFileMatchesANamePattern.
+
+    No exemption covers Sentinel's own files, so a file named like a secret
+    would be refused in a checkout and in every installed copy.
+    """
+    is_named_for_secrets = load_hook("block-sensitive-paths").is_named_for_secrets
+    listed = subprocess.run(
+        ["git", "ls-files", "plugins", "extensions", "tests"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert listed
+    assert [file for file in listed if is_named_for_secrets(str(REPO_ROOT / file))] == []
 
 
 @pytest.mark.parametrize("entry", HARNESS_CALLS)

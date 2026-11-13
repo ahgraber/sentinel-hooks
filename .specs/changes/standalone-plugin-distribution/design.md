@@ -318,19 +318,24 @@ Order is not tracked, and an assignment that is not exported still counts: the o
 
 - Assignments on the harness's own segment only: it leaves the `export` form open.
 
-### Decision: SentinelSourcesAreFoundByTheirContents
+### Decision: SentinelFilesDoNotNeedANameExemption
 
-**Chosen:** the name-heuristic exemption covers a directory whose `hooks/` holds `guarded_paths.py`, and the `tests/` directory of a directory whose `plugins/*/hooks/` holds it.
+**Chosen:** the name-heuristic exemption covers package directories only.
+No file in the plugin, the Pi extension, or the tests has a name that matches a name-based pattern, and a test keeps it so.
 The harness-named directory pattern is removed.
 
-**Rationale:** the plugin runs from an installed copy, not from the checkout, so the running hook's own location does not find the checkout, and each harness installs copies at a different path.
-A file the plugin ships is present in every copy and moves with the plugin, so no edit follows a new harness or a move.
-The check reads the file system only after a file name matches the heuristic.
+**Rationale:** an exemption found from a file's presence or contents can be planted.
+An agent creates `hooks/guarded_paths.py` in a project without a prompt, and the name heuristic stops applying to every file beside it; a copied file carries the same hash or marker as the genuine one.
+On 2026-11-12, no tracked file in those directories had a matching name, so the exemption did not cover any file.
+Sentinel's files then do not need an exemption in a checkout or in any installed copy.
 
 **Alternatives considered:**
 
-- A path pattern per install layout: it needs an edit for each harness and each layout change, which the requirement rules out.
-- The running plugin directory from the floor: it misses the checkout and every other harness's copy.
+- A directory whose `hooks/` holds `guarded_paths.py`: planted with one empty file (found by the verify run on 2026-11-12).
+- That marker only inside the enforcement floor, where a write asks the user: sound, but more code for an exemption that does not cover any file, and the checkout loses it anyway.
+- A path pattern per install layout: it needs an edit for each harness and each layout change, and a project can create the same path.
+
+Decided with the user on 2026-11-13.
 
 ### Decision: TheSessionCheckReadsAllHarnessSettings
 
@@ -525,8 +530,6 @@ harness event
   `scripts/isolated-harness.sh` sets them to run a harness in `tmp/homes/`, where payload capture works but the floor does not cover the install.
 - **Removing a directory above a found plugin location does not ask**: `rm -rf plugins` in a checkout loaded in place, or above a link target, is not an ancestor removal.
   The found location itself stays in the floor; a marketplace install sits under a declared location and is not affected.
-- **A planted hook source**: a file named `hooks/guarded_paths.py` exempts its directory from the name heuristic, so an agent can create one to read a file named `secrets.txt` beside it.
-  Path-based patterns and declarations still refuse, and the harness-named pattern this replaces could be planted the same way.
 - **A program name the command text hides**: `$X plugin disable` names no program the gate can find, so it passes the plugin command gate; the path gates still judge it.
 - **A variable the command text does not set**: `source ./env.sh; claude` sets `CLAUDE_CODE_SIMPLE` in a file the session check does not read, and program text nested more than four levels deep is not read.
 - **In-place loads with no user-level record**: a `--plugin-dir` session, `CLAUDE_CODE_PLUGIN_DIRS`, a Pi project's `.pi/settings.json`, and VS Code workspace settings name an in-place plugin only for one session or one project.
@@ -547,7 +550,7 @@ harness event
 ## Dropped Scenarios
 
 - `guarded-path-declarations` `CarveOutOverAHookSource`: no hook resolves to a repository source once each harness runs an installed copy; `CarveOutOverAnInstalledCopy` covers the same grant over the copy a harness runs.
-- `sensitive-path-blocking` `GuardrailSourceNamedForWhatItBlocks`: it named the hook sources of one repository; `GuardrailSourceInACheckout` and `GuardrailSourceInAnInstalledCopy` cover a checkout and each installed copy.
+- `sensitive-path-blocking` `GuardrailSourceNamedForWhatItBlocks`: Sentinel's file names do not match a name-based pattern (`NoSentinelFileMatchesANamePattern`), so Sentinel's files do not need an exemption.
 - `hook-registration` `ToolCallsProceed`: with two registration files, an unusable file no longer means that no hook runs; `UnusableUserFileLeavesThePackageHooks` and `UnusablePackageFileLeavesTheUserHooks` state what runs.
 - `agent-configuration-floor` `AuthorizedGuardrailEdit` and `UnauthorizedGuardrailEdit`: they bound a harness's own review surface, which is that harness's configuration and which Sentinel neither sets nor can judge.
 

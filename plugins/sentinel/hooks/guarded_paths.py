@@ -1062,25 +1062,12 @@ NAME_HEURISTIC_EXEMPT_RE = re.compile(
     r"(?:^|[/\\])(?:\.venv|venv|site-packages|node_modules|\.claude)(?:[/\\]|$)",
     re.IGNORECASE,
 )
-# A directory whose `hooks/` holds this module is a Sentinel plugin, in a checkout or an installed copy.
-_HOOK_SOURCE_MARKER = Path("hooks") / Path(__file__).name
 
 
 def exempt_from_name_heuristic(path: str) -> bool:
-    """Return whether `path` is in a package tree, a Sentinel plugin, or the tests of a checkout holding one.
+    """Return whether `path` is in a package tree, judged by its text alone.
 
-    Sentinel's sources are named for what they guard against. A plugin is found by
-    the hook sources it holds, so every harness's copy is covered wherever it is
-    installed or moved. A relative path is judged by its text alone.
+    No file an agent can create earns the exemption: a planted file would switch
+    the name heuristic off for every path beside it.
     """
-    if NAME_HEURISTIC_EXEMPT_RE.search(path):
-        return True
-    target = Path(os.path.expanduser(path))
-    if not target.is_absolute():
-        return False
-    for directory in target.parents:
-        if (directory / _HOOK_SOURCE_MARKER).is_file():
-            return True
-        if target.is_relative_to(directory / "tests") and any(directory.glob(f"plugins/*/{_HOOK_SOURCE_MARKER}")):
-            return True
-    return False
+    return bool(NAME_HEURISTIC_EXEMPT_RE.search(path))

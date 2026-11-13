@@ -32,7 +32,7 @@ As the Sentinel maintainer, I want the source tree to be the installed plugin, s
 - `guarded-surface`: the guarded surface covers the installed plugins, the copies a harness loads in place, and the settings that switch a plugin off, not a source checkout that no harness runs.
 - `hook-tampering-blocking`: tamper protection applies to the installed plugin; a command that disables, removes, or updates a plugin asks the user, and a command that starts a session without the hooks is refused.
 - `agent-configuration-floor`: Sentinel reports, at session start, each harness setting that stops its hooks or answers a hook's `ask` without the user, and never writes a setting.
-- `sensitive-path-blocking`: the hook-source exemption covers the Sentinel plugin.
+- `sensitive-path-blocking`: the name-heuristic exemption covers package directories only, and no Sentinel file has a name the heuristic matches.
 - `cross-agent-capability-parity`: parity holds across the harnesses Sentinel supports, checked over the registrations the plugin ships.
 - `hook-registration` and `hook-execution` (Pi): the Pi runner runs the hooks shipped in the Sentinel package and the user's own hooks.
 
@@ -90,4 +90,6 @@ The policy's self-protection names the directories where each harness installs p
 - 2026-11-12 Scope: user documentation is a great-docs site published to GitHub Pages, with `README.md` as its home page and guide pages for installing, updating, and removing Sentinel, answering a question or a refusal, reading the session-start report, and the limits of the posture.
   Decided with the user.
 - 2026-11-12 Versioning: the Pi extension has its own manifest, `extensions/pi/package.json`, and its own version, changelog, and `pi-v` tags; `OneVersionAcrossManifests` holds the plugin manifests, the root `package.json`, and the catalogs to the plugin version and excludes the extension manifest (`ExtensionVersionIsItsOwn`); `just` recipes cut each release.
+  Decided with the user.
+- 2026-11-13 Name-heuristic exemption: it covers package directories only; Sentinel's own file names do not match a name-based pattern, so a file planted in a project cannot switch the heuristic off.
   Decided with the user.
