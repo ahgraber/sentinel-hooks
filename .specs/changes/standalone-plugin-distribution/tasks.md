@@ -47,7 +47,7 @@
 - [x] 4.3 Rewrite `plugins/sentinel/com.github.copilot/hooks/hooks.json`, each command running the adapter as `"${PLUGIN_ROOT}/harnesses/copilot/copilot-vscode-hook-adapter.py"`, and update the Copilot tests that read the registration.
 - [x] 4.4 Rewrite `plugins/sentinel/harnesses/pi/hooks.json` with the dispatcher command `AI_HOOK_AGENT=pi uv run --script "${PLUGIN_ROOT}/harnesses/pi/hook-dispatch.py"` and each shell hook as `AI_HOOK_AGENT=pi "${PLUGIN_ROOT}/hooks/<hook>"`.
 - [x] 4.5 Write `plugins/sentinel/.claude-plugin/plugin.json`, naming `./harnesses/claude/hooks.json`, and `plugins/sentinel/plugin.json` with the Agent Plugins 1.0 `$schema` and `extensions.com.openai.hooks` naming `./harnesses/codex/hooks.json`.
-- [ ] 4.6 Install the plugin in VS Code from a local marketplace, and record which format it reads, which registration it runs, and where it installs the plugin from each catalog and from a local folder.
+- [x] 4.6 Install the plugin in VS Code from a local marketplace, and record which format it reads, which registration it runs, and where it installs the plugin from each catalog and from a local folder.
   Install it in Codex, and record whether Codex CLI lists and runs its hooks.
   Install it in Copilot CLI, and record which registration it runs.
 - [x] 4.7 Write the catalogs `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`, and `.github/plugin/marketplace.json`, each with one relative-path entry for `plugins/sentinel`.
@@ -143,8 +143,8 @@
 
 ## 14. Install evidence and documentation
 
-- [ ] 14.1 Install Sentinel in Claude Code, Codex, VS Code, Copilot CLI, and Pi from the repository's git URL, and save each transcript, with the evidence `design.md` names for each harness, where the harness shows the session-start report, and a hook's run time on Copilot CLI, to `evidence/install-<harness>.txt`.
-- [ ] 14.2 Write the user documentation as a great-docs site whose home page is `README.md`.
+- [x] 14.1 Install Sentinel in Claude Code, Codex, VS Code, Copilot CLI, and Pi from the repository's git URL, and save each transcript, with the evidence `design.md` names for each harness, where the harness shows the session-start report, and a hook's run time on Copilot CLI, to `evidence/install-<harness>.txt`.
+- [x] 14.2 Write the user documentation as a great-docs site whose home page is `README.md`.
   The reader is a developer who runs one or more of the supported agents and wants to install Sentinel and use it.
   The reader does not need to understand the code.
   Keep exit codes, command-parsing rules, file inventories, and maintainer material such as the `refresh-configuration-floor` skill out of the user documentation.
@@ -160,7 +160,7 @@
   - [x] 14.2.5 Write one guide page for each task a user does, each answering "how do I X": install, update, and remove Sentinel in each harness, with the Codex hook installer; read the session-start report, where it appears, and how to clear each finding; respond to an `ask` or a refusal, with what the user sees and what the agent is told.
   - [x] 14.2.6 Write a limits page about the limits of the security posture, each with what the user does about it.
     It says that Sentinel judges command text, so a command that hides its effect gets past it; that one agent setting can remove the sandbox and permission boundary Sentinel depends on; that harnesses differ in what Sentinel can enforce, and Sentinel refuses where a harness cannot ask; and that Sentinel cannot check Copilot policy the server delivers or a Claude Code mod that approves a refused call.
-  - [ ] 14.2.7 Add a GitHub Actions workflow that builds the site and publishes it to GitHub Pages at `https://ahgraber.github.io/sentinel-hooks/`, and set `site_url` in `great-docs.yml` to that address.
+  - [x] 14.2.7 Add a GitHub Actions workflow that builds the site and publishes it to GitHub Pages at `https://ahgraber.github.io/sentinel-hooks/`, and set `site_url` in `great-docs.yml` to that address.
     The README links to the site.
   - [x] 14.2.8 Check each page against the proposal's user stories: it answers the questions a reader of that story asks, and it says nothing more.
 - [ ] 14.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.

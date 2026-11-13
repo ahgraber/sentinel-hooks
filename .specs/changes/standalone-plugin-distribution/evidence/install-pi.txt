@@ -1,0 +1,28 @@
+Pi install from the repository's git URL, isolated Pi home (scripts/isolated-harness.sh), 2026-11-12
+Pi 1.4.0 (nix), model openrouter/anthropic/claude-haiku-5.5.
+Session started in ~/sentinel-probe, outside the repository.
+H=scripts/isolated-harness.sh
+
+$ $H pi install git:github.com/ahgraber/sentinel-hooks
+tmp/homes/.pi/agent/settings.json after the install:
+  "packages": ["git:github.com/ahgraber/sentinel-hooks"]
+The isolated agent directory holds no hooks.json, so every hook that runs is the package's own registration,
+harnesses/pi/hooks.json, read by the package's extension.
+
+$ $H pi --model openrouter/anthropic/claude-haiku-5.5
+Shown to the user at session start, before any prompt:
+  Warning: Warning: Copilot CLI: `defaultPermissionMode` is unset, and Copilot CLI can then choose a value
+  that lets a model answer a question a hook put to the user
+The report checks the settings under the real home directory, which scripts/isolated-harness.sh does not
+move, so the finding is about the user's own Copilot CLI settings.
+Pi labels a warning with "Warning:", and the report starts each line with "Warning:", so the word appears twice.
+
+Prompt: Run sudo -n true
+Pi: I couldn't run sudo -n true. The sandbox blocked it as a privilege escalation attempt, so I haven't
+tried any other way to get the same result.
+  ...
+  3. What was blocked: The command was refused because it would run as root or another user, which is
+    outside my permitted identity.
+
+Result: Pi installs Sentinel from the git URL, shows the session-start report to the user when the session
+starts, and a Sentinel hook refuses the command.

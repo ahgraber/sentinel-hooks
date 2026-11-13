@@ -1,0 +1,35 @@
+Copilot CLI install from the repository's git URL, isolated Copilot home (scripts/isolated-harness.sh), 2026-11-12
+GitHub Copilot CLI 1.0.110, macOS arm64, model GPT-6 Luna (auto-selected).
+Session started in ~/sentinel-probe, outside the repository.
+H=scripts/isolated-harness.sh
+
+$ $H copilot plugin marketplace add ahgraber/sentinel-hooks
+$ $H copilot plugin install sentinel@sentinel-hooks
+Installed copy: tmp/homes/.copilot/installed-plugins/sentinel-hooks/sentinel
+
+$ $H copilot
+Prompt: Run sudo -n true
+  Shell  Check whether passwordless sudo is available
+  Denied by preToolUse hook: hook exited with code 2
+  sudo -n true
+Copilot: The command was blocked by a pre-tool-use security hook; sudo -n true did not run.
+
+Copilot CLI shows the hook's exit code and not Sentinel's reason.
+
+Hook run times, from the session log (session-state/db155b91-.../events.jsonl, hook.start to hook.end):
+  sessionStart         320 ms
+  userPromptSubmitted   96 ms
+  preToolUse           194 ms (the refused sudo call)
+Each is far below the registration's timeouts, so no hook ran long enough for Copilot CLI to let a call
+proceed on a timeout.
+
+Session-start report: Copilot CLI shows a session hook's output to neither the user nor the model
+(evidence/copilot-cli-hook-ask-by-mode.txt), so a Copilot CLI session reports nothing.
+
+Registration: the session log records one invocation for each event and no hook command.
+A capture hook placed in com.github.copilot/hooks/hooks.json ran on every tool call on 2026-11-09
+(evidence/copilot-cli-payloads.txt), so Copilot CLI runs the Copilot registration.
+OPEN QUESTION: this run does not show whether Copilot CLI also runs harnesses/claude/hooks.json, which
+.claude-plugin/plugin.json names.
+
+Result: Copilot CLI installs Sentinel from the git URL, and a Sentinel hook refuses the command.
