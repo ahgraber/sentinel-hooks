@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, test } from "node:test"
 
-import { registerHooks } from "../../extensions/pi/extension.ts"
+import { PLUGIN_DIR, registerHooks } from "../../extensions/pi/extension.ts"
 
 let agentDir
 let pluginDir
@@ -822,4 +822,10 @@ test("a hook in the agent directory's file runs without PLUGIN_ROOT", async () =
   }
 
   assert.equal(await readFile(seen, "utf8"), "")
+})
+
+test("the extension finds the plugin directory beside it in the installed repository", async () => {
+  const shipped = join(import.meta.dirname, "..", "..", "plugins", "sentinel")
+  assert.equal(await realpath(PLUGIN_DIR), await realpath(shipped))
+  assert.ok(await exists(join(PLUGIN_DIR, "harnesses", "pi", "hooks.json")))
 })

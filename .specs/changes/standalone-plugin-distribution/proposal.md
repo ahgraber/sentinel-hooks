@@ -91,5 +91,7 @@ The policy's self-protection names the directories where each harness installs p
   Decided with the user.
 - 2026-11-12 Versioning: the Pi extension has its own manifest, `extensions/pi/package.json`, and its own version, changelog, and `pi-v` tags; `OneVersionAcrossManifests` holds the plugin manifests, the root `package.json`, and the catalogs to the plugin version and excludes the extension manifest (`ExtensionVersionIsItsOwn`); `just` recipes cut each release.
   Decided with the user.
+- 2026-11-12 `EachHarnessRunsOnlyItsOwnRegistration` rationale: Copilot in VS Code and Copilot CLI share one event vocabulary, not one tool vocabulary; one registration still serves both because it does not name any tools.
+  Decided with the user.
 - 2026-11-13 Name-heuristic exemption: it covers package directories only; Sentinel's own file names do not match a name-based pattern, so a file planted in a project cannot switch the heuristic off.
   Decided with the user.

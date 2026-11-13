@@ -546,6 +546,7 @@ harness event
 - `plugin-distribution` `EachHarnessRunsOnlyItsOwnRegistration` rationale: Copilot in VS Code and Copilot CLI share one event vocabulary; the claim of one tool vocabulary is removed.
   The registration names no tools, so one registration still serves both.
   Source: the recorded Copilot CLI payloads.
+  **Approved by:** user **Recorded:** 2026-11-12
 
 ## Dropped Scenarios
 
@@ -560,6 +561,10 @@ harness event
   A Codex user who skips the installer runs every Codex session without Sentinel's hooks, and without any warning.
   **Exit condition:** when a Codex release loads `extensions.com.openai.hooks` from an Agent Plugins manifest, delete the installer and its tests, return the README's Codex row to the plugin install alone, and tell installed users to run `install-hooks.py --uninstall` so each hook does not run twice.
   **Recorded:** 2026-11-05
+- **Requirement:** `agent-configuration-floor` `SettingsThatDefeatTheHooksAreReported`, for a session in Copilot CLI **Reason:** Copilot CLI does not show a session hook's output to the user, and does not pass it to the model, from a session-start hook or from a hook that runs when a prompt is sent (`evidence/copilot-cli-hook-ask-by-mode.txt`).
+  A Copilot CLI session therefore does not report anything; a session in Claude Code, Codex, or Pi reports Copilot CLI's settings.
+  **Exit condition:** when a Copilot CLI release shows a session hook's output to the user or passes it to the model, return the report by that route and delete this entry.
+  **Approved by:** user **Recorded:** 2026-11-13
 
 ## Verification Waivers
 
@@ -569,3 +574,14 @@ harness event
 - **Requirement:** `plugin-distribution` `EachHarnessRunsOnlyItsOwnRegistration` **Reason:** which registration a harness loads is decided inside the harness; the test suite checks that no default registration file exists and that each manifest names its own file.
   **Manual evidence:** in each `evidence/install-<harness>.txt`, the `/hooks` listing in Claude Code and Codex; in VS Code, Copilot CLI, and Pi, which have no listing command, the decision a Sentinel hook returns on a tool call that only its own registration matches.
   **Recorded:** 2026-11-01
+- **Requirement:** `hook-registration` `RegistrationsAreReadFromThePackageAndTheAgentDirectory`, the location of Pi's agent directory only **Reason:** Pi's `getAgentDir` decides it inside Pi, and the test suite runs without Pi's package; the tests pass the agent directory in and test the plugin directory the extension finds.
+  **Manual evidence:** `evidence/install-pi.txt`, "Hooks from the agent directory".
+  **Approved by:** user **Recorded:** 2026-11-13
+
+## Verification Overrides
+
+- **Finding:** CRITICAL failing test `tests/shared/test_capability_coverage.py::test_every_capability_has_a_kind_and_existing_package_artifact` (`capabilities have no recorded kind: ['end-of-turn-precommit']`).
+  **Stage:** verify **Reason:** the baseline `.specs/specs/end-of-turn-precommit/` still exists, and only `sdd-sync` deletes it; this change removes the capability from the kind record (task 2.5), and task 3.10 recorded the failure as expected.
+  **Constraints:** no other test may fail; the test is not changed, skipped, or marked `xfail`; the verify run is diagnostic only and is not a clean pass; `sdd-sync` may proceed under this override only.
+  **Follow-up task:** tasks.md 14.4 "After `sdd-sync` deletes the `end-of-turn-precommit` baseline, run the full test suite and confirm that `tests/shared/test_capability_coverage.py::test_every_capability_has_a_kind_and_existing_package_artifact` passes."
+  **Approved by:** user **Recorded:** 2026-11-12

@@ -1,10 +1,14 @@
 /** Run command hooks registered in `hooks.json` on Pi's events, with Claude Code's hook contract. */
 
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { type Combined, matchingHandlers, runEvent, TOOL_EVENTS } from "./combine.ts"
 import { compileMatcher } from "./matcher.ts"
 import { type EventName, type MatcherGroup, type Registrations, readRegistrations } from "./registration.ts"
+
+/** The plugin directory of the repository Pi installed: extensions/pi/ -> the repository -> plugins/sentinel/. */
+export const PLUGIN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "plugins", "sentinel")
 
 export interface HooksOptions {
   /** Pi's agent directory, whose `hooks.json` registers the user's own hooks. */

@@ -118,6 +118,33 @@ def test_no_sentinel_file_matches_a_name_pattern() -> None:
     assert [file for file in listed if is_named_for_secrets(str(REPO_ROOT / file))] == []
 
 
+def test_the_session_check_reports_in_a_copy_as_in_the_checkout(installed, tmp_path) -> None:
+    """The session check reads its floor data and runs its policy check from the plugin directory."""
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude" / "settings.json").write_text('{"disableAllHooks": true}')
+    session = (tmp_path, {**os.environ, "HOME": str(home), "AI_HOOK_AGENT": "claude"})
+
+    def report(plugin: Path) -> str:
+        cwd, env = session
+        result = subprocess.run(
+            ["bash", str(plugin / "hooks/session-tool-checks.sh")],
+            input=json.dumps({"hook_event_name": "SessionStart", "cwd": str(cwd)}),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=env,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    expected = report(PLUGIN_DIR)
+    assert "disableAllHooks" in expected
+    assert report(installed) == expected
+
+
 @pytest.mark.parametrize("entry", HARNESS_CALLS)
 def test_each_harness_entry_decides_in_a_copy_as_in_the_checkout(installed, session, entry) -> None:
     script, args, payload = HARNESS_CALLS[entry]

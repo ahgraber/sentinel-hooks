@@ -29,7 +29,24 @@ Session-start report: Copilot CLI shows a session hook's output to neither the u
 Registration: the session log records one invocation for each event and no hook command.
 A capture hook placed in com.github.copilot/hooks/hooks.json ran on every tool call on 2026-11-09
 (evidence/copilot-cli-payloads.txt), so Copilot CLI runs the Copilot registration.
-OPEN QUESTION: this run does not show whether Copilot CLI also runs harnesses/claude/hooks.json, which
-.claude-plugin/plugin.json names.
+
+Which registration Copilot CLI runs, from a local marketplace, 2026-11-13
+GitHub Copilot CLI 1.0.111, model MAI-Code-1.1-Flash (auto-selected).
+tmp/probe-copilot is a copy of the committed repository with capture hooks added:
+  harnesses/claude/hooks.json: first on SessionStart, UserPromptSubmit, and PreToolUse, each appending the
+    event and its stdin to tmp/probe-copilot/claude-registration-ran.txt
+  com.github.copilot/hooks/hooks.json: first on PreToolUse, appending to copilot-registration-ran.txt
+$ $H copilot plugin marketplace add /Users/mithras/_code/sentinel-hooks/tmp/probe-copilot
+$ $H copilot plugin install sentinel@sentinel-hooks
+$ $H copilot
+Prompt: run echo probe
+  Shell  Run a simple echo command to confirm shell access
+  echo probe
+  probe
+copilot-registration-ran.txt: one line,
+  PreToolUse {"hook_event_name":"PreToolUse","session_id":"886f3f55-...","cwd":"/Users/mithras/sentinel-probe",...}
+claude-registration-ran.txt: not created.
+Copilot CLI ran the Copilot registration and did not run any of the Claude registration's session, prompt, or tool
+hooks.
 
 Result: Copilot CLI installs Sentinel from the git URL, and a Sentinel hook refuses the command.

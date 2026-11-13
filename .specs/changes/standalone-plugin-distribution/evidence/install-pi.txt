@@ -26,3 +26,16 @@ tried any other way to get the same result.
 
 Result: Pi installs Sentinel from the git URL, shows the session-start report to the user when the session
 starts, and a Sentinel hook refuses the command.
+
+Hooks from the agent directory, 2026-11-13
+tmp/homes/.pi/agent/hooks.json, the isolated agent directory's registration, holds one capture hook on PreToolUse
+that appends the event and its stdin to tmp/probe-pi-agent-dir-ran.txt.
+$ $H pi install git:github.com/ahgraber/sentinel-hooks
+$ $H pi --model openrouter/anthropic/claude-haiku-5.5 -p "Run this exact shell command and print its output: echo probe"
+  pi hooks: Warning: Copilot CLI: `defaultPermissionMode` is unset, ...
+  Output: probe
+tmp/probe-pi-agent-dir-ran.txt:
+  PreToolUse {"session_id":"01a1d660-...","cwd":"/Users/mithras/sentinel-probe","hook_event_name":"PreToolUse",
+  "tool_name":"bash","tool_input":{"command":"echo probe"},...}
+Result: the extension runs the hooks in Pi's agent directory beside the package's own, so getAgentDir
+resolves the directory Pi uses, including one moved by PI_CODING_AGENT_DIR.

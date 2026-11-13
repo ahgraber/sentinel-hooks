@@ -165,6 +165,7 @@
     The README links to the site.
   - [x] 14.2.8 Check each page against the proposal's user stories: it answers the questions a reader of that story asks, and it says nothing more.
 - [ ] 14.3 Run the full test suite and every hook in `.pre-commit-config.yaml` on the changed files.
+- [ ] 14.4 After `sdd-sync` deletes the `end-of-turn-precommit` baseline, run the full test suite and confirm that `tests/shared/test_capability_coverage.py::test_every_capability_has_a_kind_and_existing_package_artifact` passes.
 
 ## 15. Versioning and releases
 
