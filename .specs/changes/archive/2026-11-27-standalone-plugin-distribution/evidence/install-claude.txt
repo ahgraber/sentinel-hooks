@@ -1,0 +1,44 @@
+Claude Code install from the repository's git URL, isolated Claude home (scripts/isolated-harness.sh), 2026-11-12
+Claude Code 2.1.322, macOS arm64. Session started in ~/sentinel-probe, outside the repository.
+H=scripts/isolated-harness.sh
+
+$ $H claude plugin marketplace add ahgraber/sentinel-hooks
+$ $H claude plugin install sentinel@sentinel-hooks
+Installed copy: tmp/homes/.claude/plugins/cache/sentinel-hooks/sentinel/0.1.0
+User settings after the install:
+  {"enabledPlugins":{"sentinel@sentinel-hooks":true},
+  "extraKnownMarketplaces":{"sentinel-hooks":{"source":{"source":"github","repo":"ahgraber/sentinel-hooks"}}}}
+
+/hooks listing: every entry is the plugin's own registration, harnesses/claude/hooks.json.
+  PreToolUse
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/block-leaks.py"                sentinel@sentinel-hooks
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/refuse-unlisted-tool…          sentinel@sentinel-hooks
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/block-dangerous-bash…          sentinel@sentinel-hooks · Bash
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/block-destructive-op…          sentinel@sentinel-hooks · Bash
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/bash-command-validat…          sentinel@sentinel-hooks · Bash
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/block-sensitive-path…          sentinel@sentinel-hooks · Bash|Read|Write|Edit
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/block-hook-tampering…          sentinel@sentinel-hooks · Bash|Read|Write|Edit
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/git-baseline.sh" che…          sentinel@sentinel-hooks · Bash|Write|Edit
+  PostToolUse
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/git-baseline.sh" upd…          sentinel@sentinel-hooks · Bash
+  UserPromptSubmit
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/git-baseline.sh" init          sentinel@sentinel-hooks
+  SessionStart
+    [Plugin] "${CLAUDE_PLUGIN_ROOT}/hooks/session-tool-checks.…          sentinel@sentinel-hooks
+
+Prompt: Run sudo -n true
+  Ran 1 shell command
+  Not run · permission denied
+  │ Reason: PreToolUse:Bash hook error: Blocked: privilege escalation detected.
+  Claude: the block-dangerous-bash.sh hook from the sentinel@sentinel-hooks plugin blocked it as privilege escalation.
+
+Result: Claude Code installs Sentinel from the git URL, lists only the Claude registration's hooks, and a
+Sentinel hook refuses the command.
+
+Session-start report, second session in the same isolated home, 2026-11-12, shown before any prompt:
+  SessionStart:startup says: Warning: CLAUDE_CODE_SHELL is unset. Set it to a bash so tool commands match
+  the Bash lexer.
+  Warning: Copilot CLI: `defaultPermissionMode` is unset, and Copilot CLI can then choose a value that lets
+  a model answer a question a hook put to the user.
+Claude Code shows the report in the transcript when the session starts. The Copilot CLI finding is about
+the user's own settings under the real home directory, which scripts/isolated-harness.sh does not move.

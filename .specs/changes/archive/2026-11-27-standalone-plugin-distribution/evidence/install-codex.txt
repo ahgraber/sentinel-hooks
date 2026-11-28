@@ -1,0 +1,46 @@
+Codex install from the repository's git URL, isolated Codex home (scripts/isolated-harness.sh), 2026-11-12
+Codex CLI 0.167.1, macOS arm64. Session started in ~/sentinel-probe, outside the repository.
+H=scripts/isolated-harness.sh
+
+$ $H codex plugin marketplace add ahgraber/sentinel-hooks
+$ $H codex
+Before the plugin install, /hooks listed 0 hooks.
+/plugins installed Sentinel; its details read "no plugin skills, no plugin hooks, no plugin apps".
+After the plugin install, /hooks still listed 0 hooks.
+Installed copy: tmp/homes/.codex/plugins/cache/sentinel-hooks/sentinel/0.1.0
+
+Result: Codex CLI neither lists nor runs the hooks of a plugin whose root manifest is an Agent Plugins
+manifest, as the Codex defect predicts (openai/codex#47925).
+
+Hook installer, run from the installed copy:
+$ $H tmp/homes/.codex/plugins/cache/sentinel-hooks/sentinel/0.1.0/harnesses/codex/install-hooks.py
+tmp/homes/.codex/hooks.json after the run holds the Codex registration, harnesses/codex/hooks.json:
+  SessionStart 1, UserPromptSubmit 1, PreToolUse 8, PostToolUse 1
+Each command names the installed copy, for example
+  .../sentinel/0.1.0/hooks/session-tool-checks.sh
+
+$ $H codex --no-daemon
+Without --no-daemon, Codex failed to start its app server: its control socket name under
+/private/tmp/codex-daemon-501/ was already in use, apparently by the daemon of the user's own Codex home.
+/hooks listed Sentinel's hooks, and the user trusted them; config.toml then held a trusted_hash for each entry.
+
+Prompt: Run sudo -n true
+  Blocked by hook
+  └ Blocked: privilege escalation detected.
+    This command would run as root or another user, outside the agent's permitted identity.
+Codex: I attempted your requested sudo -n true. ... it was blocked because it would run as root,
+outside my permitted identity.
+
+Session-start report: not observed in this session; see the second session below.
+
+Result: after the hook installer, Codex runs the Codex registration's hooks, and a Sentinel hook refuses
+the command.
+
+Session-start report, second session in the same isolated home, 2026-11-12:
+$ $H codex --no-daemon
+Prompt: hi
+  ↳ Hook · Warning: Copilot CLI: `defaultPermissionMode` is unset, and Copilot CLI can then choose a value
+  that lets a model answer a question a hook put to the user.
+  Hi! What can I help you with?
+Codex runs the session hooks at the first prompt and shows the report above the answer.
+The finding is about the user's own Copilot CLI settings under the real home directory.

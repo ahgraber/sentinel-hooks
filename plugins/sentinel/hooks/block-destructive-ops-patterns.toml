@@ -1,0 +1,469 @@
+# Each rule requires `pattern`, `description`, `reason`, and `mode` (`block` or
+# `ask`). `case_insensitive` is optional. A block match overrides ask matches;
+# the first match within a mode supplies the message.
+
+[git]
+description = "Version control history and branch operations"
+
+[[git.rules]]
+pattern = '\bgit\s+filter-branch\b'
+description = "Rewrites the entire git commit history"
+reason = "Filtered commits can become permanently unrecoverable after the reflog expires"
+mode = "block"
+
+[[git.rules]]
+pattern = '\bgit\s+filter-repo\b'
+description = "Rewrites the entire git commit history (modern replacement for filter-branch)"
+reason = "Filtered commits can become permanently unrecoverable"
+mode = "block"
+
+[[git.rules]]
+pattern = '\bgit\s+reflog\s+expire\b'
+description = "Expires reflog entries, removing the safety net for recovering lost commits"
+reason = "Without reflog entries, recent resets and deleted branches may be unrecoverable"
+mode = "block"
+
+[[git.rules]]
+pattern = '\bgit\s+push\b(?!.*--force-with-lease).*\s--force\b'
+description = "Force-pushes changes to the remote, overwriting its history unconditionally"
+reason = "Can erase other contributors' work without warning; use --force-with-lease instead"
+mode = "block"
+
+[[git.rules]]
+pattern = '\bgit\s+push\b(?!.*--force-with-lease).*\s-[a-zA-Z]*f[a-zA-Z]*\b'
+description = "Force-pushes changes to the remote using the short flag"
+reason = "Can erase other contributors' work without warning; use --force-with-lease instead"
+mode = "block"
+
+[[git.rules]]
+pattern = '\bgit\s+push\b(?!.*--force-with-lease)[^|;&]*\s\+\S'
+description = "Force-pushes via a leading-+ refspec, overwriting remote history"
+reason = "A leading + bypasses normal non-fast-forward checks and can overwrite remote work without an explicit --force flag"
+mode = "block"
+
+[[git.rules]]
+pattern = '\bgit\s+push\s+--delete\b'
+description = "Deletes a remote branch or tag"
+reason = "Remote branch deletion affects all collaborators; confirm the target ref"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+push\b.*\s--force-with-lease\b'
+description = "Force-pushes but verifies no one has pushed since your last fetch"
+reason = "A stale lease can still overwrite remote commits despite --force-with-lease"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+reset\s+--hard\b'
+description = "Resets the working tree and index to a commit, discarding all uncommitted changes"
+reason = "Uncommitted tracked changes are discarded and cannot be recovered from Git"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+clean\s+(?:-[a-zA-Z]*f[a-zA-Z]*\b|-[a-zA-Z]*d[a-zA-Z]*f[a-zA-Z]*\b)'
+description = "Removes untracked files (and optionally directories) from the working tree"
+reason = "Untracked files have no commit to restore and may be permanently lost"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+stash\s+drop\b'
+description = "Permanently deletes a single stash entry"
+reason = "A dropped stash has no reflog entry and may be unrecoverable"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+stash\s+clear\b'
+description = "Permanently deletes all stash entries at once"
+reason = "All stash entries are removed and may be unrecoverable"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+branch\s+(?:-[a-zA-Z]*D[a-zA-Z]*\b|-D\b)'
+description = "Force-deletes a branch even if it has unmerged commits"
+reason = "Unmerged commits may become unreachable and eventually garbage-collected"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+checkout\s+\.\s*$'
+description = "Discards all unstaged changes in the working directory"
+reason = "All unstaged tracked changes are discarded and cannot be recovered from Git"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+restore\s+\.\s*$'
+description = "Discards all unstaged changes in the working directory"
+reason = "All unstaged tracked changes are discarded and cannot be recovered from Git"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\s+add\s+(?:\.\s*$|-A\b)'
+description = "Stages all files in the repository, including untracked files"
+reason = "May accidentally stage sensitive files (.env, credentials) or large binaries; prefer staging specific files"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\b[^|;&\n]*\s(?:-c\s+[A-Za-z][\w.-]*\.[\w.-]+=|--config-env=)'
+description = "Sets a git configuration value for one command, including keys that hold a program git then runs (core.pager, diff.external, core.fsmonitor, alias.*)"
+reason = "A value from a file or repository can make a routine Git command run unreviewed code; use only a value you selected and reviewed"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgit\b[^|;&\n]*\s--(?:exec-path=|upload-pack=|receive-pack=)'
+description = "Points git at a different executable directory or transport helper (--exec-path, --upload-pack, --receive-pack)"
+reason = "An untrusted executable or transport helper can run arbitrary code; use only a path you control"
+mode = "ask"
+
+[[git.rules]]
+pattern = '\bgh\s+repo\s+delete\b'
+description = "Deletes an entire GitHub repository"
+reason = "The repository's code, issues, pull requests, and history are permanently deleted"
+mode = "block"
+
+[filesystem]
+description = "File and directory operations with broad or irreversible effects"
+
+[[filesystem.rules]]
+pattern = '''\brm\s+(?:-{1,2}[A-Za-z-]+\s+)*(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)\b(?:\s+-{1,2}[A-Za-z-]+)*\s+["']?(?:/|~|\$\{?HOME)'''
+description = "Recursively force-deletes files starting from the home directory or an absolute path"
+reason = "A broad target can permanently delete unrelated directory trees"
+mode = "block"
+
+[[filesystem.rules]]
+pattern = '\bmkfs(?:\.[a-z0-9]+)?\b'
+description = "Formats a disk partition with a new filesystem"
+reason = "Formatting permanently erases all data on the selected partition"
+mode = "block"
+
+[[filesystem.rules]]
+pattern = '\bdd\b.*\bof=/dev/(?:sd|hd|nvme|vd|mmcblk|xvd|loop|disk|mapper|dm-)'
+description = "Writes raw data directly to a disk device"
+reason = "A wrong output device can overwrite partition tables and data with no built-in recovery"
+mode = "block"
+
+[[filesystem.rules]]
+pattern = '''\bchmod\s+(?:-{1,2}[A-Za-z-]+\s+)*(?:0?777|[ugoa]*[-+=][rwxXst]*[wx][rwxXst]*)\s+["']?(?:/|~|\$\{?HOME)'''
+description = "Sets world-readable/writable/executable permissions on a system path"
+reason = "World-writable permissions let other users modify protected files or executable code"
+mode = "block"
+
+[[filesystem.rules]]
+pattern = '\brm\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*r\b'
+description = "Recursively deletes files and directories"
+reason = "Recursive deletion can remove large directory trees; confirm this is the intended target"
+mode = "ask"
+
+[[filesystem.rules]]
+pattern = '\bchmod\s+-R\b'
+description = "Recursively changes file permissions on an entire directory tree"
+reason = "Recursive permission changes can break file access across an entire tree"
+mode = "ask"
+
+[[filesystem.rules]]
+pattern = '\bchown\s+-R\b'
+description = "Recursively changes file ownership on an entire directory tree"
+reason = "Recursive ownership changes can lock out current users from their own files"
+mode = "ask"
+
+[[filesystem.rules]]
+pattern = '\bhistory\s+-c\b'
+description = "Clears the current shell history"
+reason = "Clearing history removes the audit trail of commands run in this session"
+mode = "ask"
+
+[process]
+description = "Process signaling and termination"
+
+[[process.rules]]
+pattern = '\bkillall\b'
+description = "Sends a signal to all processes matching a name"
+reason = "killall can terminate critical system processes or user applications indiscriminately"
+mode = "ask"
+
+[[process.rules]]
+pattern = '\bpkill\b'
+description = "Sends a signal to processes matching a pattern"
+reason = "pkill with a broad pattern can terminate unintended processes"
+mode = "ask"
+
+[[process.rules]]
+pattern = '\bkill\s+-9\b'
+description = "Sends SIGKILL to a process, forcing immediate termination"
+reason = "SIGKILL prevents the process from cleaning up; data corruption or resource leaks may result"
+mode = "ask"
+
+[cloud]
+description = "Cloud provider CLI operations that delete or destroy resources"
+
+[[cloud.rules]]
+pattern = '\baws\s+s3\s+rm\b.*\s--recursive\b'
+description = "Recursively deletes all objects under an S3 prefix"
+reason = "Recursive removal can permanently delete every object under the S3 prefix"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\baws\s+s3\s+sync\b.*\s--delete\b'
+description = "Syncs to S3 and deletes remote objects not present in the source"
+reason = "sync --delete removes destination objects absent from the source, which can silently erase remote data"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bgcloud\b.*\s(?:delete|destroy)\b'
+description = "Deletes or destroys a Google Cloud resource"
+reason = "The selected resource may be deleted permanently and may serve a live production system"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bfirebase\b.*\s(?:delete|projects:delete)\b'
+description = "Deletes a Firebase resource or entire project"
+reason = "Project deletion permanently removes its Firebase resources and cannot be undone"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bvercel\b.*\s(?:projects\s+rm|remove)\b'
+description = "Removes a Vercel project or deployment"
+reason = "Project removal permanently deletes its deployments and configuration"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bnetlify\b.*\s(?:sites:delete|delete)\b'
+description = "Deletes a Netlify site"
+reason = "Site deletion permanently removes its deploys and configuration"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bwrangler\b.*\s(?:delete|destroy)\b'
+description = "Deletes a Cloudflare Workers or Pages resource"
+reason = "Deleting the resource can interrupt live traffic immediately"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bheroku\s+apps:destroy\b'
+description = "Destroys a Heroku application"
+reason = "App destruction permanently removes its dynos, add-ons, and configuration"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bfly\s+apps\s+destroy\b'
+description = "Destroys a Fly.io application"
+reason = "App destruction permanently removes its machines and volumes"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bdoctl\b.*\s(?:delete|destroy)\b'
+description = "Deletes a DigitalOcean resource"
+reason = "Resource deletion can permanently remove a droplet, database, or storage volume"
+mode = "ask"
+
+[[cloud.rules]]
+pattern = '\bsupabase\b.*\s(?:projects\s+delete|db\s+reset)\b'
+description = "Deletes a Supabase project or resets a database"
+reason = "Project deletion or database reset permanently removes data and configuration"
+mode = "ask"
+
+[infra]
+description = "Infrastructure-as-code and container orchestration operations"
+
+[[infra.rules]]
+pattern = '\b(?:terraform|tofu)\s+destroy\b'
+description = "Destroys all infrastructure resources managed by this workspace"
+reason = "Destroy can permanently remove managed databases, servers, and networks"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bpulumi\s+destroy\b'
+description = "Destroys all resources in a Pulumi stack"
+reason = "Destroy can permanently remove every infrastructure resource managed by the stack"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\b(?:serverless|sls)\s+remove\b'
+description = "Removes a Serverless Framework service and all its cloud resources"
+reason = "Service removal permanently deletes its Lambda functions, API Gateways, and related resources"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bsam\s+delete\b'
+description = "Deletes an AWS SAM application stack"
+reason = "Application deletion removes every CloudFormation resource in the stack"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bkubectl\s+delete\b.*\s(?:--all\b|-A\b|--all-namespaces\b)'
+description = "Deletes Kubernetes resources across all namespaces or all resources of a type"
+reason = "--all can remove entire workloads, and core namespaces can include cluster system components"
+mode = "block"
+
+[[infra.rules]]
+pattern = '\bkubectl\s+delete\s+namespace\b'
+description = "Deletes an entire Kubernetes namespace and all resources within it"
+reason = "Namespace deletion also removes every pod, service, and config in that namespace"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bhelm\s+(?:uninstall|delete)\b'
+description = "Uninstalls a Helm release and removes all associated Kubernetes resources"
+reason = "Uninstall removes all release resources and can lose data stored in PersistentVolumeClaims"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bhelm\s+(?:install|upgrade)\b'
+description = "Installs or upgrades a Helm chart on a Kubernetes cluster"
+reason = "Install or upgrade changes live cluster workloads and can disrupt running services"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bdocker\s+system\s+prune\b.*\s-a\b'
+description = "Removes all unused Docker images, containers, volumes, and build cache"
+reason = "system prune -a removes unused images and build cache; recovery requires downloading or rebuilding them"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bdocker\s+(?:rm|rmi)\s+-f\b'
+description = "Force-removes Docker containers or images"
+reason = "Force removal bypasses normal checks and can disrupt running workloads"
+mode = "ask"
+
+[[infra.rules]]
+pattern = '\bdocker\s+volume\s+(?:rm|prune)\b'
+description = "Removes Docker volumes containing persistent data"
+reason = "Volume removal permanently deletes persistent data stored outside containers"
+mode = "ask"
+
+[database]
+description = "Database operations that delete or wipe data"
+
+[[database.rules]]
+pattern = '\bFLUSHALL\b'
+case_insensitive = true
+description = "Deletes all keys from all Redis databases simultaneously"
+reason = "FLUSHALL immediately deletes every key in every Redis database with no built-in recovery"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bFLUSHDB\b'
+case_insensitive = true
+description = "Deletes all keys from the currently selected Redis database"
+reason = "FLUSHDB immediately deletes every key in the selected Redis database with no built-in recovery"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bredis-cli\b.*\bFLUSH'
+case_insensitive = true
+description = "Invokes a Redis FLUSH command via the CLI"
+reason = "Redis FLUSH commands delete keys immediately with no built-in recovery"
+mode = "block"
+
+[[database.rules]]
+pattern = 'dropDatabase\s*\('
+description = "Drops an entire MongoDB database and all its collections"
+reason = "dropDatabase permanently removes the database and all collections with no undo"
+mode = "block"
+
+[[database.rules]]
+pattern = '\.\s*drop\s*\(\s*\)'
+description = "Drops a MongoDB collection and all documents within it"
+reason = "Dropping the collection immediately deletes every document with no undo"
+mode = "block"
+
+[[database.rules]]
+pattern = '\b(?:mongosh?|mongo)\s+.*--eval\s+.*drop'
+description = "Drops a MongoDB database or collection via CLI eval"
+reason = "The evaluated drop operation permanently removes its target with no undo"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bdropdb\b'
+description = "Drops a PostgreSQL database via the CLI utility"
+reason = "dropdb permanently deletes the PostgreSQL database and all its data"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bmysqladmin\s+drop\b'
+description = "Drops a MySQL database via the mysqladmin utility"
+reason = "mysqladmin drop permanently deletes the MySQL database"
+mode = "block"
+
+[[database.rules]]
+pattern = '(?:^|\b)DROP\s+(?:TABLE|DATABASE|SCHEMA)\b'
+case_insensitive = true
+description = "Drops a SQL table, database, or schema and all data within it"
+reason = "DROP permanently deletes the selected SQL object and all data it contains"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bDELETE\s+FROM\s+[\w.`\[\]]+\s*;'
+case_insensitive = true
+description = "Deletes every row from a SQL table (no WHERE clause)"
+reason = "DELETE without WHERE removes all rows; this is almost never intentional"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bDELETE\s+FROM\s+[\w.`\[\]]+\s*$'
+case_insensitive = true
+description = "Deletes every row from a SQL table (no WHERE clause)"
+reason = "DELETE without WHERE removes all rows; add a WHERE clause to scope the deletion"
+mode = "block"
+
+[[database.rules]]
+pattern = '\bTRUNCATE\s+(?:TABLE\s+)?\w+'
+case_insensitive = true
+description = "Removes all rows from a SQL table without logging individual deletions"
+reason = "TRUNCATE removes every row, so a wrong table target can erase all of its data"
+mode = "ask"
+
+[publishing]
+description = "Package and image publishing to registries"
+
+[[publishing.rules]]
+pattern = '\b(?:npm|yarn|pnpm)\s+publish\b'
+description = "Publishes a package to the npm registry"
+reason = "Publishing is a public, largely irreversible action; verify version and contents first"
+mode = "ask"
+
+[[publishing.rules]]
+pattern = '\bnpm\s+unpublish\b'
+description = "Removes a published package version from the npm registry"
+reason = "Unpublishing can break downstream consumers who depend on this version"
+mode = "ask"
+
+[[publishing.rules]]
+pattern = '\bdocker\s+push\b'
+description = "Pushes a container image to a registry"
+reason = "Pushed images are immediately available to consumers; verify the tag and contents"
+mode = "ask"
+
+[[publishing.rules]]
+pattern = '\buv\s+publish\b'
+description = "Publishes a Python package to PyPI"
+reason = "Publishing to PyPI is public and version numbers cannot be reused once published"
+mode = "ask"
+
+[package]
+description = "Package operations that remove dependencies"
+
+[[package.rules]]
+pattern = '\buv\s+(?:pip\s+)?(?:remove|uninstall)\b'
+description = "Removes a Python package from the environment"
+reason = "Package removal may break dependent code; confirm this is intentional"
+mode = "ask"
+
+[network]
+description = "Commands establishing connections to remote hosts"
+
+[[network.rules]]
+pattern = '\bssh\s+'
+description = "Opens an SSH connection to a remote host"
+reason = "SSH establishes interactive access to a remote system; confirm the target host"
+mode = "ask"
+
+[[network.rules]]
+pattern = '\bscp\b'
+description = "Copies files to or from a remote host over SSH"
+reason = "scp transfers files to/from remote systems; confirm source, destination, and host"
+mode = "ask"
+
+[[network.rules]]
+pattern = '\brsync\b'
+description = "Synchronizes files between local and remote paths"
+reason = "rsync can overwrite or delete files on the destination; confirm direction and target"
+mode = "ask"

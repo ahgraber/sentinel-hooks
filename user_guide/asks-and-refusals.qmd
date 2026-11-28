@@ -1,0 +1,58 @@
+---
+title: Answer a question or a refusal
+---
+
+Sentinel answers each action in one of three ways: approved, prompt, or deny.
+Most actions proceed with no message.
+An action that is legitimate but risky, such as `git reset --hard`, makes Sentinel ask you.
+An action that no project work needs, such as reading an SSH private key, is refused.
+
+## When Sentinel prompts
+
+The agent stops and prompts you before the action runs.
+The prompt includes the command or file and says what approving it permits.
+
+| Agent                     | What you see                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| Claude Code               | a permission prompt with Sentinel's reason                                                         |
+| GitHub Copilot CLI        | a permission prompt with Sentinel's reason, in an interactive session                              |
+| GitHub Copilot in VS Code | a confirmation in the chat with Sentinel's reason                                                  |
+| Pi                        | a confirmation titled "A hook asks before *tool* runs", with Sentinel's reason                     |
+| Codex                     | no prompt: Codex cannot show one, so Sentinel refuses the action                                 |
+
+Copilot CLI cannot show a prompt in a session started with `-p` or in autopilot mode; in these cases, Copilot CLI refuses the action instead.
+In assisted mode, a model can answer Sentinel's question instead of you.
+The [session-start report](session-start-report.qmd) warns when your settings can select assisted mode.
+
+If a prompt is declined, the action does not run, and the agent is told that you declined.
+
+## When Sentinel refuses
+
+The action does not run.
+The agent receives Sentinel's message, which starts with `Blocked:` and explains what was refused, why, and what to do next:
+
+- In most cases, the agent is told to stop and to give you what you need to decide whether to run the action yourself.
+- If the agent can do the same work with a command Sentinel accepts, the message lists those commands.
+- If the agent named a relative path that Sentinel cannot resolve, the agent is told to name every path in full.
+
+### If you need the action
+
+Run the command in your own terminal; this is annoying but maintains the security posture.
+
+### If the refusal is wrong (false positive)
+
+Run the action yourself, then report the refusal at <https://github.com/ahgraber/sentinel-hooks/issues>.
+Include the command or file and Sentinel's message.
+
+## When Sentinel refuses every action
+
+Two conditions make Sentinel refuse every action an agent takes:
+
+**A damaged install.**
+Sentinel refuses every action when it cannot read its own list of tools.
+Try reinstalling Sentinel.
+
+**Codex after an update.**
+A Codex update may remove or disable a Sentinel hook file.
+The error message starts with `Sentinel:` and should indicate which hook file is missing.
+Run the command in the message, which runs the hook installer again.

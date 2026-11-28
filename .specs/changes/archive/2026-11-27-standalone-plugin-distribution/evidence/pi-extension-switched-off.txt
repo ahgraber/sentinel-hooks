@@ -1,0 +1,24 @@
+Pi 1.4.0: what Pi writes to its settings when a package's extension is turned off, 2026-11-10
+Probe: an isolated Pi home (scripts/isolated-harness.sh, PI_CODING_AGENT_DIR=tmp/homes/.pi/agent).
+`pi install <repo>/tmp/homes/src` added the package. The user then ran `pi config` and turned the package's
+extension off.
+
+settings.json after pi config:
+{
+  "packages": [
+    {
+      "source": "../../src",
+      "extensions": [
+        "-extensions/pi/index.ts"
+      ]
+    }
+  ]
+}
+
+pi list:
+User packages:
+  ../../src (filtered)
+    /Users/mithras/_code/sentinel-hooks/tmp/homes/src
+
+Result: `pi config` turns an extension off by making the package entry an object whose `extensions` list
+holds the extension's path with a `-` prefix. `pi list` marks such a package "(filtered)".

@@ -5,6 +5,14 @@
 !.claude/settings.json
 !.github/
 !.specs/
+!.claude-plugin/
+!.agents/
+.agents/*
+!.agents/plugins/
+!.agents/skills/
+!.claude/
+.claude/*
+!.claude/skills/
 !.renovate/
 
 # -------------------------------------------------------
@@ -56,6 +64,7 @@ site/
 *.log
 .temp*
 .task/
+/tmp/
 
 # --- repo-specific ---
 
@@ -85,3 +94,12 @@ TODO.md
 !.env.example
 !.env.sample
 !**.gitkeep
+
+# Great Docs build directory (ephemeral, do not commit)
+great-docs/
+
+# Great Docs versioned-build artifacts
+_great_docs_build/
+.great-docs-build/
+.great-docs-cache/
+.great-docs/

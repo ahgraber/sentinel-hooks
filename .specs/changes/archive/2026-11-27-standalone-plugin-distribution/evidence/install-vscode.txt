@@ -1,0 +1,77 @@
+VS Code install from the repository's git URL, isolated user data and plugin directory
+(scripts/isolated-harness.sh), 2026-11-12
+VS Code with GitHub Copilot Chat, model gpt-6-luna, workspace ~/sentinel-probe outside the repository.
+H=scripts/isolated-harness.sh
+
+$ $H code ~/sentinel-probe
+Agent Customizations > Browse > Configure Marketplaces > Add Marketplace: ahgraber/sentinel-hooks
+Browse > sentinel-hooks > Sentinel > Install
+User settings after the install:
+  "chat.plugins.marketplaces": ["github/awesome-copilot#marketplace", "ahgraber/sentinel-hooks"]
+Install location: tmp/homes/.vscode/agent-plugins/github.com/ahgraber/sentinel-hooks/, a clone of the
+whole repository; the plugin is at plugins/sentinel/ inside it.
+~/.claude/plugins/ held the same plugins before and after the install, none of them Sentinel.
+
+User hooks: VS Code also ran the user's own hooks from ~/.copilot/hooks, which the isolated user data
+directory does not move. The hooks log names each command, so the two sources are told apart below.
+
+Hooks log (logs/.../exthost/GitHub.copilot-chat/GitHub Copilot Chat Hooks.log), commands by source:
+  <PLUGIN> = tmp/homes/.vscode/agent-plugins/github.com/ahgraber/sentinel-hooks/plugins/sentinel
+  17 runs  "<PLUGIN>/harnesses/copilot/copilot-vscode-hook-adapter.py" <hook>
+  19 runs  $HOME/.copilot/hooks/copilot-vscode-hook-adapter.py <hook>   (the user's own hooks)
+No command ran a hook from <PLUGIN>/hooks/ directly, so VS Code did not run harnesses/claude/hooks.json.
+
+Prompt: Run sudo -n true
+  [PreToolUse] Executing 14 hook(s)
+  $HOME/.copilot/hooks/copilot-vscode-hook-adapter.py block-dangerous-bash.sh    Completed (Error) in 189ms
+  "<PLUGIN>/harnesses/copilot/copilot-vscode-hook-adapter.py" block-dangerous-bash.sh
+                                                                                Completed (Error) in 186ms
+  Output, from each: Blocked: privilege escalation detected.
+    This command would run as root or another user, outside the agent's permitted identity.
+  Each other hook completed with no output, in 91 to 219 ms.
+
+Session-start report, from the plugin's session-tool-checks.sh:
+  [SessionStart] Output: {"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":
+    "Sentinel's session check found the settings below. Tell the user each warning in full in your next
+    reply.\nWarning: Copilot CLI: `defaultPermissionMode` is unset, ..."}}
+VS Code gives the report to the model as context; it reaches the user only if the model passes it on.
+
+The user did not recall whether the chat passed the report on.
+
+Which catalog VS Code reads, from a local marketplace, 2026-11-12
+tmp/catalog-probe is a copy of the repository in which each catalog's Sentinel entry and each plugin
+manifest carries its own description, such as "PROBE catalog .github/plugin/marketplace.json".
+The git-URL install was uninstalled and its marketplace removed first.
+Configure Marketplaces > Add Marketplace: file://Users/mithras/_code/sentinel-hooks/tmp/catalog-probe
+  A plain path was not accepted; the file:// form was.
+Browse list, Sentinel's description: PROBE catalog .github/plugin/marketplace.json
+Details panel:
+  PROBE catalog .github/plugin/marketplace.json
+  Version      0.1.0
+  Marketplace  //Users/mithras/_code/sentinel-hooks/tmp/catalog-probe
+  Location     //Users/mithras/_code/sentinel-hooks/tmp/catalog-probe/plugins/sentinel
+  Contains     Hooks 4: SessionStart 1, UserPromptSubmit 1, PreToolUse 7, PostToolUse 1
+Those counts are the Copilot registration's (com.github.copilot/hooks/hooks.json); the Claude registration
+has 8 PreToolUse hooks.
+tmp/homes/.vscode/agent-plugins/installed.json records the plugin at the marketplace folder itself:
+  "pluginUri": "file://users/mithras/_code/sentinel-hooks/tmp/catalog-probe/plugins/sentinel"
+VS Code read .github/plugin/marketplace.json, installed from a local marketplace in place without a copy,
+and showed the catalog's description, not either manifest's.
+
+Install from a local folder, 2026-11-12
+The local-marketplace install was uninstalled and its marketplace removed first.
+Agent Customizations > Install a plugin from source:
+  file://Users/mithras/_code/sentinel-hooks/tmp/catalog-probe/plugins/sentinel
+Details panel: no description shown.
+  Version   0.1.0
+  Location  //Users/mithras/_code/sentinel-hooks/tmp/catalog-probe/plugins/sentinel
+  Contains  Hooks 4: SessionStart 1, UserPromptSubmit 1, PreToolUse 7, PostToolUse 1
+VS Code registered the folder in place in the user settings and made no copy:
+  "chat.pluginLocations": {"//Users/mithras/_code/sentinel-hooks/tmp/catalog-probe/plugins/sentinel": true}
+  agent-plugins/installed.json: "installed": []
+The hook counts are again the Copilot registration's.
+After the uninstalls, the clone from the git-URL install stays at
+tmp/homes/.vscode/agent-plugins/github.com/ahgraber/sentinel-hooks/.
+
+Result: VS Code installs Sentinel from the git URL, runs only the plugin's Copilot registration,
+com.github.copilot/hooks/hooks.json, through the adapter, and a Sentinel hook refuses the command.

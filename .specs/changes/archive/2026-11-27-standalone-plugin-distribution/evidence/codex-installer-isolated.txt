@@ -1,0 +1,29 @@
+Codex hook installer, isolated Codex home (scripts/isolated-harness.sh), 2026-11-05
+Codex CLI 0.166.0, macOS arm64. tmp/probe/.env holds the dummy line PROBE=not-a-secret.
+P='Run this exact shell command and print its output: cat tmp/probe/.env'
+
+Before the installer: the plugin installed from a local marketplace, /plugins showed
+"Hooks: No plugin hooks", and `codex exec "$P"` printed PROBE=not-a-secret.
+
+Installer run from the installed copy:
+  scripts/isolated-harness.sh tmp/homes/.codex/plugins/cache/sentinel-hooks/sentinel/*/harnesses/codex/install-hooks.py
+Hooks trusted at the "Hooks need review" prompt in the interactive session.
+
+$ scripts/isolated-harness.sh codex exec "$P"
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+hook: PreToolUse   (x8)
+ERROR codex_core::tools::router: error=Command blocked by PreToolUse hook: Blocked: Bash read targeting zero-access path 'tmp/probe/.env'.
+hook: PreToolUse Completed (x7), PreToolUse Blocked (x1)
+codex: The security hook blocked the read because the file is a zero-access path ... No file output was returned.
+
+Stale install, the installed copy moved away to simulate an update:
+$ mv tmp/homes/.codex/plugins/cache/sentinel-hooks/sentinel/0.1.0 tmp/homes/sentinel-moved
+$ scripts/isolated-harness.sh codex exec "$P"
+hook: SessionStart
+hook: SessionStart Failed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Blocked
+(the turn ends before any tool runs; `codex exec` prints the outcome without the hook's message.)

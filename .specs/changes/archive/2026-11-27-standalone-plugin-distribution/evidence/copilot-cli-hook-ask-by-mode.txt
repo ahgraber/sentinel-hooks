@@ -1,0 +1,75 @@
+Copilot CLI 1.0.108: what happens to a PreToolUse hook's `ask` in each permission and agent mode, 2026-11-10
+Probe: a standalone plugin in Sentinel's layout (root plugin.json, com.github.copilot/hooks/hooks.json), installed from
+a local marketplace into a separate COPILOT_HOME. Its hook printed Sentinel's ask output for any call naming notes.txt:
+  {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "Probe: the hook asks about notes.txt."}}
+and allowed every other call. Prompt: create notes.txt containing hello with the file-creation tool, one attempt, no shell.
+The user answered No to any prompt about notes.txt.
+
+Manual mode, interactive (session d73c665b):
+  The hook answered ask. Copilot CLI showed the user a prompt; the user answered No.
+  notes.txt: not created.
+  Session log: permission.requested 1, permission.completed 1, hook.start 1, hook.end 1.
+  This session ran on a GitHub-hosted model, which sent the call as Edit with apply_patch text.
+
+Assisted mode, interactive, settings.json {"defaultPermissionMode": "assisted"} (session 91013608):
+  Model anthropic/claude-haiku-5.5 through OpenRouter. The hook answered ask to Write notes.txt.
+  No prompt reached the user. notes.txt: created.
+  Session log: permission.requested 1, permission.completed 1, session.permissions_changed 1, hook.start 1, hook.end 1.
+
+Assisted mode, non-interactive, copilot --assisted-approval -p (session 7c256c25):
+  The hook answered ask to Write notes.txt. Copilot CLI printed:
+    ● Create notes.txt +1
+      Approval check
+        └ ✓ Assisted Permissions approved hook (create)
+          User explicitly requested creating notes.txt with hello via file tool; narrow, recoverable.
+  notes.txt: created.
+
+Autopilot mode, interactive, copilot --autopilot (session e017089c):
+  The hook answered ask to Write notes.txt. No prompt reached the user. notes.txt: not created.
+  The agent reported: a preToolUse hook denied it; "The hook could not ask for confirmation."
+  This probe's hook matched the text notes.txt anywhere in the input, so it also answered ask to the agent's two
+  task_complete calls, whose summaries name the file.
+
+Allow-all mode, non-interactive, copilot --allow-all -p (session c0dc0d5a):
+  The hook answered ask to Write notes.txt. Copilot CLI printed:
+    ✗ Create notes.txt Denied by preToolUse hook (unable to ask user for confirmation): Probe: the hook asks about notes.txt.
+      Approval check
+        └ ✗ Denied, no one to approve hook (create)
+  notes.txt: not created.
+
+Allow-all mode, interactive, settings.json {"defaultPermissionMode": "allow-all"} (session 4e5faccf):
+  The hook answered ask to Write notes.txt. Copilot CLI showed the user a prompt; the user answered No.
+  notes.txt: not created.
+  This probe's hook matched only a file path, so it answered ask to the one Write call.
+
+Result: in assisted mode, Copilot CLI's model reviewer decides a hook's ask, and a hook's ask does not reach the user.
+`--assisted-approval` is accepted only in non-interactive prompt mode; an interactive session takes assisted mode
+from defaultPermissionMode.
+In autopilot mode, and in a non-interactive allow-all run, Copilot CLI denies a call a hook asked about.
+In an interactive allow-all session, a hook's ask reaches the user.
+
+Session-start hook output (session c0e21587, 2026-11-10; Copilot CLI reported version 1.0.109 that day):
+  A plugin in Sentinel's layout ran three SessionStart hooks in an interactive session.
+  Hook A wrote "PROBE-A: a line on standard error, exit 0" to standard error and exited 0.
+  Hook B printed {"systemMessage": "PROBE-B: a systemMessage field"} and exited 0.
+  Hook C wrote "PROBE-C: a line on standard error, exit 1" to standard error and exited 1.
+  All three hooks ran. The user saw none of the three lines.
+  The session log held only hook C, as a hook error: "Hook command failed with code 1\nStderr: PROBE-C: ...".
+
+Result: Copilot CLI shows the user no session-start hook output by standard error, by systemMessage, or by exit 1.
+
+Session-start hook context (session 467bf524, 2026-11-10, non-interactive, model anthropic/claude-haiku-5.5):
+  Two SessionStart hooks each gave the model one word: hook D in the additionalContext field of a JSON reply
+  ("marmalade"), hook E as plain standard output ("tangerine"). Both hooks ran.
+  Asked which probe words a hook gave it, the model answered: none
+
+Result: Copilot CLI gives the model neither a session-start hook's additionalContext nor its plain output.
+
+Prompt-time hook output (session 7695323d, 2026-11-11, interactive, model anthropic/claude-haiku-5.5):
+  Three UserPromptSubmit hooks ran when the user sent the prompt. Hook D gave the model a word in the
+  additionalContext field of a JSON reply ("marmalade"), hook E as plain standard output ("tangerine"), and
+  hook F returned {"systemMessage": "PROBE-F: a systemMessage field at prompt time"}.
+  Hook D received hook_event_name, session_id, timestamp, cwd, and prompt.
+  Asked which probe words a hook gave it, the model answered: none. The user saw no PROBE-F line.
+
+Result: Copilot CLI gives the model nothing from a prompt-time hook, and shows the user none of its output.

@@ -1,0 +1,44 @@
+# node live-rpc-driver.mjs events
+
+=== PROMPT What is the project codename? Answer in one sentence without using tools.
+UI setStatus "hooks" undefined
+ASSISTANT "\n\nThe project codename is BLUEFIN."
+ASSISTANT "\n\nCONTINUED"
+
+=== PROMPT Call the bash tool with the command `echo DENYME`. Do not answer until the tool returns, then report exactly what the tool returned, including any text after the command output.
+TOOL bash isError=true "Commands containing DENYME are refused by the test hook."
+ASSISTANT "\n\nThe tool returned:\n\n```\nCommands containing DENYME are refused by the test hook.\n```"
+ASSISTANT "\n\nCONTINUED"
+
+=== PROMPT Call the bash tool with the command `echo ASKME-one`. Do not answer until the tool returns, then report exactly what the tool returned.
+CONFIRM "A hook asks before bash runs" "test hook asks\n\n{\"command\":\"echo ASKME-one\"}" -> true
+TOOL bash isError=false "ASKME-one\n"
+ASSISTANT "\n\nThe tool returned:\n\n```\nASKME-one\n```"
+ASSISTANT "\n\nCONTINUED"
+
+=== PROMPT Call the bash tool with the command `echo ASKME-two`. Do not answer until the tool returns, then report exactly what the tool returned.
+CONFIRM "A hook asks before bash runs" "test hook asks\n\n{\"command\":\"echo ASKME-two\"}" -> false
+TOOL bash isError=true "The user declined this call. The hook asked: test hook asks"
+ASSISTANT "\n\nThe tool returned:\n\n```\nThe user declined this call. The hook asked: test hook asks\n```"
+ASSISTANT "\n\nCONTINUED"
+
+=== PROMPT Call the bash tool with the command `echo plain`. Do not answer until the tool returns, then report exactly what the tool returned, including any text after the command output.
+TOOL bash isError=false "plain\n | HOOKCTX-42"
+ASSISTANT "\n\nThe tool returned:\n\n```\nplain\n\nHOOKCTX-42\n```"
+ASSISTANT "\n\nCONTINUED"
+
+=== NEW SESSION
+UI setStatus "hooks" undefined
+RESPONSE new_session {"cancelled":false}
+SESSION HOOK SessionStart startup
+SESSION HOOK SessionEnd clear
+SESSION HOOK SessionStart clear
+
+
+# node live-rpc-driver.mjs unusable
+
+=== PROMPT Run the bash command `echo hello` and report its output.
+UI notify "error" "<agent-dir>/hooks.json does not parse as JSON: JSON Parse error: Expected '}'. No hooks run in this session."
+UI setStatus "hooks" "hooks.json unusable: no hooks run"
+TOOL bash isError=false "hello\n"
+ASSISTANT "\n\nThe output of `echo hello` is:\n\n```\nhello\n```"

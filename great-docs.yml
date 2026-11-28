@@ -1,0 +1,26 @@
+# Great Docs configuration: https://posit-dev.github.io/great-docs/user-guide/configuration.html
+# Options left out keep their defaults.
+#
+# Sentinel ships no importable Python package, so the site has no API
+# reference: README.md is the home page and user_guide/ holds the guide pages.
+
+display_name: Sentinel
+
+# No API reference and no PyPI link: there is no package to document or install.
+reference: []
+pypi: false
+
+# A generated SKILL.md would describe a Python package that does not exist.
+skill:
+  enabled: false
+
+site_url: https://ahgraber.github.io/sentinel-hooks/
+
+# Guide pages in reading order; without this list they sort by file name.
+user_guide:
+  - section: "User Guide"
+    contents:
+      - install.qmd
+      - asks-and-refusals.qmd
+      - session-start-report.qmd
+      - limits.qmd

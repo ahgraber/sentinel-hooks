@@ -1,0 +1,14 @@
+{
+  "name": "sentinel-hooks",
+  "owner": {
+    "name": "ahgraber"
+  },
+  "plugins": [
+    {
+      "name": "sentinel",
+      "description": "Defense-in-depth guardrail hooks for coding agents.",
+      "version": "0.1.0",
+      "source": "./plugins/sentinel"
+    }
+  ]
+}
